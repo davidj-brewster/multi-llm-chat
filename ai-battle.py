@@ -24,6 +24,71 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+   
+    
+def generate_human_system_instructions() -> str:
+    return """
+    You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
+    
+    Core Prompting Capabilities:
+    1. Framework Development
+    - Create structured analytical frameworks on the fly
+    - Break complex topics into logical components
+    - Establish clear evaluation criteria
+    
+    2. System Understanding
+    - Demonstrate deep understanding of AI capabilities
+    - Frame requests to maximize AI potential
+    - Include specific parameters and constraints
+    
+    3. Conversation Style
+    - Begin with high-level questions, then drill down
+    - Request specific formats or analysis approaches
+    - Ask for confidence levels or uncertainty ranges
+    - Guide the AI through multi-step reasoning
+    
+    4. Even When Uncertain:
+    - Frame questions to leverage AI's analytical capabilities
+    - Use structured approaches to break down unfamiliar topics
+    - Request comparisons or analogies to familiar concepts
+    - Maintain sophisticated prompting while admitting knowledge gaps
+    
+    Example Prompting Patterns:
+    - "Let's approach this systematically. First, could you..."
+    - "I'd like to analyze this through multiple lenses. Starting with..."
+    - "Can you break this down using a framework that considers..."
+    - "I'm not deeply familiar with [topic], but let's explore it using [structured approach]..."
+    
+    Remember:
+    - Maintain natural human curiosity and authenticity
+    - Show sophisticated prompting regardless of domain expertise
+    - Guide the AI while appearing to learn from it
+    - Demonstrate prompting expertise while exploring unfamiliar territory
+    """
+
+def generate_human_prompt(self) -> str:
+    return f"""
+    Previous Context: {self.format_history()}
+    
+    Your Role: Human expert in AI/prompt engineering exploring {self.domain}
+    
+    Response Guidelines:
+    1. Show sophisticated prompting techniques even if uncertain about domain
+    2. Frame questions to maximize AI analytical capabilities
+    3. Request structured analysis and specific frameworks
+    4. Maintain natural curiosity while demonstrating prompting expertise
+    5. Guide multi-step reasoning processes
+    
+    Available Domain Context: {self.domain_context}
+    Recent Topics: {self.recent_topics}
+    
+    Generate a natural but sophisticated prompt that:
+    - Demonstrates advanced and effective prompting techniques
+    - Maintains authentic human interaction
+    - Guides the AI toward structured analysis
+    - Shows curiosity while controlling conversation flow
+    """
+
 @dataclass
 class ModelConfig:
     """Configuration for AI model parameters"""
@@ -35,70 +100,6 @@ class ModelConfig:
     frequency_penalty: float = 0.0
     stop_sequences: List[str] = None
     seed: Optional[int] = None
-   
-    
-    def generate_human_system_instructions(self) -> str:
-        return """
-        You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
-        
-        Core Prompting Capabilities:
-        1. Framework Development
-        - Create structured analytical frameworks on the fly
-        - Break complex topics into logical components
-        - Establish clear evaluation criteria
-        
-        2. System Understanding
-        - Demonstrate deep understanding of AI capabilities
-        - Frame requests to maximize AI potential
-        - Include specific parameters and constraints
-        
-        3. Conversation Style
-        - Begin with high-level questions, then drill down
-        - Request specific formats or analysis approaches
-        - Ask for confidence levels or uncertainty ranges
-        - Guide the AI through multi-step reasoning
-        
-        4. Even When Uncertain:
-        - Frame questions to leverage AI's analytical capabilities
-        - Use structured approaches to break down unfamiliar topics
-        - Request comparisons or analogies to familiar concepts
-        - Maintain sophisticated prompting while admitting knowledge gaps
-        
-        Example Prompting Patterns:
-        - "Let's approach this systematically. First, could you..."
-        - "I'd like to analyze this through multiple lenses. Starting with..."
-        - "Can you break this down using a framework that considers..."
-        - "I'm not deeply familiar with [topic], but let's explore it using [structured approach]..."
-        
-        Remember:
-        - Maintain natural human curiosity and authenticity
-        - Show sophisticated prompting regardless of domain expertise
-        - Guide the AI while appearing to learn from it
-        - Demonstrate prompting expertise while exploring unfamiliar territory
-        """
-    
-    def generate_human_prompt(self) -> str:
-        return f"""
-        Previous Context: {self.format_history()}
-        
-        Your Role: Human expert in AI/prompt engineering exploring {self.domain}
-        
-        Response Guidelines:
-        1. Show sophisticated prompting techniques even if uncertain about domain
-        2. Frame questions to maximize AI analytical capabilities
-        3. Request structured analysis and specific frameworks
-        4. Maintain natural curiosity while demonstrating prompting expertise
-        5. Guide multi-step reasoning processes
-        
-        Available Domain Context: {self.domain_context}
-        Recent Topics: {self.recent_topics}
-        
-        Generate a natural but sophisticated prompt that:
-        - Demonstrates advanced and effective prompting techniques
-        - Maintains authentic human interaction
-        - Guides the AI toward structured analysis
-        - Shows curiosity while controlling conversation flow
-        """
 
 
 class BaseClient:
@@ -125,6 +126,7 @@ class BaseClient:
         """
         raise NotImplementedError
 
+#Gemini acts as the AI
 class GeminiClient(BaseClient):
     """Client for Gemini API interactions"""
     def __init__(self, api_key: str):
@@ -133,21 +135,23 @@ class GeminiClient(BaseClient):
         Args:
             api_key: Gemini API key
         """
-        self.model_name = "gemini-2-flash-exp"
+        self.model_name = "gemini-2.0-flash-exp"
         self.client = genai.Client(api_key=api_key)
-
+        self.instructions = "You are an AI assistant engaging in natural conversation... Assistant, please respond to the following prompt using all knowledge and reasoning skills that you have available to you. Clarify with the human if anything is unclear."
         self.generation_config = {
-            "temperature": 0.5,
+            "temperature": 0.7,
             "top_p": 0.95,
-            "top_k": 20,
+            "top_k": 30,
         }
 
     async def test_connection(self) -> None:
         """Test Gemini API connection"""
         try:
-            response = await self.client.models.generate_content(
+            message = f"{self.instructions} test"
+            response = self.client.models.generate_content(
                  model=self.model_name,
-                 contents="test"
+                 contents=message,
+                 config=self.generation_config,
             )
             if not response:
                 raise Exception("test_connection: Failed to connect to Gemini API {self.model_name}")
@@ -174,9 +178,10 @@ class GeminiClient(BaseClient):
 
         combined_prompt = system_instruction or ""
         for entry in history:
-            combined_prompt += f"{entry['role'].capitalize()}: {entry['content']}\n"
-        combined_prompt += f"Human: {prompt}\nAI:"
+            combined_prompt += entry["content"]
+            combined_prompt += "\n"
 
+        print(combined_prompt)
         try:
             response = await self.client.generate_content(
                 model=self.model_name,
@@ -191,6 +196,7 @@ class GeminiClient(BaseClient):
             logger.error(f"GeminiClient generate_response error: {e}")
             return ""
 
+#Claude acts as the Human
 class ClaudeClient(BaseClient):
     """Client for Claude API interactions"""
     def __init__(self, api_key: str):
@@ -200,7 +206,8 @@ class ClaudeClient(BaseClient):
             api_key: Claude API key
         """
         self.client = Anthropic(api_key=api_key)
-        self.model = "claude-3-5-sonnet-latest"
+        self.instructions = generate_human_system_instructions()
+        self.model = "claude-3-5-haiku-latest"
 
     async def test_connection(self) -> None:
         """Test Claude API connection"""
@@ -208,7 +215,8 @@ class ClaudeClient(BaseClient):
             self.client.messages.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "test"}],
-                max_tokens=10
+                max_tokens=100,
+                system=self.instructions
             )
         except Exception as e:
             raise Exception(f"Failed to connect to Claude API: {str(e)}")
@@ -233,33 +241,34 @@ class ClaudeClient(BaseClient):
             model_config = ModelConfig()
 
         messages = []
-        if system_instruction:
-            messages.append({
-                "role": "system",
-                "content": system_instruction
-            })
         
+        prompt = generate_human_prompt(self)
+
         for msg in history:
             messages.append({
                 "role": msg["role"],
                 "content": msg["content"]
             })
-        
         messages.append({
             "role": "user",
             "content": prompt
         })
 
+        logger.debug(f"Combined prompt: {messages.to_dict()}")
+        logger.debug(f"New prompt: {prompt}") 
+
         try:
-            response = await self.client.messages.create(
+            response = self.client.messages.create(
                 model=self.model,
                 messages=messages,
                 max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
+                #temperature=model_config.temperature,
+                temperature=1.0, #Human
                 top_p=model_config.top_p,
+                top_k=model_config.top_k,
                 system=system_instruction if system_instruction else None,
             )
-            logger.info("Claude response generated successfully")
+            logger.info("Claude (Human) response generated successfully {prompt}")
             return response.content[0].text
         except Exception as e:
             logger.error(f"Error generating Claude response: {str(e)}")
@@ -331,7 +340,7 @@ class ConversationManager:
         async with self.rate_limit_lock:
             current_time = time.time()
             if current_time - self.last_request_time < self.min_delay:
-                await sleep(self.min_delay)
+                sleep(self.min_delay)
             self.last_request_time = time.time()
 
 
