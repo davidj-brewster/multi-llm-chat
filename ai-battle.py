@@ -133,8 +133,8 @@ class GeminiClient(BaseClient):
         Args:
             api_key: Gemini API key
         """
-        self.client = genai.Client(api_key=api_key)
         self.model_name = "gemini-2-flash-exp"
+        self.client = genai.Client(api_key=api_key)
 
         self.generation_config = {
             "temperature": 0.5,
@@ -150,10 +150,10 @@ class GeminiClient(BaseClient):
                  contents="test"
             )
             if not response:
-                raise Exception("test_connection: Failed to connect to Gemini API {model_name}")
+                raise Exception("test_connection: Failed to connect to Gemini API {self.model_name}")
             logger.info("GeminiClient connection validated")
         except Exception as e:
-            logger.error(f"test_connection: GeminiClient connection failed: {str(e)} {model_name}")
+            logger.error(f"test_connection: GeminiClient connection failed: {str(e)} {self.model_name}")
             raise
 
     async def generate_response(self,
