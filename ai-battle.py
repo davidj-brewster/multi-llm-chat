@@ -197,6 +197,7 @@ class GeminiClient(BaseClient):
             return ""
 
 #Claude acts as the Human
+@dataclass
 class ClaudeClient(BaseClient):
     """Client for Claude API interactions"""
     def __init__(self, api_key: str):
@@ -274,6 +275,30 @@ class ClaudeClient(BaseClient):
             logger.error(f"Error generating Claude response: {str(e)}")
             return f"Error generating Claude response: {str(e)}"
 
+    def format_history(self, history: List[Dict[str, str]] = None, system_instruction: str = None) -> str:
+        """Format conversation history for Claude API
+        
+        Args:
+            history: List of conversation turns
+            system_instruction: System instructions for Claude
+            
+        Returns:
+            str: Formatted conversation history
+        """
+        formatted = ""
+        
+        # Add system instruction if provided
+        if system_instruction:
+            formatted += f"\n\USER: {system_instruction}\n\ASSISTANT: I understand and will follow these instructions.\n\n"
+            
+        # Format conversation history
+        if history:
+            for msg in history:
+                role = "HUMAN" if msg["role"] == "user" else "Assistant"
+                formatted += f"\n\n{role}: {msg['content']}"
+                
+        return formatted.strip()
+
 class OpenAIClient(BaseClient):
     """Client for OpenAI API interactions"""
     def __init__(self, api_key: str, model: str = "gpt-3.5-turbo"):
@@ -305,7 +330,7 @@ class OpenAIClient(BaseClient):
         if system_instruction:
             messages.append({"role": "system", "content": system_instruction})
         for msg in history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": "user", "content": msg["content"]})
         messages.append({"role": "user", "content": prompt})
 
         try:
@@ -343,7 +368,6 @@ class ConversationManager:
                 sleep(self.min_delay)
             self.last_request_time = time.time()
 
-
     async def validate_connections(self) -> bool:
         """Validate all API connections
         
@@ -356,102 +380,48 @@ class ConversationManager:
         ])
 
     async def run_conversation_turn(self,
-                                    prompt: str,
-                                    system_instruction: str,
-                                    role: str,
-                                    model_type: str,
-                                    client: BaseClient) -> str:
-        """Single conversation turn with specified model."""
+                                  prompt: str,
+                                  system_instruction: str,
+                                  role: str,
+                                  model_type: str,
+                                  client: BaseClient) -> str:
+        """Single conversation turn with specified model and role."""
+        # Map roles consistently
+        mapped_role = "user" if role == "human" else "assistant"
+        
+        # Get response using full conversation history
         response = await client.generate_response(
             prompt=prompt,
             system_instruction=system_instruction,
-            history=self.conversation_history
+            history=self.conversation_history.copy()  # Pass copy to prevent modifications
         )
-        self.conversation_history.append({"role": role, "content": response})
+        
+        # Record the exchange with standardized roles
+        self.conversation_history.append({"role": mapped_role, "content": prompt})
+        self.conversation_history.append({"role": "assistant", "content": response})
+        
         return response
 
     async def run_conversation(self,
                              initial_prompt: str,
                              human_system_instruction: str,
                              ai_system_instruction: str,
+                             human_model: str = "claude",
+                             ai_model: str = "gemini",
                              rounds: int = 3) -> List[Dict[str, str]]:
-        """Run full conversation between models
+        """Run conversation ensuring proper role assignment and history maintenance."""
+        logger.info(f"Starting conversation with prompt: {initial_prompt}")
         
-        Args:
-            initial_prompt: Starting topic/prompt
-            human_system_instruction: Context for human role
-            ai_system_instruction: Context for AI role
-            rounds: Number of conversation rounds
-            
-        Returns:
-            List[Dict[str, str]]: Conversation history
-        """
-        logger.info(f"Starting conversation with prompt: {initial_prompt}")
-        print("\n=== Starting AI Conversation ===")
-        print(f"Topic: {initial_prompt}\n")
-
-        for round in range(rounds):
-            if self.is_paused:
-                choice = await self.human_intervention("Resume conversation?")
-                if choice == "stop":
-                    break
-                elif choice == "continue":
-                    self.is_paused = False
-                else:
-                    continue
-
-            # Human turn
-            human_response = await self.run_conversation_turn(
-                prompt=initial_prompt if round == 0 else "Continue the conversation naturally",
-                system_instruction=human_system_instruction,
-                role="human",
-                model_type="claude"
-            )
-            
-            self.conversation_history.append({
-                "role": "human",
-                "content": human_response
-            })
-            
-            print(f"\nHUMAN: {human_response}\n")
-            choice = await self.human_intervention(f"Generated human response shown above")
-            if choice != "continue":
-                continue
-
-            # AI turn
-            ai_response = await self.run_conversation_turn(
-                prompt=human_response,
-                system_instruction=ai_system_instruction,
-                role="assistant",
-                model_type="gemini"
-            )
-            
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": ai_response
-            })
-            
-            print(f"\nAI: {ai_response}\n")
-            choice = await self.human_intervention(f"Generated AI response shown above")
-            if choice == "stop":
-                break
-
-        return self.conversation_history
-
-    async def run_conversation(self,
-                               initial_prompt: str,
-                               human_system_instruction: str,
-                               ai_system_instruction: str,
-                               human_model: str = "claude",
-                               ai_model: str = "gemini",
-                               rounds: int = 3) -> List[Dict[str, str]]:
-        """Run full conversation with selectable models for 'human' and 'AI'."""
-
-        logger.info(f"Starting conversation with prompt: {initial_prompt}")
-        print("\n=== Starting AI Conversation ===")
-        print(f"Topic: {initial_prompt}\n")
-
-        # Model lookups
+        # Clear history at start of new conversation
+        self.conversation_history = []
+        
+        # Add system instructions if provided
+        if human_system_instruction:
+            self.conversation_history.append({"role": "system", "content": human_system_instruction})
+        if ai_system_instruction:
+            self.conversation_history.append({"role": "system", "content": ai_system_instruction})
+        
+        # Get client instances
         model_map = {
             "claude": self.claude_client,
             "gemini": self.gemini_client,
@@ -461,29 +431,15 @@ class ConversationManager:
         ai_client = model_map[ai_model]
 
         for round_index in range(rounds):
-            if self.is_paused:
-                choice = await self.human_intervention("Resume conversation?")
-                if choice == "stop":
-                    break
-                elif choice == "continue":
-                    self.is_paused = False
-                else:
-                    continue
-
-            # Human turn
+            # Human turn (using mapped role="user")
             human_response = await self.run_conversation_turn(
                 prompt=initial_prompt if round_index == 0 else "Continue the conversation naturally",
                 system_instruction=human_system_instruction,
-                role="human",
+                role="user",
                 model_type=human_model,
                 client=human_client
             )
-            self.conversation_history.append({"role": "human", "content": human_response})
             print(f"\nHUMAN ({human_model.upper()}): {human_response}\n")
-
-            choice = await self.human_intervention("Generated human response shown above")
-            if choice != "continue":
-                continue
 
             # AI turn
             ai_response = await self.run_conversation_turn(
@@ -493,12 +449,7 @@ class ConversationManager:
                 model_type=ai_model,
                 client=ai_client
             )
-            self.conversation_history.append({"role": "assistant", "content": ai_response})
             print(f"\nAI ({ai_model.upper()}): {ai_response}\n")
-
-            choice = await self.human_intervention("Generated AI response shown above")
-            if choice == "stop":
-                break
 
         return self.conversation_history
 
