@@ -145,15 +145,15 @@ class GeminiClient(BaseClient):
     async def test_connection(self) -> None:
         """Test Gemini API connection"""
         try:
-            response = await self.client.generate_content(
-                model=self.model_name,
-                prompt="test"
+            response = await self.client.models.generate_content(
+                 model=self.model_name,
+                 contents="test"
             )
             if not response:
-                raise Exception("test_connection: Failed to connect to Gemini API")
+                raise Exception("test_connection: Failed to connect to Gemini API {model_name}")
             logger.info("GeminiClient connection validated")
         except Exception as e:
-            logger.error(f"GeminiClient connection failed: {str(e)}")
+            logger.error(f"test_connection: GeminiClient connection failed: {str(e)} {model_name}")
             raise
 
     async def generate_response(self,
