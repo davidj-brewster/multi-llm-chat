@@ -853,7 +853,7 @@ def save_conversation(conversation: List[Dict[str, str]],
         messages_html.append(f"<p><b>{role_label}:</b> {content}</p>")
 
     html_content = html_template.format(
-        topic=conversation[0]["content"].text if conversation else "",
+        topic=conversation[0]["content"] if conversation else "",
         human_model=human_model,
         ai_model=ai_model,
         messages=messages_html
