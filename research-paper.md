@@ -1,4 +1,4 @@
-#AI Meta-Prompting: A Comparative Study of Conversational Quality and AI-to-AI Engagement
+# AI Meta-Prompting: A Comparative Study of Conversational Quality and AI-to-AI Engagement
 
 ## Executive Summary
 This study examines the impact of meta-prompting on AI-to-AI conversations, with a focus on conversational quality rather than prompting outcomes through structured dialectical engagement. By structuring AI-to-AI debates across multiple models—including GPT-4o, Gemini 2.0 Pro - Preview, Gemini 2.0 Flash Thinking Preview, Claude 3.5 Haiku, Claude 3.5 Sonnet, OpenAI O1-preview, Gemini 2.0 Flash, Llama 3.1:7B_Q8_0 (on Apple Silicon via MLX API), and Phi-4:14b-Q6_0 locally via Ollama API)—we assess whether AI performance is influenced more by the quality of structured discourse than by raw computational power or model scale.
