@@ -69,7 +69,7 @@ class ExtendedConversationManager(ConversationManager):
                 system_instruction=system_instructions.get("openai", ""),
                 role="assistant",
                 model_type="openai",
-                client=openai_client
+                client=
             )
             
             # Use OpenAI's response as input for next round
