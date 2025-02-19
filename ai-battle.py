@@ -51,17 +51,16 @@ class ModelConfig:
 class BaseClient:
     """Base class for AI clients with validation"""
     def __init__(self, mode:str, api_key: str, domain: str="",model="",role:str=""):#, mode: str = "human-aiai"):
-        #if not api_key or not api_key.strip():
-        #    raise ValueError("API key cannot be empty")
-            
-        self.api_key = api_key.strip()
+        self.api_key = api_key.strip() if api_key else ""
         self.domain = domain
-
         self.mode = mode
         self.role = role
-        #self.adaptive_manager = None
+        self.model = model
         self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
-        #self.instructions = self._get_initial_instructions()
+        self.instructions = None
+
+    def __str__(self):
+        return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
 
     async def _get_initial_instructions(self) -> str:
         """Get initial instructions before conversation history exists"""
@@ -274,20 +273,18 @@ Generate a natural but sophisticated prompt that:
 class GeminiClient(BaseClient):
     """Client for Gemini API interactions"""
     def __init__(self, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
-        """Initialize Gemini client with assertion verification capabilities
-            
-        Args:
-            api_key: Gemini API key
-            domain: Domain/topic of conversation
-            model: Model name to use
-        """
-        super().__init__(api_key, domain)
-        self.model_name = model
+        super().__init__(mode="ai-ai", api_key=api_key, domain=domain, model=model)
+        self.model_name = self.model
         try:
             self.client = genai.Client(api_key=self.api_key)
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             raise ValueError(f"Invalid Gemini API key: {e}")
+
+        # Initialize generation config
+        self._setup_generation_config()
+
+    def _setup_generation_config(self):
         self.generation_config = types.GenerateContentConfig(
             temperature = 0.7,
             maxOutputTokens=4096,
@@ -491,25 +488,9 @@ class GeminiClient(BaseClient):
 class ClaudeClient(BaseClient):
     """Client for Claude API interactions"""
     def __init__(self, role:str, api_key: str, mode:str, domain: str, model: str = "claude-3-5-sonnet-20241022"):
-        """Initialize Claude client
-        
-        Args:
-            api_key: Claude API key
-            domain: Domain/topic of conversation
-            model: Model name to use
-        """
-        super().__init__
-        try:
-            self.api_key = api_key
-            self.domain = domain
-            self.role = role
-            self.mode = mode
-            self.max_tokens = 16384
-            self.model = model
-            self.client = Anthropic(api_key=api_key)
-        except Exception as e:
-            logger.error(f"Failed to initialize Claude client: {e}")
-            raise ValueError(f"Invalid Claude API key: {e}")
+        super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
+        self.client = Anthropic(api_key=api_key)
+        self.max_tokens = 16384
 
     def _analyze_conversation(self, history: List[Dict[str, str]]) -> Dict:
         """Analyze conversation context to inform response generation"""
@@ -640,19 +621,8 @@ class ClaudeClient(BaseClient):
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "mistral-nemo:latest"):
-        """Initialize Ollama client
-        
-        Args:
-            domain: Domain/topic of conversation
-            model: Model name to use
-        """
-        # No API key needed for local models
-        self.model = model
-        self.mode = mode
-        self.role=role
-        self.domain = domain
+        super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434"
-        super().__init__  # Initialize adaptive instruction manager
         
     async def test_connection(self) -> None:
         """Test Ollama connection"""
@@ -717,21 +687,8 @@ class OllamaClient(BaseClient):
 class MLXClient(BaseClient):
     """Client for local MLX model interactions"""
     def __init__(self, mode:str, domain: str = "General knowledge", base_url: str = "http://localhost:9999", model: str = "mlx") -> None:
-        """Initialize MLX client
-        
-        Args:
-            domain: Domain/topic of conversation
-            base_url: Base URL for OpenAI-compatible endpoint
-            model: Model name to use
-        """
-        # No API key needed for local models
-        #self.adaptive_manager=None
-        self.mode = mode
-        self.domain = domain
-        self.model = model
-        self.base_url = base_url
-        self.base_url = "http://localhost:9999"  # OpenAI-compatible endpoint
-        super().__init__  # Initialize adaptive instruction manager
+        super().__init__(mode=mode, api_key="", domain=domain, model=model)
+        self.base_url = base_url or "http://localhost:9999"
         
         #await super().__init__(mode=mode, api_key="local", domain=domain)
         #self.adaptive_manager=super().adaptive_manager(mode=self.mode)
@@ -803,15 +760,9 @@ class MLXClient(BaseClient):
 
 class OpenAIClient(BaseClient):
     """Client for OpenAI API interactions"""
-    #def __init__(self, api_key: str, model: str = "gpt-4o", domain: str = "General knowledge"):
     def __init__(self, api_key: str=openai_api_key, mode:str="ai-ai", domain: str = "General Knowledge", role:str=None, model: str = "chatgpt-4o-latest"):
-        super().__init__
         try:
-            ##openai.api_key = self.api_key
-            self.model = model
-            self.domain=domain
-            self.mode=mode
-            self.role=role
+            super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
             raise ValueError(f"Invalid OpenAI API key or model: {e}")
@@ -1654,4 +1605,16 @@ async def main():
     # 13. The streamlit UI is not really implemented
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Test client initialization
+    async def test_clients():
+        try:
+            print('Testing client initialization...')
+            ollama = OllamaClient(mode='ai-ai', domain='test')
+            print(f'Ollama client initialized: {ollama}')
+            claude = ClaudeClient(role='user', api_key='test', mode='ai-ai', domain='test')
+            print(f'Claude client initialized: {claude}')
+            return # Skip conversation tests
+        except Exception as e:
+            print(f'Error testing clients: {e}')
+
+    asyncio.run(test_clients())
