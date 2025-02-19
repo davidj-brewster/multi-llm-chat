@@ -105,7 +105,8 @@ class AdaptiveInstructionManager:
         if self.mode == "ai-ai":
             # Add mode-specific formatting for AI-AI conversations
             instructions = template.format(domain=domain).strip() + """
-            Format responses with clear structure and explicit reasoning steps."""
+            Format responses with clear structure and explicit reasoning steps.
+            In your responses, set the example by adding highly relevant information, checking previous context and making inferences that might not have been apparent, and even hypothesising about the subtle or explicit meanings of particular statements, events, or themes within the context of the conversation. Also bring in new and fresh information tightly related to the AIs responses, particularly when it might challenge any assertions/assumptions of the AI, but in general to keep a strong human-human like interaction and sharing of ideas, building of knowledge happening. Exercise deep reasoning when applicable to enhance this further."""
 
         instructions = template.format(domain=domain).strip()
         

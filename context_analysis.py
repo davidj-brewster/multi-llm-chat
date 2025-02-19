@@ -40,8 +40,8 @@ class ContextAnalyzer:
         #    logger.warning("spaCy not available, falling back to basic analysis")
             
         self.reasoning_patterns = {
-            'deductive': r'therefore|thus|hence|consequently',
-            'inductive': r'generally|typically|usually|tends to',
+            'deductive': r'therefore|thus|hence|consequently|as a result|it follows that|by definition',
+            'inductive': r'generally|typically|usually|tends to|often|in most cases|frequently|commonly|regularly',
             'abductive': r'best explanation|most likely|probably because',
             'analogical': r'similar to|like|analogous|comparable',
             'causal': r'because|since|due to|results in'
@@ -149,6 +149,7 @@ class ContextAnalyzer:
             
             # Normalize by message count (safe since we checked for empty history)
             msg_count = len(history)
+            logger.info("Response patterns: {{k: v/msg_count for k, v in patterns.items()}}")
             return {k: v/msg_count for k, v in patterns.items()}
         except Exception as e:
             logger.error(f"Error analyzing response patterns: {e}")
@@ -331,9 +332,9 @@ class ContextAnalyzer:
         }
         
         try:
-            uncertainty_patterns = r'maybe|perhaps|might|could|possibly|unsure'
-            confidence_patterns = r'definitely|certainly|clearly|obviously|undoubtedly'
-            qualification_patterns = r'however|although|but|except|unless'
+            uncertainty_patterns = r'maybe|perhaps|might|could|possibly|unsure|potentially|theoretically|probably'
+            confidence_patterns = r'definitely|certainly|clearly|obviously|undoubtedly|even if|regardless|always'
+            qualification_patterns = r'however|although|but|except|unless|only if'
             
             for content in contents[-3:]:  # Focus on recent messages
                 markers['uncertainty'] += len(re.findall(uncertainty_patterns, 
@@ -344,6 +345,7 @@ class ContextAnalyzer:
                                                          content.lower()))
                 
             # Normalize by message count
+            logger.info("_detect_uncertainty: " + ''.join(contents) + f": {markers}")
             return {k: v/3 for k, v in markers.items()}
         except Exception as e:
             logger.error(f"Error detecting uncertainty: {e}")

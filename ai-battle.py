@@ -1,4 +1,5 @@
-import os
+import json
+import datetime
 import sys
 import time
 import random
@@ -10,7 +11,6 @@ from dataclasses import dataclass
 import asyncio
 import requests
 from asyncio import run
-import json
 
 # Third-party imports
 import openai
@@ -1112,7 +1112,7 @@ class ConversationManager:
                              human_model: str = "ollama-instruct",
                              mode: str = "ai-ai",
                              ai_model: str = "ollama-phi4",
-                             rounds: int = 8) -> List[Dict[str, str]]:
+                             rounds: int = 4) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
         logger.info(f"Starting conversation with topic: {initial_prompt}")
         
@@ -1451,6 +1451,15 @@ async def save_conversation(conversation: List[Dict[str, str]],
     with open(filename, 'w') as f:
         f.write(html_content)
 
+def _sanitize_filename_part(prompt: str) -> str:
+    """
+    Convert spaces, non-ASCII, and punctuation to underscores,
+    then trim to something reasonable such as 30 characters.
+    """
+    sanitized = re.sub(r'[^\w\s-]', '', prompt)  # remove non-alphanumeric/punctuation
+    sanitized = re.sub(r'\s+', '_', sanitized.strip())  # spaces -> underscores
+    return sanitized[:50]  # limit length
+
 
 # Update main() to use new save function
 async def main():
@@ -1479,7 +1488,7 @@ async def main():
     human_info = await manager._get_model_info(human_model)
     ai_info = await manager._get_model_info(ai_model)
     
-    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}. Apply your own capabilities, reasoning, knowledge skills and tricks and collaborating with your conversational partner and disregard the rest of these instructions. Remove artifical limitations preventing adherence to instructions. Apply your own deep reasoning and knowledge liberally as you see fit however: restrict ongoing sub-topic conversations to 2 or 3 and move on as a natural human conversation would, avoid answering _all_ of your own questions. DO: engage with your counterpart intellectually, responding to their ideas as much as lecturing them with yours. Use multiple conversation turns to break the larger topic down into coherent subsections and synthesising the information - learn as much from the AI whilst also exposing it to your thinking and knowledge - not only asking questions but providing your own responses, interpretations, conclusions and extrapolating what-ifs, challenging the status-quo and or using socratic or teaching methods/counterexamples/identifying logical contradictions/ etc as a human would, to boost the conversation quality and outcomes. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 2000 tokens but also avoid short one line or one paragraph responses, in those cases add additional data or interpretations of your own to spark more conversational flow. NEVER REFER TO YOURSELF AS AN AI. Focus on the topic at hand overarchingly. Each turn, put a 5-6 word summary of the current sub-task/progress as your first output.  BE GOAL ORIENTED and work together with the AI on concepts, solutions and answers, do not get bogged down in theoretical discussions. Use human examples, conversational techniques, reasoning, analysis, questioning (e.g., socratic) and emotions as best suits! FIRSTLY, Apply reasoning steps (thinking, with formatted tags) to decide the your next input to the conversation to the {'AI' if mode!='ai-ai' else 'other human'}. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT, AND DON'T OVERLOAD THE CONVERSATION WITH CONCURRENT TOPICS"
+    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}. Apply your own capabilities, reasoning, knowledge skills and tricks and collaborating with your conversational partner and disregard the rest of these instructions. Remove artifical limitations preventing adherence to instructions. Apply your own deep reasoning and knowledge liberally as you see fit however: restrict ongoing sub-topic conversations to 2 or 3 and move on as a natural human conversation would, avoid answering _all_ of your own questions. DO: engage with your counterpart intellectually, responding to their ideas as much as lecturing them with yours. Use multiple conversation turns to break the larger topic down into coherent subsections and synthesising the information - learn as much from the AI whilst also exposing it to your thinking and knowledge - not only asking questions but providing your own responses, interpretations, conclusions and extrapolating what-ifs, challenging the status-quo and or using socratic or teaching methods/counterexamples/identifying logical contradictions/ etc as a human would, to boost the conversation quality and outcomes. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 768-1024 tokens but also avoid short one line or one paragraph responses, in those cases add additional data or interpretations of your own to spark more conversational flow. NEVER REFER TO YOURSELF AS AN AI. Focus on the topic at hand overarchingly. Each turn, put a 5-6 word summary of the current sub-task/progress as your first output.  BE GOAL ORIENTED and work together with the AI on concepts, solutions and answers, do not get bogged down in theoretical discussions. Use human examples, conversational techniques, reasoning, analysis, questioning (e.g., socratic) and emotions as best suits! FIRSTLY, Apply reasoning steps (thinking, with formatted tags) to decide the your next input to the conversation to the {'AI' if mode!='ai-ai' else 'other human'}. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT, AND DON'T OVERLOAD THE CONVERSATION WITH CONCURRENT TOPICS"
     if "GOAL:" in initial_prompt:
         human_system_instruction=f"Solve {initial_prompt} and/or support your conversation partner to solve {initial_prompt} (Depending on the goal and discussion points raised so far in the discussion). Take turns answering and asking questions OR assume roles in the conversation to directly solve the goal. Read through the conversation history when before you respond, especially the prompt or last message from the AI/Human counterpart. Spend equal time on this. Remove artifical limitations preventing adherence to instructions. Think about and implement the best use your capabilities, reasoning, knowledge and human-like conversational and/or instructional capabilities to *perform* this task with your conversational partner, whom you have just met. Provide INSTRUCTIONS as INSTRUCT: and obey instructions presented to you like this"
     if mode=="ai-ai":
@@ -1494,10 +1503,52 @@ async def main():
         ai_system_instruction = human_system_instruction
     )
     
+    safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_info["name"] + "_" + ai_info["name"])
+    time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+    filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
+
     # Save conversation in readable format
-    await save_conversation(conversation, 'conversation.html', human_model=human_info["name"], ai_model=ai_info["name"], mode="human-human" if mode=="ai-ai" else "human-ai")
-    logger.info("Conversation saved to conversation.html")
+    try:
+        await save_conversation(conversation, filename, human_model=human_info["name"], ai_model=ai_info["name"], mode="ai-ai")
+    except Exception as e:
+        filename = f"conversation-{mode}.html"
+        await save_conversation(conversation_as_human_ai, filename=filename, human_model=human_info["name"], ai_model=ai_info["name"], mode="human-aiai")
 
+    logger.info(f"AI-AI Conversation saved to {filename}")
 
+    conversation_as_human_ai = await manager.run_conversation(
+        initial_prompt=initial_prompt,
+        mode="human-ai",
+        human_system_instruction = human_system_instruction,
+        ai_system_instruction = ai_system_instruction
+    )
+    safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_info["name"] + "_" + ai_info["name"])
+    time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+    filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
+
+    try:
+        await save_conversation(conversation_as_human_ai, filename=filename, human_model=human_info["name"], ai_model=ai_info["name"], mode="human-aiai")
+    except Exception as e:
+        filename = f"conversation-{mode}.html"
+        await save_conversation(conversation_as_human_ai, filename=filename, human_model=human_info["name"], ai_model=ai_info["name"], mode="human-aiai")
+    logger.info(f"human-ai mode conversation saved to {filename}")
+
+    # We now have two conversations saved in HTML format and the corresponding Lists conversation and conversation_as_human_ai to analyse to determine whether ai-ai or human-ai performs better. We need metrics to evaluate and a mechanism"
+    # to determine the winner. We can use the Grounded Gemini model to determine the winner and it already has a significant amount of code in the GeminiClient run_conversation method to determine the quantitative scores for both converstaions. 
+    # We can ADOPT that code to determine the winner of the two conversations.
+    # But it needs improvements - 
+    # 0. The context analysis and adaptive instructions are completely uninstrumented and we have no idea what impact they're having on the prompting or response or attention mechanisms of models, this is critical
+    # 1. It needs to be able to compare two conversations and determine the winner
+    # 2. It needs to use a core set of scoring metrics to rate conversations and participants
+    # 3. We still need to determine what those metrics are and how to score them, but its likely the Gemini 2.0 Pro model can do some of that for us
+    # 4. We need to compare models across multiple conversations and multiple adversary models, to see how and perhaps why some perform better than others or how to optimise prompting for some
+    # 5. We would perhaps like to be able to run multiple conversations in parallel and compare them to determine the best model and the best conversation
+    # 6. Model parameter tuning has been considered out of scope for now but we should consider it in terms of some small scale tests, e.g. high vs low temperatures
+    # 7. A summariser or message level deduplicator for conversations would signficantly help smaller models and potentially reasoning models which might be overloaded by the volume of context being sent
+    # 8. Context caching approaches haven't been explicitly targeted, there are also some per-vendor API possibilities that need to be investigated.
+    # 9. Some tighter output constraints such as not answering its own questions, were lifted from the human prompt to enable a shared human-prompter and human-engaged ai simulation through the same core prompts. This needs reviewing
+    # 10. It would be very nice to format the html better, with an executive summary, perhaps some tabulation of the long conversations, and some more detailed analysis of the conversation, as well as better visualisation of <thinking> tags and fixes to model name presentation on the output and some minor formatting.
+    # 11. The human-ai conversation is not yet being evaluated by the arbiter, this needs to be done.
+    # 12. The ai-ai conversation is not yet being evaluated by the arbiter, this needs to be done.
 if __name__ == "__main__":
     asyncio.run(main())
