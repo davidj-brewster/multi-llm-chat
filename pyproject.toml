@@ -47,6 +47,7 @@ dependencies = [
     "multidict==6.1.0",
     "narwhals==1.23.0",
     "numpy==2.2.2",
+    "ollama>=0.4.7",
     "openai==0.28.0",
     "packaging==24.2",
     "pandas==2.2.3",
