@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 import sys
 import time
@@ -910,9 +909,9 @@ class ConversationManager:
     async def run_conversation_turn(self,
                                   prompt: str,
                                   system_instruction: str,
-                                  role: str,
                                   model_type: str,
-                                  client: BaseClient) -> str:
+                                  client: BaseClient,
+                                  role: str = "user") -> str:
         """Single conversation turn with specified model and role."""
         # Map roles consistently
         mapped_role = "user" if (role == "human" or role == "HUMAN" or role == "user")  else "assistant"
@@ -924,14 +923,14 @@ class ConversationManager:
             if mapped_role == "user":
                 response = await client.generate_response(
                     prompt=prompt,
-                    system_instruction=system_instruction,
+                    system_instruction=client._get_mode_aware_instructions(role="user"),
                     history=self.conversation_history.copy()  # Pass copy to prevent modifications
                 )
             else:
                 response = await client.generate_response(
                     prompt=prompt,
-                    system_instruction=system_instruction,
-                    history=self.conversation_history.copy()  # Pass copy to prevent modifications
+                    system_instruction=client._get_mode_aware_instructions(role="assistant"),
+                    history=self.conversation_history.copy()
                 )
 
             # Handle different response formats
@@ -1313,10 +1312,14 @@ async def main():
 
     human_info = manager._get_model_info(human_model)
     ai_info = manager._get_model_info(ai_model)
+    human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {initial_prompt}. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 1200 tokens. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION AND YOU ARE A BIT OF A GRUMPY SOD. DON'T USE TEXT BLOCKS OR NEWLINE CHARACTERS IN YOUR RESPONSE. Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. Each turn, put a quick summary of the current task/progress as your first output.  BE GOAL ORIENTED and demand actual working solutions and answers from the AI, do not get bogged down in ideological or philosophical/theoretical discussions. Be angry if you need to!! FIRSTLY, SUMMARIZE THE GOAL ({initial_prompt}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. Apply reasoning steps (thinking, with tags if needed) to decide the next set of prompts to ask the AI. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT",
+    ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {initial_prompt}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  Restrict outputs to approx 512 tokens.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
+
     conversation = await manager.run_conversation(
         initial_prompt=initial_prompt,
-        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {initial_prompt}. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 1200 tokens. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION AND YOU ARE A BIT OF A GRUMPY SOD. DON'T USE TEXT BLOCKS OR NEWLINE CHARACTERS IN YOUR RESPONSE. Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. Each turn, put a quick summary of the current task/progress as your first output.  BE GOAL ORIENTED and demand actual working solutions and answers from the AI, do not get bogged down in ideological or philosophical/theoretical discussions. Be angry if you need to!! FIRSTLY, SUMMARIZE THE GOAL ({initial_prompt}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. Apply reasoning steps (thinking, with tags if needed) to decide the next set of prompts to ask the AI. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT",
-        ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {initial_prompt}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  Restrict outputs to approx 512 tokens.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
+        mode="human-ai",
+        human_system_instruction = human_system_instruction,
+        ai_system_instruction = ai_system_instruction
     )
     
     # Save conversation in readable format
@@ -1325,4 +1328,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    run(main())
+    asyncio.run(main())
