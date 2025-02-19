@@ -42,7 +42,7 @@ mlx-lm==0.21.1
 multidict==6.1.0
 narwhals==1.23.0
 numpy
-openai==0.28.0
+openai>=1.63.2
 packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
@@ -86,3 +86,4 @@ urllib3==2.3.0
 watchdog==6.0.0 ; sys_platform != 'darwin'
 websockets==14.2
 yarl==1.18.3
+ollama
