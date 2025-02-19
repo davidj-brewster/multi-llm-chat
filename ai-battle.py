@@ -690,9 +690,9 @@ class OllamaClient(BaseClient):
                 messages=history,
                 stream=True, 
                 options = {
-                    "num_ctx": 10240, 
-                    "num_predict": 1024, 
-                    "temperature": 0.55
+                    "num_ctx": 8192, 
+                    "num_predict": 768, 
+                    "temperature": 0.6
                     }
                 ):
                 #print(part['message']['content'], end='', flush=True)
@@ -1068,9 +1068,9 @@ class ConversationManager:
             response = prompt
             if mapped_role == "user" or self.mode=="ai-ai":
                 response = await client.generate_response(
-                    prompt=response if response else prompt,
-                    system_instruction=system_instruction + ("1" if role=="user" else "2"),#await client._get_mode_aware_instructions(role="assistant"),
-                    #system_instruction=await client._get_mode_aware_instructions(role="user"),
+                    prompt= prompt,
+                    #system_instruction=system_instruction + ("1" if role=="user" else "2"),#await client._get_mode_aware_instructions(role="assistant"),
+                    system_instruction=await client._get_mode_aware_instructions(role="user"),
                     history=self.conversation_history.copy(),  # Pass copy to prevent modifications
                     role=role
                 )
@@ -1090,7 +1090,7 @@ class ConversationManager:
 
                 response = await client.generate_response(
                     prompt=response,#                   system_instruction=client._get_mode_aware_instructions(role="assistant"),
-                    system_instruction=system_instruction,#await client._get_mode_aware_instructions(role="user"),
+                    system_instruction=await client._get_mode_aware_instructions(role="user"),#await client._get_mode_aware_instructions(role="user"),
                     history=reversed_history
                 )
         # Record the exchange with standardized roles
@@ -1109,10 +1109,10 @@ class ConversationManager:
                              initial_prompt: str,
                              human_system_instruction: str,
                              ai_system_instruction: str,
-                             human_model: str = "ollama-abliterated",
+                             human_model: str = "ollama-instruct",
                              mode: str = "ai-ai",
                              ai_model: str = "ollama-phi4",
-                             rounds: int = 6) -> List[Dict[str, str]]:
+                             rounds: int = 8) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
         logger.info(f"Starting conversation with topic: {initial_prompt}")
         
@@ -1407,7 +1407,7 @@ async def save_conversation(conversation: List[Dict[str, str]],
         # Determine role and model
         is_human = (msg["role"] == "user" or msg["role"] == "human")
         role_label = "Human" if is_human else "AI"
-        ai_role_label = "Human (2)" if mode=="ai-ai" else "AI"
+        role_label = "Human (2)" if mode=="ai-ai" and not is_human else "AI"
         #model_label = human_model if is_human else ai_model
         #model_provider = "anthropic" if is_human else "google"
         
