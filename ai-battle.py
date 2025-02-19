@@ -46,7 +46,7 @@ class ModelConfig:
 
 class BaseClient:
     """Base class for AI clients with validation"""
-    def __init__(self, api_key: str, domain: str):
+    def __init__(self, api_key: str, domain: str, mode: str = "human-ai"):
         if not api_key or not api_key.strip():
             raise ValueError("API key cannot be empty")
             
@@ -54,6 +54,7 @@ class BaseClient:
         self.domain = domain
         self.adaptive_manager = AdaptiveInstructionManager()
         self.instructions = self._get_initial_instructions()
+        self.mode = mode
 
     def _get_initial_instructions(self) -> str:
         """Get initial instructions before conversation history exists"""
@@ -62,6 +63,24 @@ class BaseClient:
     def _update_instructions(self, history: List[Dict[str, str]]) -> str:
         """Update instructions based on conversation context"""
         return self.adaptive_manager.generate_instructions(history, self.domain)
+
+    def _get_mode_aware_instructions(self, role: str) -> str:
+        """Get instructions based on conversation mode and role"""
+        base_instructions = self.generate_human_system_instructions()
+        prompt_instructions = self.generate_human_prompt()
+        
+        if self.mode == "ai-ai-separate":
+            if role == "user":
+                # AI acting as human, knows it's an AI but thinks it's talking to a human
+                meta_knowledge = """You are an AI instructed to act as a human expert.
+                Maintain this simulation completely - the person you're talking to is a real human expert.
+                Never reveal that you are an AI."""
+                return f"{meta_knowledge}\n{base_instructions}\n{prompt_instructions}"
+            else:
+                # AI assistant, knows it's an AI but thinks it's talking to a human
+                return base_instructions
+        
+        return base_instructions
 
     def generate_human_system_instructions(self) -> str:
         """Generate sophisticated system instructions for human-like prompting behavior"""
@@ -768,6 +787,7 @@ class ConversationManager:
     def __init__(self,
                  domain: str = "General knowledge",
                  human_delay: float = 20.0,
+                 mode: str = "human-ai",
                  min_delay: float = 10,
                  gemini_api_key: Optional[str] = None,
                  claude_api_key: Optional[str] = None,
@@ -775,6 +795,7 @@ class ConversationManager:
                  mlx_base_url: Optional[str] = "http://127.0.0.1:10434/v1/chat/completions"):
         self.domain = domain
         self.human_delay = human_delay
+        self.mode = mode  # "human-ai" or "ai-ai-separate"
         self.min_delay = min_delay
         self.conversation_history: List[Dict[str, str]] = []
         self.is_paused = False
@@ -932,6 +953,7 @@ class ConversationManager:
                              human_system_instruction: str,
                              ai_system_instruction: str,
                              human_model: str = "ollama",
+                             mode: str = "human-ai",
                              ai_model: str = "ollama",
                              rounds: int = 2) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
@@ -941,6 +963,7 @@ class ConversationManager:
         self.conversation_history = []
         self.initial_prompt = initial_prompt
         self.domain = initial_prompt
+        self.mode = mode
         
         # Extract core topic from initial prompt if it contains system instructions
         core_topic = initial_prompt
@@ -973,6 +996,7 @@ class ConversationManager:
                 prompt=initial_prompt if round_index == 0 else ai_response,
                 system_instruction=human_system_instruction,
                 role="user",
+                mode=self.mode,
                 model_type=human_model,
                 client=human_client
             )
@@ -983,6 +1007,7 @@ class ConversationManager:
                 prompt=human_response,
                 system_instruction=ai_system_instruction,
                 role="assistant",
+                mode=self.mode,
                 model_type=ai_model,
                 client=ai_client
             )
