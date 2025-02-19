@@ -62,40 +62,40 @@ class BaseClient:
     def __str__(self):
         return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
 
-    async def _get_initial_instructions(self) -> str:
+    def _get_initial_instructions(self) -> str:
         """Get initial instructions before conversation history exists"""
         if self.adaptive_manager is None:
             self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
-        return await  self._get_mode_aware_instructions(self.domain)
+        return self._get_mode_aware_instructions(self.domain)
 
-    async def _update_instructions(self, history: List[Dict[str, str]]) -> str:
+    def _update_instructions(self, history: List[Dict[str, str]]) -> str:
         """Update instructions based on conversation context"""
         if self.adaptive_manager is None:
             self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
-        return await self.adaptive_manager.generate_instructions(history, self.domain)
+        return self.adaptive_manager.generate_instructions(history, self.domain)
 
-    async def _get_mode_aware_instructions(self, role: str=None, mode:str=None) -> str:
+    def _get_mode_aware_instructions(self, role: str=None, mode:str=None) -> str:
         """Get instructions based on conversation mode and role"""
         #base_instructions = self.generate_human_system_instructions()
         human_instructions = ""
         if role and role is not None:
             if role == "human":
-                human_instructions = await self.generate_human_prompt()
+                human_instructions = self.generate_human_prompt()
                 return human_instructions
         if self.mode and self.mode == "ai-ai":
-            human_instructions = await self.generate_human_prompt()
+            human_instructions = self.generate_human_prompt()
             return human_instructions
             # AI acting as human, knows it's an AI but thinks it's talking to a human, both sides
         else: #if self.mode == "human-aiai":
             if role == "user" or role == "human":
-                human_instructions = await self.generate_human_prompt()
+                human_instructions = self.generate_human_prompt()
                 return human_instructions
             else:
                 # ONE AI assistant, knows it's an AI but thinks it's talking to a human
                 return "You are an AI assistant interacting with a human."
         return ""
     
-    async def generate_human_system_instructions(self) -> str:
+    def generate_human_system_instructions(self) -> str:
         """Generate sophisticated system instructions for human-like prompting behavior"""
         return f"""You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
 
@@ -157,7 +157,7 @@ Remember:
 - Try several prompting approaches throughout the conversation to see what works best.
 """
     
-    async def generate_human_system_instructions(self) -> str:
+    def generate_human_system_instructions(self) -> str:
         """Generate sophisticated system instructions for human-like prompting behavior"""
         return f"""You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
 
@@ -219,7 +219,7 @@ Remember:
 """
 
 
-    async def generate_human_prompt(self, history: str = None) -> str:
+    def generate_human_prompt(self, history: str = None) -> str:
         """Generate sophisticated human-like prompts based on conversation history"""
         #history_records = len(history) if history else 0
         
@@ -261,7 +261,7 @@ Generate a natural but sophisticated prompt that:
             logger.error(f"{self.__class__.__name__} connection failed: {str(e)}")
             return False
 
-    async def test_connection(self) -> None:
+    async async def test_connection(self) -> None:
         """Test API connection with minimal request
         
         Raises:
@@ -330,7 +330,7 @@ class GeminiClient(BaseClient):
             self.instructions = await self._get_initial_instructions()
 
         # Update instructions based on conversation history
-        current_instructions = await self._update_instructions(history)
+        current_instructions = self._update_instructions(history)
 
         # Build conversation context for assessment
         conversation_context = []
@@ -624,7 +624,7 @@ class OllamaClient(BaseClient):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434"
         
-    async def test_connection(self) -> None:
+    async async def test_connection(self) -> None:
         """Test Ollama connection"""
         #TODO: Implement actual Ollama connection test
         logger.info("Ollama connection test not yet implemented")
@@ -694,7 +694,7 @@ class MLXClient(BaseClient):
         #self.adaptive_manager=super().adaptive_manager(mode=self.mode)
         
         
-    async def test_connection(self) -> None:
+    async async def test_connection(self) -> None:
         """Test MLX connection through OpenAI-compatible endpoint"""
         try:
             response = requests.post(
@@ -788,9 +788,9 @@ class OpenAIClient(BaseClient):
 
         current_instructions = system_instruction
         if history and role == "user":
-            current_instructions = await self._update_instructions(history)
+            current_instructions = self._update_instructions(history)
         elif role == "user":
-            current_instructions = await self._get_initial_instructions()
+            current_instructions = self._get_initial_instructions()
         else:
             current_instructions = prompt
 
@@ -814,7 +814,7 @@ class OpenAIClient(BaseClient):
         #logger.info(f"Using instructions: {current_instructions}, len(messages): {len(messages)} context history messages to be sent to model")
         #logger.debug(f"Messages: {messages}")
         
-        self.client = OpenAI(api_key=openai_api_key)  # Create client instance
+        self.client = OpenAI(api_key=self.api_key)  # Create client instance
 
         try:
             
@@ -871,8 +871,8 @@ class ConversationManager:
         #self.mlx_base_url = mlx_base_url
 
         # Initialize all clients with their specific models
-        self.claude_client = ClaudeClient(api_key=claude_api_key, mode=mode,  domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
-        self.haiku_client = ClaudeClient(api_key=claude_api_key, mode=mode,  domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
+        self.claude_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
+        self.haiku_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
         
         self.openai_o1_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model='o1-preview') if openai_api_key else None
         self.openai_4o_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model="chatgpt-4o-latest") if openai_api_key else None
@@ -932,8 +932,8 @@ class ConversationManager:
 
         # Perform async initializations here
         if claude_api_key:
-            self.claude_client = await ClaudeClient(api_key=claude_api_key, domain=domain, model="claude-3-5-sonnet-20241022")
-            self.haiku_client = await ClaudeClient(api_key=claude_api_key, domain=domain, model="claude-3.5-haiku-20241022")
+            self.claude_client = await ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3-5-sonnet-20241022")
+            self.haiku_client = await ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3.5-haiku-20241022")
         if openai_api_key:
             self.openai_o1_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1')
             self.openai_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="gpt-4o")
@@ -941,16 +941,15 @@ class ConversationManager:
             self.openai_4o_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='gpt-4o-mini-2024-07-18')
             self.openai_o1_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1-mini-2024-09-12')
         if gemini_api_key:
-            self.gemini_2_reasoning_client = await GeminiClient(api_key=gemini_api_key, domain=domain,
-                                                                model="gemini-2.0-flash-thinking-exp-01-21")
-            self.gemini_client = await GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp')
-            self.gemini_1206_client = await GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206')
+            self.gemini_2_reasoning_client = GeminiClient(api_key=gemini_api_key, domain=domain, model="gemini-2.0-flash-thinking-exp-01-21") if gemini_api_key else None
+            self.gemini_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
+            self.gemini_1206_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
 
-        self.ollama_phi4_client = await OllamaClient(mode=mode, domain=domain, model='phi4:latest')
-        self.ollama_client = await OllamaClient(mode=mode, domain=domain, model='mistral-nemo:latest')
-        self.ollama_lexi_client = await OllamaClient(mode=mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
-        self.ollama_instruct_client = await OllamaClient(mode=mode, domain=domain, model='llama3.2:3b-instruct-q8_0')
-        self.ollama_abliterated_client = await OllamaClient(mode=mode, domain=domain, model="mannix/llama3.1-8b-abliterated:latest")
+        self.ollama_phi4_client = OllamaClient(mode=mode, domain=domain, model='phi4:latest')
+        self.ollama_client = OllamaClient(mode=mode, domain=domain, model='mistral-nemo:latest')
+        self.ollama_lexi_client = OllamaClient(mode=mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
+        self.ollama_instruct_client = OllamaClient(mode=mode, domain=domain, model='llama3.2:3b-instruct-q8_0')
+        self.ollama_abliterated_client = OllamaClient(mode=mode, domain=domain, model="mannix/llama3.1-8b-abliterated:latest")
 
         # Initialize model_map here
         self.model_map = {
@@ -973,7 +972,7 @@ class ConversationManager:
         }
         return self
 
-    async def _get_model_info(self, model_name: str) -> Dict[str, str]:
+    def _get_model_info(self, model_name: str) -> Dict[str, str]:
         """Get model provider and name"""
         providers = {
             "claude": "claude",
@@ -1136,8 +1135,8 @@ class ConversationManager:
         for round_index in range(rounds):
             # Human turn
             human_response = await self.run_conversation_turn(
-                prompt=await human_client.generate_human_prompt(self.conversation_history.copy()),
-                system_instruction=await human_client._get_mode_aware_instructions(mode=mode,role="user"), ##,
+                prompt=human_client.generate_human_prompt(self.conversation_history.copy()),
+                system_instruction=await human_client._get_mode_aware_instructions(mode=mode, role="user"), ##,
                 role="user",
                 mode=self.mode,
                 model_type=human_model,
@@ -1173,10 +1172,9 @@ class ConversationManager:
             self.openai_4o_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='gpt-4o-mini-2024-07-18')
             self.openai_o1_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1-mini-2024-09-12')
         if gemini_api_key:
-            self.gemini_2_reasoning_client = await GeminiClient(api_key=gemini_api_key, domain=domain,
-                                                                model="gemini-2.0-flash-thinking-exp-01-21")
-            self.gemini_client = await GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp')
-            self.gemini_1206_client = await GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206')
+            self.gemini_2_reasoning_client = GeminiClient(api_key=gemini_api_key, domain=domain, model="gemini-2.0-flash-thinking-exp-01-21") if gemini_api_key else None
+            self.gemini_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
+            self.gemini_1206_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
 
         self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi4:latest')
         self.ollama_client =  OllamaClient(mode=self.mode, domain=domain, model='mistral-nemo:latest')
@@ -1217,7 +1215,7 @@ class ConversationManager:
         # Initialize local models on first use
         if "ollama" in model_name:
             try:
-                self.model_map[model_name] = await OllamaClient(mode=self.mode, domain=self.domain,role=self.role or None)
+                self.model_map[model_name] = OllamaClient(mode=self.mode, domain=self.domain, role=self.role or None)
                 logger.info("Ollama client initialized")
                 return self.model_map[model_name]
             except Exception as e:
@@ -1242,7 +1240,7 @@ class ConversationManager:
                 return None
         elif "claude" in model_name:
             try:
-                self.model_map[model_name] = ClaudeClient(api_key =claude_api_key, mode=self.mode, domain=self.domain,role=self.role or None)
+                self.model_map[model_name] = ClaudeClient(api_key =claude_api_key, mode=self.mode, domain=self.domain,role= None)
                 logger.info("Claude client initialized")
                 return self.model_map[model_name]
             except Exception as e:
@@ -1251,7 +1249,7 @@ class ConversationManager:
         #logger.error(f"No client available for model: {model_name}")
         return self.model_map[model_name]
 
-    async def human_intervention(self, message: str) -> str:
+    def human_intervention(self, message: str) -> str:
         """Stub for human intervention logic."""
         print(message)
         return "continue"
@@ -1517,14 +1515,14 @@ async def main():
     """
     
     # Default to local models
-    ai_model = "ollama-phi4"  # Human role uses local model
-    human_model = "ollama-lexi"     # AI role uses local model
+    ai_model = "chatgpt-4o"  # Human role uses local model
+    human_model = "claude"     # AI role uses local model
     
     # Get initial prompt from user
     initial_prompt = input("\\nEnter conversation topic/prompt: ")
     
     # Create manager with no cloud API clients by default
-    manager =  ConversationManager(domain=initial_prompt,openai_api_key=openai_api_key)
+    manager = ConversationManager(domain=initial_prompt, openai_api_key=openai_api_key, claude_api_key=anthropic_api_key)
     
     # Only validate if using cloud models
     if "mlx" not in human_model and "ollama" not in human_model or ( "ollama" not in ai_model  and "mlx" not in ai_model):
@@ -1611,10 +1609,15 @@ if __name__ == "__main__":
             print('Testing client initialization...')
             ollama = OllamaClient(mode='ai-ai', domain='test')
             print(f'Ollama client initialized: {ollama}')
-            claude = ClaudeClient(role='user', api_key='test', mode='ai-ai', domain='test')
+            claude = ClaudeClient(role='user', api_key=anthropic_api_key, mode='ai-ai', domain='test')
             print(f'Claude client initialized: {claude}')
+            mlx = MLXClient(mode='ai-ai', domain='test')
+            print(f'MLX client initialized: {mlx}')
+            openai = OpenAIClient(api_key=openai_api_key, mode='ai-ai', domain='test')
+            print(f'OpenAI client initialized: {openai}')
             return # Skip conversation tests
         except Exception as e:
             print(f'Error testing clients: {e}')
 
     asyncio.run(test_clients())
+    asyncio.run(main())
