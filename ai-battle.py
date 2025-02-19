@@ -261,7 +261,7 @@ Generate a natural but sophisticated prompt that:
             logger.error(f"{self.__class__.__name__} connection failed: {str(e)}")
             return False
 
-    async async def test_connection(self) -> None:
+    async def test_connection(self) -> None:
         """Test API connection with minimal request
         
         Raises:
@@ -302,7 +302,7 @@ class GeminiClient(BaseClient):
 
     async def test_connection(self):
         """Test Gemini API connection"""
-        self.instructions = await self._get_initial_instructions()
+        self.instructions =  self._get_initial_instructions()
         try:
             message = f"{self.instructions} test"
             response = self.client.models.generate_content(
@@ -327,7 +327,7 @@ class GeminiClient(BaseClient):
             model_config = ModelConfig()
 
         if not self.instructions:
-            self.instructions = await self._get_initial_instructions()
+            self.instructions =  self._get_initial_instructions()
 
         # Update instructions based on conversation history
         current_instructions = self._update_instructions(history)
@@ -398,7 +398,7 @@ class GeminiClient(BaseClient):
             """
 
             # Get detailed assessment
-            assessment_response = await self.client.models.generate_content(
+            assessment_response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=assessment_prompt,
                 config=types.GenerateContentConfig(
@@ -415,7 +415,7 @@ class GeminiClient(BaseClient):
                 assertions = assessment_data.get("assertions", [])
                 grounded_facts = []
                 for assertion in assertions:
-                    evidence = await self.search_and_verify(assertion)
+                    evidence = self.search_and_verify(assertion)
                     if evidence:
                         grounded_facts.append({
                             "assertion": assertion,
@@ -458,7 +458,7 @@ class GeminiClient(BaseClient):
         response = None
         try:
             # Generate final response
-            response = await self.client.models.generate_content(
+            response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=enhanced_prompt,
                 config=types.GenerateContentConfig(
@@ -624,7 +624,7 @@ class OllamaClient(BaseClient):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434"
         
-    async async def test_connection(self) -> None:
+    async def test_connection(self) -> None:
         """Test Ollama connection"""
         #TODO: Implement actual Ollama connection test
         logger.info("Ollama connection test not yet implemented")
@@ -694,7 +694,7 @@ class MLXClient(BaseClient):
         #self.adaptive_manager=super().adaptive_manager(mode=self.mode)
         
         
-    async async def test_connection(self) -> None:
+    async def test_connection(self) -> None:
         """Test MLX connection through OpenAI-compatible endpoint"""
         try:
             response = requests.post(
@@ -770,7 +770,7 @@ class OpenAIClient(BaseClient):
 
     async def validate_connection(self) -> bool:
         """Test OpenAI API connection"""
-        self.instructions = await self._get_initial_instructions()
+        self.instructions =  self._get_initial_instructions()
         return True
 
     async def generate_response(self,
@@ -916,62 +916,6 @@ class ConversationManager:
         }
 
 
-    @classmethod
-    async def create(cls,
-                     domain: str = "General knowledge",
-                     human_delay: float = 50.0,
-                     mode: str = None,
-                     min_delay: float = 30,
-                     gemini_api_key: Optional[str] = None,
-                     claude_api_key: Optional[str] = None,
-                     openai_api_key: Optional[str] = None) -> "ConversationManager":
-        """
-        Factory method to initialize any async setup after instantiating.
-        """
-        self = cls(domain, human_delay, mode, min_delay, gemini_api_key, claude_api_key, openai_api_key)
-
-        # Perform async initializations here
-        if claude_api_key:
-            self.claude_client = await ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3-5-sonnet-20241022")
-            self.haiku_client = await ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3.5-haiku-20241022")
-        if openai_api_key:
-            self.openai_o1_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1')
-            self.openai_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="gpt-4o")
-            self.openai_4o_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="gpt-4o-2024-11-20")
-            self.openai_4o_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='gpt-4o-mini-2024-07-18')
-            self.openai_o1_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1-mini-2024-09-12')
-        if gemini_api_key:
-            self.gemini_2_reasoning_client = GeminiClient(api_key=gemini_api_key, domain=domain, model="gemini-2.0-flash-thinking-exp-01-21") if gemini_api_key else None
-            self.gemini_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
-            self.gemini_1206_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
-
-        self.ollama_phi4_client = OllamaClient(mode=mode, domain=domain, model='phi4:latest')
-        self.ollama_client = OllamaClient(mode=mode, domain=domain, model='mistral-nemo:latest')
-        self.ollama_lexi_client = OllamaClient(mode=mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
-        self.ollama_instruct_client = OllamaClient(mode=mode, domain=domain, model='llama3.2:3b-instruct-q8_0')
-        self.ollama_abliterated_client = OllamaClient(mode=mode, domain=domain, model="mannix/llama3.1-8b-abliterated:latest")
-
-        # Initialize model_map here
-        self.model_map = {
-            "claude": self.claude_client,
-            "gemini_2_reasoning": self.gemini_2_reasoning_client,
-            "gemini": self.gemini_client,
-            "gemini-1206": self.gemini_1206_client,
-            "openai": self.openai_client,
-            "o1": self.openai_o1_client,
-            "mlx-abliterated": self.mlx_abliterated_client,
-            "haiku": self.haiku_client,
-            "o1-mini": self.openai_o1_mini_client,
-            "gpt-4o-mini": self.openai_4o_mini_client,
-            "chatgpt-4o": self.openai_4o_client,
-            "ollama": self.ollama_client,
-            "ollama-lexi": self.ollama_lexi_client,
-            "ollama-instruct": self.ollama_instruct_client,
-            "ollama-abliterated": self.ollama_abliterated_client,
-            "ollama-phi4": self.ollama_phi4_client
-        }
-        return self
-
     def _get_model_info(self, model_name: str) -> Dict[str, str]:
         """Get model provider and name"""
         providers = {
@@ -1061,7 +1005,7 @@ class ConversationManager:
                 response = await client.generate_response(
                     prompt= prompt,
                     #system_instruction=system_instruction + ("1" if role=="user" else "2"),#await client._get_mode_aware_instructions(role="assistant"),
-                    system_instruction=await client._get_mode_aware_instructions(mode=mode, role="user"),
+                    system_instruction=client._get_mode_aware_instructions(mode=mode, role="user"),
                     history=self.conversation_history.copy(),  # Pass copy to prevent modifications
                     role=role
                 )
@@ -1125,8 +1069,8 @@ class ConversationManager:
         logger.info(f"Starting conversation with topic: {core_topic}")
           
         # Get client instances
-        human_client = await self._get_client(human_model)
-        ai_client = await self._get_client(ai_model)
+        human_client =  self._get_client(human_model)
+        ai_client =  self._get_client(ai_model)
         
         if not human_client or not ai_client:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
@@ -1134,9 +1078,9 @@ class ConversationManager:
         # Run conversation rounds
         for round_index in range(rounds):
             # Human turn
-            human_response = await self.run_conversation_turn(
+            human_response =  self.run_conversation_turn(
                 prompt=human_client.generate_human_prompt(self.conversation_history.copy()),
-                system_instruction=await human_client._get_mode_aware_instructions(mode=mode, role="user"), ##,
+                system_instruction= human_client._get_mode_aware_instructions(mode=mode, role="user"), ##,
                 role="user",
                 mode=self.mode,
                 model_type=human_model,
@@ -1145,7 +1089,7 @@ class ConversationManager:
             print(f"\\n\\n\\nHUMAN: ({human_model.upper()}): {human_response}\\n\\n")
 
             # AI turn
-            ai_response = await self.run_conversation_turn(
+            ai_response =  self.run_conversation_turn(
                 prompt=f"Respond: {human_response}",# if mode=="human-aiai" else f"Last response: {human_response}\n{ai_client.generate_human_prompt(self.conversation_history.copy())}",
                 #system_instruction=ai_system_instruction if mode=="human-aiai" else human_client.generate_human_system_instructions(),
                 role="assistant",
@@ -1541,7 +1485,7 @@ async def main():
         ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {initial_prompt}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  Restrict outputs to approx 512 tokens.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
  
     # needs a big if block :)_ 
-    conversation = await manager.run_conversation(
+    conversation =  manager.run_conversation(
         initial_prompt=initial_prompt,
         mode=mode,
         human_model = human_model,
