@@ -10,6 +10,7 @@ This document outlines the plan for extending the AI Battle framework to support
 
 1. **File Processing System**
    - Image handling with resolution preservation
+   - Video processing and frame extraction
    - Text file processing and chunking
    - MIME type detection and validation
    - File content integration with conversation context
@@ -22,20 +23,38 @@ This document outlines the plan for extending the AI Battle framework to support
        model1:
          type: "claude-3-sonnet"  # Model identifier
          role: "human"            # Role in conversation
-         system_instructions: |
-           You are a neurological radiologist with 15 years of experience...
+         persona: |               # Persona-based system_ nstructions
+           You are a neurological radiologist with the following characteristics:
+            - 15 years of clinical experience
+            - Specialization in advanced imaging techniques
+            - Research focus on early detection patterns
+            - Known for innovative diagnostic approaches
+            [Additional persona details integrated into role prompt]
        model2:
          type: "gemini-pro"
          role: "assistant"
-         system_instructions: |
-           You are an AI assistant collaborating on medical analysis...
+         persona: |
+           You are an AI assistant with the following characteristics:
+            - Deep expertise in medical imaging analysis
+            - Collaborative approach to diagnosis
+            - Evidence-based reasoning methodology
+            [Additional persona details integrated into role prompt]
+      
+      timeouts:
+        request: 300             # Request timeout in seconds
+        retry_count: 3           # Number of retries
+        notify_on:
+          - timeout              # Notify on timeout
+          - retry               # Notify on retry
+          - error              # Notify on error
      
      input_file:
-       path: "./scan.jpg"        # Path to input file
-       type: "image"            # image or text
+       path: "./scan.mp4"        # Path to input file
+       type: "video"            # image, video, or text
+        max_resolution: "4K"     # Maximum resolution to maintain
        
      goal: |
-       Analyze the provided brain scan and discuss potential abnormalities,
+       Analyze the provided brain scan video sequence and discuss potential abnormalities,
        focusing on regions of concern and possible diagnostic implications.
    ```
 
@@ -66,12 +85,19 @@ This document outlines the plan for extending the AI Battle framework to support
 - [ ] Configuration validation
 - [ ] Model capability detection
 - [ ] System instruction management
+- [ ] Timeout and retry handling
+- [ ] Persona integration
 
 ### Phase 2: File Processing (Week 2)
 - [ ] Image processing implementation
   - Resolution preservation
   - Format conversion if needed
   - Size optimization
+- [ ] Video processing implementation
+  - Frame extraction
+  - Resolution management
+  - Format handling
+  - Streaming optimization
 - [ ] Text file handling
   - Content chunking
   - Format detection
@@ -153,6 +179,8 @@ This document outlines the plan for extending the AI Battle framework to support
 ## Commit Strategy
 
 ### Phase 1
+Note: Development is being done on the `configuration-features` branch
+
 1. Basic configuration system
 2. Model capability detection
 3. System instruction management
@@ -207,11 +235,11 @@ This document outlines the plan for extending the AI Battle framework to support
        model1:
          type: "claude-3-sonnet"
          role: "human"
-         system_instructions: "Expert role definition..."
+         persona: "Expert role definition..."
        model2:
          type: "gemini-pro"
          role: "assistant"
-         system_instructions: "Assistant role definition..."
+         persona: "Assistant role definition..."
      input_file:
        path: "./input.jpg"
        type: "image"
@@ -230,3 +258,17 @@ This document outlines the plan for extending the AI Battle framework to support
    ```
 
 This implementation plan ensures systematic development while maintaining the framework's core strengths in meta-prompting and model orchestration. Each phase builds upon the previous one, allowing for regular testing and validation of new features.
+
+## Status Tracking
+
+### Current Status
+- Project Plan Created: ✅ 
+- Initial Requirements Gathered: ✅
+- Branch Created (configuration-features): ✅
+- Development Started: 🔄
+
+### Phase 1 Progress
+- [x] Branch Created
+- [ ] YAML Configuration Parser
+- [ ] Configuration Validation
+- [ ] Other tasks in progress...
