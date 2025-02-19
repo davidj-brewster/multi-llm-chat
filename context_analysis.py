@@ -25,7 +25,7 @@ class ContextVector:
 class ContextAnalyzer:
     """Analyzes conversation context across multiple dimensions"""
     
-    def __init__(self, mode: str = "human-ai"):
+    def __init__(self, mode: str = "l"):
         self.vectorizer = TfidfVectorizer(
             max_features=5000,
             stop_words='english',

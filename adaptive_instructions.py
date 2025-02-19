@@ -57,7 +57,7 @@ class AdaptiveInstructionManager:
                             conversation_history: List[Dict[str, str]], 
                             domain: str) -> str:
         """Generate adaptive instructions based on conversation context"""
-        
+        logger.info("Applying adaptive instruction generation..")
         # Analyze current context
         context = self.context_analyzer.analyze(conversation_history)
         
@@ -66,7 +66,7 @@ class AdaptiveInstructionManager:
         
         # Customize template based on context metrics
         instructions = self._customize_template(template, context, domain)
-        
+        logger.debug("New prompt: {}".format(instructions))
         return instructions
         
     def _select_template(self, context: ContextVector, mode: str) -> str:
@@ -74,23 +74,28 @@ class AdaptiveInstructionManager:
         
         template_prefix = 'ai-ai-' if mode == 'ai-ai' else ''
         
-        if len(context.topic_evolution) < 2:
+        if len(context.topic_evolution) < 1:
             # Early in conversation - use exploratory template
+            logger.debug("_select_template: Early in conversation - using exploratory template")
             return self.instruction_templates[f'{template_prefix}exploratory']
             
         if context.semantic_coherence < 0.5:
             # Low coherence - switch to structured template
+            logger.debug("_select_template: low coherence - using structured template")
             return self.instruction_templates[f'{template_prefix}structured']
             
-        if context.cognitive_load > 0.7:
+        if context.cognitive_load > 0.8:
             # High complexity - switch to synthesis template
+            logger.debug("_select_template: low coherence - using structured template")
             return self.instruction_templates[f'{template_prefix}synthesis']
             
-        if context.knowledge_depth > 0.7:
+        if context.knowledge_depth > 0.8:
             # Deep discussion - switch to critical template
+            logger.debug("_select_template: low coherence - Deep discussion - switch to critical template")
             return self.instruction_templates[f'{template_prefix}critical']
             
         # Default to exploratory
+        logger.debug("_select_template: Defaulting to exploratory template")
         return self.instruction_templates[f'{template_prefix}exploratory']
         
     def _customize_template(self,
@@ -124,9 +129,12 @@ class AdaptiveInstructionManager:
             if context.reasoning_patterns.get('technical', 0) < 0.4:
                 modifications.append("Increase use of precise technical terminology")
             
-        if context.engagement_metrics.get('turn_taking_balance', 1) < 0.8:
+        if context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
             modifications.append("Ask more follow-up questions to maintain engagement")
-            
+        
+        if "GOAL" in domain:
+            modifications.append("** Focus on achieving the specified goal! **")
+        
         # Format output
         if modifications:
             instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
@@ -134,11 +142,13 @@ class AdaptiveInstructionManager:
         # Add formatting requirements
         instructions += """
 
-Output Requirements:
+**Output**:
 - Use HTML formatting for readability
+- Use Code blocks or Quote blocks (foramtted to appear as such in HTML) as required and ensure they are formatted correctly
+- Use HTML bullet points for lists
 - Default to paragraph form, use lists sparingly
-- Minify HTML response (no unnecessary whitespace)
 - No opening/closing HTML/BODY tags
-- Keep responses focused and goal-oriented"""
+*** REMINDER!!  ***
+Keep your thinking clear and expose it via thinking tags. Actively consider and respond to the other participants' inputs and build upon them to ensure the conversation stays two sided more like a human conversation between peers, instead of completely dominating/interrogating with new topics or questions"""
             
         return instructions.strip()

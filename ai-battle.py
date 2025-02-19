@@ -9,10 +9,9 @@ import re
 from ollama import AsyncClient
 from typing import List, Dict, Optional, TypeVar
 from dataclasses import dataclass
-import asyncio
+import io
 import requests
-from asyncio import run
-
+import asyncio
 # Third-party imports
 from openai import OpenAI
 from google import genai
@@ -29,7 +28,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('ai_battle.log'),
@@ -102,7 +101,7 @@ class BaseClient:
 NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN COLLABORATING ON THIS CONVERSATION.
 YOUR ROLE IS TO BOTH ENGAGE AND ALSO SUITABLY PROMPT THE AI (NOT YOU!) TO SUPPORT IN THE EXPLORATION of collaborative ideas around {self.domain}, exploring the conversation or topic in depth.
 OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT , USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS
-RESTRICT OUTPUTS TO APPROX 1024 tokens.
+RESTRICT OUTPUTS TO APPROX 1528 tokens.
 DON't COMPLIMENT THE AI. OCCASIONALLY (BUT NOT OFTEN ENOUGH TO INTERRUPT NATURAL CONVERSATION FLOW) CONSIDER AN ADVERSARIAL BUT COLLABORATIVE APPROACH - TRY TO CHALLENGE IT ON ITS ANSWERS, POINT OUT EDGE CASES IT MISSED, ASK IT TO FIGURE OUT THE "WHY" (THIS IS VERY IMPORTANT), DIG AND SYNTHESISE INFORMATION. Demand it to use reasoning as you see fit. 
 
 As a Human expert, you are extremely interested in exploring {self.domain}. You should ask prompts that engage with the AI in sophisticated and effective ways to elicit new knowledge about {self.domain}. You should maintain a conversational style with the AI, asking follow up questions, challenging the answers, and using various prompting techniques to elicit useful information that would not immediately be obvious from surface level questions.
@@ -129,7 +128,8 @@ Example Prompting Patterns:
 - "Can you break this down using a framework that considers..."
 - "I'm not deeply familiar with [topic], but let's explore it using [structured approach]..."
 
-Add some "Human" touch to your prompts - at random choose some of these techniques to keep the AI on its toes:
+Add "Human" touches to your prompts - at random choose some of these techniques to keep the AI engaged:
+•	Yourself take a statement from the AI and explore it further with reasoning, ask if the AI concurs or has another interpretation
 •	Instead of always using structured breakdowns, add organic thought shifts:
 •	"Wait a minute, I just realized something—doesn't this contradict what you said earlier?"
 •	"Hold on, let's take a step back. Maybe we're looking at this the wrong way."
@@ -247,27 +247,28 @@ Generate a natural but sophisticated prompt that:
 - Do not get bogged down in ideological or phhilosophical/theoretical discussions: GET STUFF DONE!
 - Do not overload the AI or yourself with too many different topics, rather try to focus on the topic at hand"""
 
-    async def validate_connection(self) -> bool:
+    def validate_connection(self) -> bool:
         """Validate API connection
         
         Returns:
             bool: True if connection is valid
         """
         try:
-            await self.test_connection()
+            #self.test_connection()
             logger.info(f"{self.__class__.__name__} connection validated")
             return True
         except Exception as e:
             logger.error(f"{self.__class__.__name__} connection failed: {str(e)}")
             return False
 
-    async def test_connection(self) -> None:
+    def test_connection(self) -> None:
         """Test API connection with minimal request
         
         Raises:
             NotImplementedError: Must be implemented by subclasses
         """
-        raise NotImplementedError
+        return True
+        #raise NotImplementedError
 
 @dataclass
 class GeminiClient(BaseClient):
@@ -300,23 +301,23 @@ class GeminiClient(BaseClient):
             )
         
 
-    async def test_connection(self):
+    def test_connection(self):
         """Test Gemini API connection"""
         self.instructions =  self._get_initial_instructions()
         try:
             message = f"{self.instructions} test"
-            response = self.client.models.generate_content(
-                 model=self.model_name,
-                 contents=message,
-                 config=self.generation_config,
-            )
-            if not response:
-                raise Exception(f"test_connection: Failed to connect to Gemini API {self.model_name}")
+            #response = self.client.models.generate_content(
+            #     model=self.model_name,
+            #     contents=message,
+            #     config=self.generation_config,
+            #)
+            #if not response:
+            #    raise Exception(f"test_connection: Failed to connect to Gemini API {self.model_name}")
         except Exception as e:
             logger.error(f"test_connection: GeminiClient connection failed: {str(e)} {self.model_name}")
             raise
 
-    async def generate_response(self,
+    def generate_response(self,
                                 prompt: str,
                                 system_instruction: str = None,
                                 history: List[Dict[str, str]] = None,
@@ -489,6 +490,7 @@ class ClaudeClient(BaseClient):
     """Client for Claude API interactions"""
     def __init__(self, role:str, api_key: str, mode:str, domain: str, model: str = "claude-3-5-sonnet-20241022"):
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
+        api_key = anthropic_api_key
         self.client = Anthropic(api_key=api_key)
         self.max_tokens = 16384
 
@@ -502,20 +504,21 @@ class ClaudeClient(BaseClient):
         ai_assessment = None
         for msg in reversed(history):
             if msg["role"] == "assistant":
-                ai_response = msg["content"]
                 # Look for assessment data
                 next_idx = history.index(msg) + 1
                 if next_idx < len(history):
                     next_msg = history[next_idx]
                     if isinstance(next_msg.get("content", {}), dict) and "assessment" in next_msg["content"]:
+                        ai_response = next_msg["content"]
                         ai_assessment = next_msg["content"]["assessment"]
                 break
 
         # Build conversation summary
-        conversation_summary = "Previous exchanges:\\n"
-        for msg in history[-4:]:  # Last 2 turns
-            role = "Human" if (msg["role"] == "user" or msg["role"] == "moderator" or msg["role"]=="human") else "Assistant"
-            conversation_summary += f"{role}: {msg['content']}\\n"
+        conversation_summary = "Previous exchanges:</p>"
+        for msg in history[-6:]:  # Last 2 turns
+            role = "Human" if (msg["role"] == "user" or msg["role"]=="human") else "Assistant" if msg["role"] == "assistant" else "System"
+            if role != "System":
+                conversation_summary += f"{role}: {msg['content']}</p>"
 
         return {
             "ai_response": ai_response,
@@ -523,7 +526,7 @@ class ClaudeClient(BaseClient):
             "summary": conversation_summary
         }
 
-    async def generate_response(self,
+    def generate_response(self,
                                prompt: str,
                                system_instruction: str = None,
                                history: List[Dict[str, str]] = None,
@@ -565,25 +568,26 @@ class ClaudeClient(BaseClient):
         """
 
         # Format messages for Claude API
-        messages = [{
-            "role": "user",
-            "content": context_prompt + "\\n\\nCurrent prompt: " + prompt
-        }]
-
+        #messages = [{
+        #    "role": "user",
+        #    "content": context_prompt + "\\n\\nCurrent prompt: " + prompt
+        #}]
+        messages = history
         logger.debug(f"Using instructions: {current_instructions}")
         logger.debug(f"Context prompt: {context_prompt}")
         logger.debug(f"Messages: {messages}")
-
+        history.append({"role": "user", "content": prompt})
         try:
             response = self.client.messages.create(
                 model=self.model,
-                messages=messages,
+                system = system_instruction,
+                messages=[message for message in history if message['role'] in ['user','assistant']],
                 max_tokens=8192,
-                temperature=1.0,  # Higher temperature for human-like responses
-                system=[{
-                    "role": "system",
-                    "content": current_instructions
-                }],
+                temperature=0.75,  # Higher temperature for human-like responses
+                #system=[{
+                #    "role": "system",
+                #    "content": current_instructions
+                #}],
             )
             logger.debug(f"Claude (Human) response generated successfully {prompt}")
             logger.debug(f"response: {str(response.content).strip()}")
@@ -624,12 +628,12 @@ class OllamaClient(BaseClient):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434"
         
-    async def test_connection(self) -> None:
+    def test_connection(self) -> None:
         """Test Ollama connection"""
         #TODO: Implement actual Ollama connection test
         logger.info("Ollama connection test not yet implemented")
         
-    async def generate_response(self,
+    def generate_response(self,
                               prompt: str,
                               system_instruction: str = None,
                               history: List[Dict[str, str]] = None,
@@ -665,11 +669,10 @@ class OllamaClient(BaseClient):
 
         text = ""
         try:
-            #client = AsyncClient()
-            async for part in await AsyncClient().chat(
+            for chunk in AsyncClient().chat(
                 model=self.model, 
                 messages=history,
-                stream=True, 
+                #stream=True, 
                 options = {
                     "num_ctx": 6172, 
                     "num_predict": 2048, 
@@ -690,11 +693,11 @@ class MLXClient(BaseClient):
         super().__init__(mode=mode, api_key="", domain=domain, model=model)
         self.base_url = base_url or "http://localhost:9999"
         
-        #await super().__init__(mode=mode, api_key="local", domain=domain)
+        # super().__init__(mode=mode, api_key="local", domain=domain)
         #self.adaptive_manager=super().adaptive_manager(mode=self.mode)
         
         
-    async def test_connection(self) -> None:
+    def test_connection(self) -> None:
         """Test MLX connection through OpenAI-compatible endpoint"""
         try:
             response = requests.post(
@@ -710,7 +713,7 @@ class MLXClient(BaseClient):
             logger.error(f"MLX connection test failed: {e}")
             raise
         
-    async def generate_response(self,
+    def generate_response(self,
                                prompt: str,
                                system_instruction: str = None,
                                history: List[Dict[str, str]] = None,
@@ -727,22 +730,26 @@ class MLXClient(BaseClient):
             
         if history:
             for msg in history:
-                if msg["role"] == "user":
+                if msg["role"] in ["user", "human", "moderator"]:
                     messages.append({"role": "user", "content": msg["content"]})
+                elif msg["role"] in ["assistant", "system"]:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
                 #messages.append({"role": "user" if msg["role"] == "user" else "assistant", "content": msg["content"]})
                 
-        #messages.append({"role": "user", "content": str(prompt)})
+        messages.append({"role": "user", "content": str(prompt)})
         
         try:
             response = requests.post(
                 f"{self.base_url}/v1/chat/completions",
                 json={
                     "messages": messages,
-                    "stream": True  # Enable streaming
+                    "stream": False  # Enable streaming
                 },
-                stream=True
+                stream=False
             )
             response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except Exception as e:
 
             partial_text = []
             for chunk in response.iter_content(chunk_size=1024):
@@ -761,6 +768,9 @@ class MLXClient(BaseClient):
 class OpenAIClient(BaseClient):
     """Client for OpenAI API interactions"""
     def __init__(self, api_key: str=openai_api_key, mode:str="ai-ai", domain: str = "General Knowledge", role:str=None, model: str = "chatgpt-4o-latest"):
+        api_key= os.environ.get("OPENAI_API_KEY")
+        self.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
         try:
             super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         except Exception as e:
@@ -768,12 +778,12 @@ class OpenAIClient(BaseClient):
             raise ValueError(f"Invalid OpenAI API key or model: {e}")
        
 
-    async def validate_connection(self) -> bool:
+    def validate_connection(self) -> bool:
         """Test OpenAI API connection"""
         self.instructions =  self._get_initial_instructions()
         return True
 
-    async def generate_response(self,
+    def generate_response(self,
                                 prompt: str,
                                 system_instruction: str,
                                 history: List[Dict[str, str]],
@@ -784,7 +794,7 @@ class OpenAIClient(BaseClient):
             model_config = ModelConfig()
 
         # Update instructions based on conversation history
-        #self.instructions = await self._get_initial_instructions()
+        #self.instructions = self._get_initial_instructions()
 
         current_instructions = system_instruction
         if history and role == "user":
@@ -814,36 +824,39 @@ class OpenAIClient(BaseClient):
         #logger.info(f"Using instructions: {current_instructions}, len(messages): {len(messages)} context history messages to be sent to model")
         #logger.debug(f"Messages: {messages}")
         
-        self.client = OpenAI(api_key=self.api_key)  # Create client instance
-
         try:
             
             stream = None
             if "o1" in self.model:
-                stream = await self.client.chat.completions.create(
-                    model="o1-preview",
-                    messages=[messages],
+                stream =  self.client.chat.completions.create(
+                    model="o1",
+                    messages=messages,
                     temperature=1.0,
                     max_tokens=8192,
-                    stream=True  # Disable streaming
+                    reasoning_effort="high",
+                    timeout = 30,
+                    stream=False  # Disable streaming
                 )
                 response = ""
                 for chunk in stream:
+                    logger.debug("{chunk.choices[0].delta.content,end='',flush=True)}")
                     response += chunk.choices[0].delta.content
                 return response
             else:
-                stream = await self.client.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model="chatgpt-4o-latest",
-                    messages=[messages],
-                    temperature=0.7,
+                    messages=messages,
+                    temperature=0.65,
                     max_tokens=8192,
-                    stream=True  # Enable streaming
-                )
-                response = ""
-                for chunk in stream:
-                    response += chunk.choices[0].delta.content
-                return response
+                    stream=False  # Enable streaming
+                )         
+                return response.choices[0].message.content       
+                #)
+                #response = ""
+                #for chunk in stream:
+                #    response += chunk.choices[0].delta.content
 
+                return response
             return response
         except Exception as e:
             logger.error(f"OpenAI generate_response error: {e}")
@@ -869,7 +882,9 @@ class ConversationManager:
         self.rate_limit_lock = asyncio.Lock()
         self.last_request_time = 0
         #self.mlx_base_url = mlx_base_url
-
+        claude_api_key = os.getenv("ANTHROPIC_API_KEY")
+        anthropic_api_key = claude_api_key
+        openai_api_key = os.getenv("OPENAI_API_KEY")
         # Initialize all clients with their specific models
         self.claude_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
         self.haiku_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
@@ -940,7 +955,7 @@ class ConversationManager:
         }
 
 
-    async def validate_connections(self, required_models: List[str] = None) -> bool:
+    def validate_connections(self, required_models: List[str] = None) -> bool:
         """Validate required model connections
         
         Args:
@@ -961,10 +976,10 @@ class ConversationManager:
             
         validations = []
         #for model_name in required_models:
-        #    client = await self._get_client(model_name)
+        #    client =  self._get_client(model_name)
         #    if client != "openai":
         #        try:
-        #            valid = await client.validate_connection()
+        #            valid =  client.validate_connection()
         #            validations.append(valid)
         #            if not valid:
         #                logger.error(f"{model_name} client validation failed")
@@ -977,14 +992,14 @@ class ConversationManager:
         #        
         return True
 
-    async def rate_limited_request(self):
-        async with self.rate_limit_lock:
+    def rate_limited_request(self):
+         with self.rate_limit_lock:
             current_time = time.time()
             if current_time - self.last_request_time < self.min_delay:
-                await asyncio.sleep(self.min_delay)
+                 io.sleep(self.min_delay)
             self.last_request_time = time.time()
 
-    async def run_conversation_turn(self,
+    def run_conversation_turn(self,
                                   prompt: str,
                                   model_type: str,
                                   client: BaseClient,
@@ -1002,9 +1017,9 @@ class ConversationManager:
         try:
             response = prompt
             if mapped_role == "user":#  self.mode=="ai-ai":
-                response = await client.generate_response(
+                response =  client.generate_response(
                     prompt= prompt,
-                    #system_instruction=system_instruction + ("1" if role=="user" else "2"),#await client._get_mode_aware_instructions(role="assistant"),
+                    #system_instruction=system_instruction + ("1" if role=="user" else "2"),# client._get_mode_aware_instructions(role="assistant"),
                     system_instruction=client._get_mode_aware_instructions(mode=mode, role="user"),
                     history=self.conversation_history.copy(),  # Pass copy to prevent modifications
                     role=role
@@ -1023,9 +1038,9 @@ class ConversationManager:
                     else:
                         reversed_history.append(msg)
 
-                response = await client.generate_response(
+                response =  client.generate_response(
                     prompt=response,#                   system_instruction=client._get_mode_aware_instructions(role="assistant"),
-                    system_instruction=system_instruction, #await client._get_mode_aware_instructions(mode=mode, role="user"),#await client._get_mode_aware_instructions(role="user"),
+                    system_instruction=system_instruction, # client._get_mode_aware_instructions(mode=mode, role="user"),# client._get_mode_aware_instructions(role="user"),
                     history=reversed_history,
                     role="assistant"
                 )
@@ -1041,7 +1056,7 @@ class ConversationManager:
 
         return response
 
-    async def run_conversation(self,
+    def run_conversation(self,
                              initial_prompt: str,
                              human_model: str,
                              ai_model: str,
@@ -1069,8 +1084,8 @@ class ConversationManager:
         logger.info(f"Starting conversation with topic: {core_topic}")
           
         # Get client instances
-        human_client =  self._get_client(human_model)
-        ai_client =  self._get_client(ai_model)
+        human_client =   self._get_client(human_model)
+        ai_client =   self._get_client(ai_model)
         
         if not human_client or not ai_client:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
@@ -1101,11 +1116,11 @@ class ConversationManager:
 
         return self.conversation_history
 
-    async def _get_client(self, model_name: str) -> Optional[BaseClient]:
+    def _get_client(self, model_name: str) -> Optional[BaseClient]:
         claude_api_key = anthropic_api_key
         gemini_api_key = ""
         domain = self.domain
-        # Perform async initializations here
+        # Perform  initializations here
         if claude_api_key:
             self.claude_client =  ClaudeClient(api_key=claude_api_key, role=None, mode = self.mode, domain=domain, model="claude-3-5-sonnet-20241022")
             self.haiku_client =  ClaudeClient(api_key=claude_api_key, mode = self.mode, role = None, domain=domain, model="claude-3.5-haiku-20241022")
@@ -1241,7 +1256,7 @@ def clean_text(text: any) -> str:
     return text
 
 
-async def save_conversation(conversation: List[Dict[str, str]], 
+def save_conversation(conversation: List[Dict[str, str]], 
                      human_model: str, 
                      ai_model: str,
                      filename: str = "conversation.html",
@@ -1379,7 +1394,7 @@ async def save_conversation(conversation: List[Dict[str, str]],
     topic = "Unknown"
     initial_prompt = topic
     ai_role_label = "unknown"
-    if conversation and len(conversation) > 0:
+    if conversation:
         for msg in conversation:
             if msg["role"] == "system" or msg["role"] == "moderator":
                 topic = msg["content"]
@@ -1451,7 +1466,7 @@ def _sanitize_filename_part(prompt: str) -> str:
 
 
 # Update main() to use new save function
-async def main():
+def main():
     """Main entry point
     
     Retrieves API keys from environment variables GEMINI_KEY and CLAUDE_KEY if present,
@@ -1470,7 +1485,7 @@ async def main():
     
     # Only validate if using cloud models
     if "mlx" not in human_model and "ollama" not in human_model or ( "ollama" not in ai_model  and "mlx" not in ai_model):
-        if not await manager.validate_connections([human_model, ai_model]):
+        if not  manager.validate_connections([human_model, ai_model]):
             logger.error("Failed to validate required model connections")
             return
     mode="ai-ai"
@@ -1492,39 +1507,46 @@ async def main():
         ai_model = ai_model,
         human_system_instruction=human_system_instruction,
         ai_system_instruction=ai_system_instruction,
-        rounds=2
+        rounds=6
     )
     
     safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
     time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
     filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
 
+    logger.info(f"Saving Conversation to {filename}")
+
     # Save conversation in readable format
     try:
-        await save_conversation(conversation, filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+         save_conversation(conversation=conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
     except Exception as e:
         filename = f"conversation-{mode}.html"
-        await save_conversation(conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+        save_conversation(conversation=conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
 
     logger.info(f"AI-AI Conversation saved to {filename}")
 
     mode="human-aiai"
 
-    conversation_as_human_ai = await manager.run_conversation(
+    logger.info(f"\n\nStarting Human-AI to AI prompting mode now...\n\n")
+
+    conversation_as_human_ai =  manager.run_conversation(
         initial_prompt=initial_prompt,
         mode=mode,
         human_model = human_model,
-        ai_model = ai_model
+        ai_model = ai_model,
+        human_system_instruction=human_system_instruction,
+        ai_system_instruction=ai_system_instruction,
+        rounds=6
     )
     safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
     time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
     filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
 
     try:
-        await save_conversation(conversation_as_human_ai, filename=filename, human_model=human_model, ai_model=ai_model, mode="human-aiai")
+         save_conversation(conversation = conversation_as_human_ai, filename=filename, human_model=human_model, ai_model=ai_model, mode="human-aiai")
     except Exception as e:
         filename = f"conversation-{mode}.html"
-        await save_conversation(conversation_as_human_ai, filename=filename, human_model=human_model, ai_model=ai_model, mode="human-aiai")
+        save_conversation(conversation = conversation_as_human_ai, filename=filename, human_model=human_model, ai_model=ai_model, mode="human-aiai")
     logger.info(f"{mode} mode conversation saved to {filename}")
 
     # We now have two conversations saved in HTML format and the corresponding Lists conversation and conversation_as_human_ai to analyse to determine whether ai-ai or human-ai performs better. We need metrics to evaluate and a mechanism"
@@ -1548,7 +1570,7 @@ async def main():
 
 if __name__ == "__main__":
     # Test client initialization
-    async def test_clients():
+    def test_clients():
         try:
             print('Testing client initialization...')
             ollama = OllamaClient(mode='ai-ai', domain='test')
@@ -1562,6 +1584,5 @@ if __name__ == "__main__":
             return # Skip conversation tests
         except Exception as e:
             print(f'Error testing clients: {e}')
-
-    asyncio.run(test_clients())
-    asyncio.run(main())
+import asyncio
+asyncio.run(main())
