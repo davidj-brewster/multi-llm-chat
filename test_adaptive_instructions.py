@@ -115,5 +115,86 @@ class TestAdaptiveInstructions(unittest.TestCase):
             )
             self.assertIn(domain, instructions)
 
+    def test_mode_initialization(self):
+        # Test default mode
+        default_manager = AdaptiveInstructionManager()
+        self.assertEqual(default_manager.mode, "human-ai")
+        
+        # Test AI-AI mode
+        ai_manager = AdaptiveInstructionManager(mode="ai-ai")
+        self.assertEqual(ai_manager.mode, "ai-ai")
+
+    def test_ai_ai_mode_templates(self):
+        manager = AdaptiveInstructionManager(mode="ai-ai")
+        
+        # Test AI-AI exploratory template
+        short_conversation = self.test_conversation[:1]
+        instructions = manager.generate_instructions(
+            short_conversation,
+            self.domain
+        )
+        self.assertIn("AI system", instructions)
+        self.assertIn("structured knowledge", instructions.lower())
+        
+        # Test template selection in AI-AI mode
+        context = manager.context_analyzer.analyze(self.test_conversation)
+        template = manager._select_template(context, "ai-ai")
+        self.assertIn("AI system", template)
+
+    def test_mode_specific_customization(self):
+        # Test human-ai mode
+        human_manager = AdaptiveInstructionManager(mode="human-ai")
+        human_instructions = human_manager.generate_instructions(
+            self.test_conversation,
+            self.domain
+        )
+        self.assertIn("human expert", human_instructions.lower())
+        
+        # Test ai-ai mode
+        ai_manager = AdaptiveInstructionManager(mode="ai-ai")
+        ai_instructions = ai_manager.generate_instructions(
+            self.test_conversation,
+            self.domain
+        )
+        self.assertIn("AI system", ai_instructions)
+        self.assertNotIn("human expert", ai_instructions.lower())
+        
+        # Verify different content between modes
+
+    def test_mode_aware_context_analysis(self):
+        # Test AI-AI mode context analysis
+        ai_conversation = [
+            {
+                "role": "user",
+                "content": "Let us systematically analyze the formal properties of neural networks. Given the axioms of backpropagation..."
+            },
+            {
+                "role": "assistant",
+                "content": "Proceeding with formal analysis. Let's define our theorem precisely: neural networks with non-linear activation functions are universal approximators..."
+            }
+        ]
+        
+        # Create analyzers for both modes
+        human_analyzer = ContextAnalyzer(mode="human-ai")
+        ai_analyzer = ContextAnalyzer(mode="ai-ai")
+        
+        # Analyze same conversation with both modes
+        human_context = human_analyzer.analyze(ai_conversation)
+        ai_context = ai_analyzer.analyze(ai_conversation)
+        
+        # Verify AI-AI specific patterns are detected
+        self.assertIn('formal_logic', ai_context.reasoning_patterns)
+        self.assertIn('systematic', ai_context.reasoning_patterns)
+        self.assertIn('technical', ai_context.reasoning_patterns)
+        
+        # Verify AI-AI mode has higher formal reasoning scores
+        self.assertGreater(
+            ai_context.reasoning_patterns.get('formal_logic', 0),
+            human_context.reasoning_patterns.get('deductive', 0)
+        )
+
+
+        self.assertNotEqual(human_instructions, ai_instructions)
+
 if __name__ == '__main__':
     unittest.main()

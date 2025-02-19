@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import spacy
+#import spacy
 import logging
 from collections import Counter
 import re
@@ -25,18 +25,19 @@ class ContextVector:
 class ContextAnalyzer:
     """Analyzes conversation context across multiple dimensions"""
     
-    def __init__(self):
+    def __init__(self, mode: str = "human-ai"):
         self.vectorizer = TfidfVectorizer(
             max_features=5000,
             stop_words='english',
             ngram_range=(1, 2)
         )
         self.nlp = None
-        try:
-            import spacy
-            self.nlp = spacy.load('en_core_web_sm')
-        except (ImportError, OSError):
-            logger.warning("spaCy not available, falling back to basic analysis")
+        self.mode = mode
+        #try:
+        #    import spacy
+        #    self.nlp = spacy.load('en_core_web_sm')
+        #except (ImportError, OSError):
+        #    logger.warning("spaCy not available, falling back to basic analysis")
             
         self.reasoning_patterns = {
             'deductive': r'therefore|thus|hence|consequently',
@@ -44,6 +45,14 @@ class ContextAnalyzer:
             'abductive': r'best explanation|most likely|probably because',
             'analogical': r'similar to|like|analogous|comparable',
             'causal': r'because|since|due to|results in'
+        }
+
+        self.ai_ai_patterns = {
+            'formal_logic': r'axiom|theorem|proof|implies|given that|let|assume',
+            'systematic': r'systematically|methodically|formally|structurally',
+            'technical': r'implementation|specification|framework|architecture',
+            'precision': r'precisely|specifically|explicitly|definitively',
+            'integration': r'integrate|combine|synthesize|unify|merge'
         }
         
     def analyze(self, conversation_history: List[Dict[str, str]]) -> ContextVector:
@@ -287,16 +296,28 @@ class ContextAnalyzer:
     def _analyze_reasoning_patterns(self, contents: List[str]) -> Dict[str, float]:
         """Analyze types of reasoning used"""
         pattern_counts = {pattern: 0.0 for pattern in self.reasoning_patterns}
+        if self.mode == "ai-ai":
+            pattern_counts.update({pattern: 0.0 for pattern in self.ai_ai_patterns})
         
         try:
             for content in contents:
                 for pattern, regex in self.reasoning_patterns.items():
                     matches = len(re.findall(regex, content.lower()))
                     pattern_counts[pattern] += matches
+
+                if self.mode == "ai-ai":
+                    for pattern, regex in self.ai_ai_patterns.items():
+                        matches = len(re.findall(regex, content.lower()))
+                        pattern_counts[pattern] += matches
                     
             # Normalize counts
             total = sum(pattern_counts.values()) or 1  # Avoid division by zero
-            return {k: v/total for k, v in pattern_counts.items()}
+            normalized = {k: v/total for k, v in pattern_counts.items()}
+            
+            # For AI-AI mode, boost the weight of formal patterns
+            if self.mode == "ai-ai":
+                normalized = {k: v * 1.5 if k in self.ai_ai_patterns else v for k, v in normalized.items()}
+            return normalized
         except Exception as e:
             logger.error(f"Error analyzing reasoning patterns: {e}")
             return pattern_counts
