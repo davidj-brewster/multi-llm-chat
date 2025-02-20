@@ -1,0 +1,45 @@
+discussion:
+  # Number of conversation turns
+  turns: 3
+
+  # Model configurations
+  models:
+    model1:
+      type: "claude-3-sonnet"
+      role: "human"
+      instructions:
+        template: "human_system_instructions"
+        params:
+          domain: "Medical Image Analysis"
+    
+    model2:
+      type: "gemini-pro-vision"
+      role: "assistant"
+      instructions:
+        template: "ai_assistant_instructions"
+        params:
+          domain: "Medical Image Analysis"
+
+  # Input file configuration
+  input_file:
+    path: "./examples/brain_scan.mp4"
+    type: "video"
+    max_resolution: "4K"
+
+  # Timeout settings
+  timeouts:
+    request: 300
+    retry_count: 3
+    notify_on:
+      - timeout
+      - retry
+      - error
+
+  # Discussion objective
+  goal: |
+    Analyze the provided brain scan video sequence and discuss potential abnormalities,
+    focusing on regions of concern and possible diagnostic implications. Consider:
+    1. Temporal changes in key regions
+    2. Contrast and density variations
+    3. Structural anomalies
+    4. Comparison with typical patterns

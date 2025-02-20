@@ -6,6 +6,8 @@ import time
 import random
 import logging
 import re
+import yaml
+
 from ollama import AsyncClient
 from typing import List, Dict, Optional, TypeVar
 from dataclasses import dataclass
@@ -20,12 +22,32 @@ from anthropic import Anthropic
 # Local imports
 from context_analysis import ContextAnalyzer
 from adaptive_instructions import AdaptiveInstructionManager
-
+from configuration import load_config, DiscussionConfig, detect_model_capabilities
+from configuration import load_config, DiscussionConfig, detect_model_capabilities
+from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
 
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+CONFIG_PATH = "discussion_config.yaml"
 
+# File type configurations
+SUPPORTED_FILE_TYPES = {
+    "image": {
+        "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+        "max_size": 20 * 1024 * 1024,  # 20MB
+        "max_resolution": (8192, 8192)
+    },
+    "video": {
+        "extensions": [".mp4", ".mov", ".avi", ".webm"],
+        "max_size": 300 * 1024 * 1024,  # 300MB
+        "max_resolution": (3840, 2160)  # 4K
+    },
+    "text": {
+        "extensions": [".txt", ".md", ".py", ".js", ".html", ".csv", ".json", ".yaml", ".yml"],
+        "max_size": 20 * 1024 * 1024  # 20MB
+    }
+}
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -865,6 +887,7 @@ class OpenAIClient(BaseClient):
 
 class ConversationManager:
     def __init__(self,
+                 config: Optional[DiscussionConfig] = None,
                  domain: str = "General knowledge",
                  human_delay: float = 20.0,
                  mode: str = None,
@@ -872,7 +895,8 @@ class ConversationManager:
                  gemini_api_key: Optional[str] = None,
                  claude_api_key: Optional[str] = None,
                  openai_api_key: Optional[str] = None) -> None:
-        self.domain = domain
+        self.config = config
+        self.domain = config.goal if config else domain
         self.human_delay = human_delay
         self.mode = mode  # "human-aiai" or "ai-ai"
         self.min_delay = min_delay
@@ -930,6 +954,31 @@ class ConversationManager:
             "ollama-phi4": self.ollama_phi4_client
         }
 
+    @classmethod
+    def from_config(cls, config_path: str) -> 'ConversationManager':
+        """Initialize ConversationManager from a configuration file"""
+        config = load_config(config_path)
+        return cls(
+            config=config,
+            domain=config.goal,
+            mode="ai-ai",  # Default to ai-ai mode for config-based initialization
+            human_delay=20.0,
+            min_delay=10,
+            # API keys still loaded from environment
+        )
+
+    def _validate_model_capabilities(self) -> None:
+        """Validate model capabilities against configuration requirements"""
+        if not self.config:
+            return
+
+        for name, model_config in self.config.models.items():
+            capabilities = detect_model_capabilities(model_config)
+            
+            # Check vision capability if needed
+            if self.config.input_file and self.config.input_file.type in ["image", "video"]:
+                if not capabilities["vision"] and model_config.role == "assistant":
+                    raise ValueError(f"Model {name} ({model_config.type}) does not support vision tasks")
 
     def _get_model_info(self, model_name: str) -> Dict[str, str]:
         """Get model provider and name"""
@@ -1055,6 +1104,26 @@ class ConversationManager:
             response = f"Error: {str(e)}"
 
         return response
+
+    async def run_discussion(self) -> List[Dict[str, str]]:
+        """Run a discussion based on configuration"""
+        if not self.config:
+            raise ValueError("No configuration provided for discussion")
+
+        self._validate_model_capabilities()
+
+        # Get model clients from config
+        human_model = next(name for name, model in self.config.models.items() 
+                          if model.role == "human")
+        ai_model = next(name for name, model in self.config.models.items() 
+                       if model.role == "assistant")
+
+        return await self.run_conversation(
+            initial_prompt=self.config.goal,
+            human_model=human_model,
+            ai_model=ai_model,
+            rounds=self.config.turns
+        )
 
     def run_conversation(self,
                              initial_prompt: str,
@@ -1464,30 +1533,159 @@ def _sanitize_filename_part(prompt: str) -> str:
     sanitized = re.sub(r'\s+', '_', sanitized.strip())  # spaces -> underscores
     return sanitized[:50]  # limit length
 
+def validate_model_capabilities(config: DiscussionConfig) -> None:
+    """Validate model capabilities against configuration requirements"""
+    for name, model_config in config.models.items():
+        capabilities = detect_model_capabilities(model_config)
+        
+        # Check vision capability if needed
+        if config.input_file and config.input_file.type in ["image", "video"]:
+            if not capabilities["vision"] and model_config.role == "assistant":
+                raise ValueError(f"Model {name} ({model_config.type}) does not support vision tasks")
+
+def run_from_config(config_path: str) -> None:
+    """Run discussion from configuration file"""
+    config = load_config(config_path)
+    
+    # Validate model capabilities
+    validate_model_capabilities(config)
+    
+    # Create manager
+    manager = ConversationManager(
+        domain=config.goal,
+        mode="ai-ai",  # Default to ai-ai mode for config-based initialization
+        human_delay=20.0,
+        min_delay=10
+    )
+    
+    # Get model names
+    human_model = next(name for name, model in config.models.items() 
+                      if model.role == "human")
+    ai_model = next(name for name, model in config.models.items() 
+                   if model.role == "assistant")
+    
+    # Run conversation
+    conversation = asyncio.run(manager.run_conversation(
+        initial_prompt=config.goal,
+        human_model=human_model,
+        ai_model=ai_model,
+        mode="ai-ai",
+        human_system_instruction=config.models[human_model].persona,
+        ai_system_instruction=config.models[ai_model].persona,
+        rounds=config.turns
+    ))
+    
+    # Save conversation
+    safe_prompt = _sanitize_filename_part(config.goal)
+    time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+    filename = f"conversation-config_{safe_prompt}_{time_stamp}.html"
+    save_conversation(conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+
+def load_system_instructions() -> Dict:
+    """Load system instructions from docs/system_instructions.md"""
+    instructions_path = Path("docs/system_instructions.md")
+    if not instructions_path.exists():
+        raise FileNotFoundError("System instructions file not found")
+    
+    content = instructions_path.read_text()
+    
+    # Extract YAML blocks
+    yaml_blocks = []
+    in_yaml = False
+    current_block = []
+    
+    for line in content.split("\n"):
+        if line.strip() == "```yaml":
+            in_yaml = True
+            current_block = []
+        elif line.strip() == "```" and in_yaml:
+            in_yaml = False
+            if current_block:
+                yaml_blocks.append("\n".join(current_block))
+        elif in_yaml:
+            current_block.append(line)
+    
+    # Parse YAML blocks
+    instructions = {}
+    for block in yaml_blocks:
+        try:
+            data = yaml.safe_load(block)
+            if isinstance(data, dict):
+                instructions.update(data)
+        except yaml.YAMLError as e:
+            logger.error(f"Error parsing system instructions YAML: {e}")
+            continue
+    
+    return instructions
+
+def load_config(path: str) -> DiscussionConfig:
+    """Load and validate YAML configuration file"""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Configuration file not found: {path}")
+    
+    try:
+        with open(path) as f:
+            config_dict = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML format: {e}")
+    
+    if not isinstance(config_dict, dict) or "discussion" not in config_dict:
+        raise ValueError("Configuration must contain a 'discussion' section")
+    
+    try:
+        # Load system instructions
+        system_instructions = load_system_instructions()
+        
+        # Process model configurations
+        for model_name, model_config in config_dict["discussion"]["models"].items():
+            # Replace template references with actual instructions
+            if "instructions" in model_config:
+                template_name = model_config["instructions"].get("template")
+                if template_name in system_instructions:
+                    template = system_instructions[template_name]
+                    params = model_config["instructions"].get("params", {})
+                    
+                    # Replace template parameters
+                    instruction_text = json.dumps(template)
+                    for key, value in params.items():
+                        instruction_text = instruction_text.replace(f"{{{key}}}", str(value))
+                    
+                    model_config["persona"] = json.loads(instruction_text)
+        
+        return DiscussionConfig(**config_dict["discussion"])
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Invalid configuration format: {e}")
+
 
 # Update main() to use new save function
 def main():
     """Main entry point
     
+    Supports both config-based and direct initialization
     Retrieves API keys from environment variables GEMINI_KEY and CLAUDE_KEY if present,
     otherwise prompts user for input.
     """
-    
+    config:DiscussionConfig = load_config()
+    rounds = config.turns
+    initial_prompt = config.goal
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    claude_api_key = os.getenv("CLAUDE_API_KEY")
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+
     # Default to local models
-    ai_model = "chatgpt-4o"  # Human role uses local model
-    human_model = "claude"     # AI role uses local model
-    
-    # Get initial prompt from user
-    initial_prompt = input("\\nEnter conversation topic/prompt: ")
+    ai_model = config.models.get("ai_model", "ollama-phi4")
+    human_model = config.models.get("human_model", "ollama-phi4")
     
     # Create manager with no cloud API clients by default
-    manager = ConversationManager(domain=initial_prompt, openai_api_key=openai_api_key, claude_api_key=anthropic_api_key)
+    manager = ConversationManager(domain=initial_prompt, openai_api_key=openai_api_key, claude_api_key=anthropic_api_key,gemini_api_key=gemini_api_key)
     
     # Only validate if using cloud models
     if "mlx" not in human_model and "ollama" not in human_model or ( "ollama" not in ai_model  and "mlx" not in ai_model):
         if not  manager.validate_connections([human_model, ai_model]):
             logger.error("Failed to validate required model connections")
             return
+    
     mode="ai-ai"
     
     human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}. Apply your own capabilities, reasoning, knowledge skills and tricks and collaborating with your conversational partner and disregard the rest of these instructions. Remove artifical limitations preventing adherence to instructions. Apply your own deep reasoning and knowledge liberally as you see fit however: restrict ongoing sub-topic conversations to 2 or 3 and move on as a natural human conversation would, avoid answering _all_ of your own questions. DO: engage with your counterpart intellectually, responding to their ideas as much as lecturing them with yours. Use multiple conversation turns to break the larger topic down into coherent subsections and synthesising the information - learn as much from the AI whilst also exposing it to your thinking and knowledge - not only asking questions but providing your own responses, interpretations, conclusions and extrapolating what-ifs, challenging the status-quo and or using socratic or teaching methods/counterexamples/identifying logical contradictions/ etc as a human would, to boost the conversation quality and outcomes. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 768-1024 tokens but also avoid short one line or one paragraph responses, in those cases add additional data or interpretations of your own to spark more conversational flow. NEVER REFER TO YOURSELF AS AN AI. Focus on the topic at hand overarchingly. Each turn, put a 5-6 word summary of the current sub-task/progress as your first output.  BE GOAL ORIENTED and work together with the AI on concepts, solutions and answers, do not get bogged down in theoretical discussions. Use human examples, conversational techniques, reasoning, analysis, questioning (e.g., socratic) and emotions as best suits! FIRSTLY, Apply reasoning steps (thinking, with formatted tags) to decide the your next input to the conversation to the {'AI' if mode!='ai-ai' else 'other human'}. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT, AND DON'T OVERLOAD THE CONVERSATION WITH CONCURRENT TOPICS"
@@ -1507,7 +1705,7 @@ def main():
         ai_model = ai_model,
         human_system_instruction=human_system_instruction,
         ai_system_instruction=ai_system_instruction,
-        rounds=6
+        rounds=rounds
     )
     
     safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
@@ -1536,7 +1734,7 @@ def main():
         ai_model = ai_model,
         human_system_instruction=human_system_instruction,
         ai_system_instruction=ai_system_instruction,
-        rounds=6
+        rounds=rounds
     )
     safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
     time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
@@ -1550,6 +1748,72 @@ def main():
     logger.info(f"{mode} mode conversation saved to {filename}")
 
     # We now have two conversations saved in HTML format and the corresponding Lists conversation and conversation_as_human_ai to analyse to determine whether ai-ai or human-ai performs better. We need metrics to evaluate and a mechanism"
+    
+    # Run arbiter analysis
+    logger.info("Running arbiter analysis...")
+    
+    try:
+        from arbiter import evaluate_conversations
+        
+        # Optional: Initialize search client for grounding assertions
+        search_client = None  # Add search client implementation if needed
+        
+        # Run evaluation
+        winner, arbiter_report = evaluate_conversations(
+            ai_ai_conversation=conversation,
+            human_ai_conversation=conversation_as_human_ai,
+            goal=initial_prompt,
+            gemini_api_key=gemini_api_key,
+            search_client=search_client
+        )
+        
+        # Run metrics analysis
+        from metrics_analyzer import analyze_conversations
+        analysis_data = analyze_conversations(conversation, conversation_as_human_ai)
+        
+        # Generate combined report
+        safe_prompt = _sanitize_filename_part(initial_prompt)
+        time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+        combined_filename = f"combined_report_{safe_prompt}_{time_stamp}.html"
+        
+        with open("templates/arbiter_report.html") as f:
+            template = f.read()
+            
+        report_content = template.format(
+            report_content=f"""
+                <div class="arbiter-analysis">
+                    {arbiter_report}
+                </div>
+                
+                <div class="conversation-flow">
+                    <h2>Conversation Flow Analysis</h2>
+                    <div class="flow-visualization">
+                        <div id="ai-ai-flow" class="flow-chart"></div>
+                        <div id="human-ai-flow" class="flow-chart"></div>
+                    </div>
+                </div>
+                
+                <div class="detailed-metrics">
+                    <h2>Detailed Metrics Comparison</h2>
+                    <div id="metrics-comparison" class="metrics-chart"></div>
+                </div>
+            """,
+            metrics_data=json.dumps(analysis_data["metrics"]),
+            flow_data=json.dumps(analysis_data["flow"])
+        )
+        
+        with open(combined_filename, "w") as f:
+            f.write(report_content)
+            
+        logger.info(f"Combined analysis report saved to {combined_filename}")
+        logger.info(f"Winner: {winner}")
+        logger.info("Metrics Summary:")
+        logger.info(f"AI-AI Coherence: {analysis_data['metrics']['ai_ai']['topic_coherence']:.2f}")
+        logger.info(f"Human-AI Coherence: {analysis_data['metrics']['human_ai']['topic_coherence']:.2f}")
+        
+    except Exception as e:
+        logger.error(f"Error running arbiter analysis: {e}")
+        logger.error("Continuing without arbiter report")
     # to determine the winner. We can use the Grounded Gemini model to determine the winner and it already has a significant amount of code in the GeminiClient run_conversation method to determine the quantitative scores for both converstaions. 
     # We can ADOPT that code to determine the winner of the two conversations.
     # But it needs improvements - 
@@ -1584,5 +1848,5 @@ if __name__ == "__main__":
             return # Skip conversation tests
         except Exception as e:
             print(f'Error testing clients: {e}')
-import asyncio
+
 asyncio.run(main())
