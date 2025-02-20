@@ -11,6 +11,30 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
+class AssessmentSchema(BaseModel):
+    """Schema for conversation assessment results"""
+    class ParticipantRating(BaseModel):
+        coherence: float
+        engagement: float
+        reasoning_depth: float
+        response_relevance: float
+
+    class ConversationQuality(BaseModel):
+        flow_coherence: float
+        topic_depth: float
+        knowledge_exchange: float
+        goal_progress: float
+
+    class AssertionClaim(BaseModel):
+        claim: str
+        source_message: int
+        confidence: float
+        requires_verification: bool
+
+    participant_ratings: Dict[str, ParticipantRating]
+    conversation_quality: ConversationQuality
+    assertions: List[AssertionClaim]
+
 class AssertionEvidence(BaseModel):
     """Evidence supporting an assertion"""
     assertion: str
@@ -269,13 +293,7 @@ class ConversationArbiter:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
-                    response_schema={
-                        'conversation_quality': ConversationMetrics,
-                        'participant_analysis': Dict[str, ParticipantMetrics],
-                        'assertions': List[str],
-                        'key_insights': List[str],
-                        'improvement_suggestions': List[str]
-                    },
+                    response_schema=AssessmentSchema,
                     temperature=0.1,
                     maxOutputTokens=4096,
                     candidateCount=1,
@@ -410,7 +428,12 @@ class ConversationArbiter:
             ai_ai_analysis, human_ai_analysis
         )
         
-        # Combine analyses
+        # Extract strategy scores with fallback
+        strategy_analysis = {
+            "ai-ai": ai_ai_analysis["conversation_quality"].get("strategy", 0.0),
+            "human-ai": human_ai_analysis["conversation_quality"].get("strategy", 0.0)
+        }
+        
         result = ArbiterResult(
             winner=winner,
             conversation_metrics={
@@ -432,10 +455,7 @@ class ConversationArbiter:
                         human_ai_analysis["key_insights"],
             improvement_suggestions=ai_ai_analysis["improvement_suggestions"] +
                                   human_ai_analysis["improvement_suggestions"],
-            strategy_analysis={
-                "ai-ai": ai_ai_analysis["conversation_quality"]["strategy"],
-                "human-ai": human_ai_analysis["conversation_quality"]["strategy"]
-            },
+            strategy_analysis=strategy_analysis,
             grounded_assertions={
                 "ai-ai": ai_ai_analysis.get("grounded_assertions", {}),
                 "human-ai": human_ai_analysis.get("grounded_assertions", {})
@@ -501,6 +521,10 @@ class ConversationArbiter:
             logger.warning(f"Failed to load report template: {e}")
             template = None
             
+        return template.format(report_content=self._generate_report_content(result))
+
+    def _generate_report_content(self, result: ArbiterResult) -> str:
+        """Generate the HTML content for the report"""
         return f"""
         <div class="arbiter-report">
             <h2>Conversation Analysis Report</h2>
@@ -516,19 +540,19 @@ class ConversationArbiter:
                     <div class="ai-ai-metrics">
                         <h4>AI-AI Conversation</h4>
                         <ul>
-                            <li>Coherence: {result.conversation_metrics["ai-ai"].coherence:.2f}</li>
-                            <li>Depth: {result.conversation_metrics["ai-ai"].depth:.2f}</li>
-                            <li>Goal Progress: {result.conversation_metrics["ai-ai"].goal_progress:.2f}</li>
-                            <li>Grounded Assertions: {len(result.grounded_assertions["ai-ai"])}</li>
+                            <li>Coherence: <span class="metric-value">{result.conversation_metrics["ai-ai"].coherence:.2f}</span></li>
+                            <li>Depth: <span class="metric-value">{result.conversation_metrics["ai-ai"].depth:.2f}</span></li>
+                            <li>Goal Progress: <span class="metric-value">{result.conversation_metrics["ai-ai"].goal_progress:.2f}</span></li>
+                            <li>Grounded Assertions: <span class="metric-value">{len(result.grounded_assertions["ai-ai"])}</span></li>
                         </ul>
                     </div>
                     <div class="human-ai-metrics">
                         <h4>Human-AI Conversation</h4>
                         <ul>
-                            <li>Coherence: {result.conversation_metrics["human-ai"].coherence:.2f}</li>
-                            <li>Depth: {result.conversation_metrics["human-ai"].depth:.2f}</li>
-                            <li>Goal Progress: {result.conversation_metrics["human-ai"].goal_progress:.2f}</li>
-                            <li>Grounded Assertions: {len(result.grounded_assertions["human-ai"])}</li>
+                            <li>Coherence: <span class="metric-value">{result.conversation_metrics["human-ai"].coherence:.2f}</span></li>
+                            <li>Depth: <span class="metric-value">{result.conversation_metrics["human-ai"].depth:.2f}</span></li>
+                            <li>Goal Progress: <span class="metric-value">{result.conversation_metrics["human-ai"].goal_progress:.2f}</span></li>
+                            <li>Grounded Assertions: <span class="metric-value">{len(result.grounded_assertions["human-ai"])}</span></li>
                         </ul>
                     </div>
                 </div>
@@ -559,16 +583,15 @@ class ConversationArbiter:
                 <h3>Improvement Suggestions</h3>
                 <ul>
                     {
-                        ''.join(f"<li>{suggestion}</li>" 
-                               for suggestion in result.improvement_suggestions)
+                        ''.join(f"<li>{suggestion}</li>" for suggestion in result.improvement_suggestions)
                     }
                 </ul>
             </div>
             
             <div class="strategy-section">
                 <h3>Strategy Analysis</h3>
-                <p>AI-AI Strategy Effectiveness: {result.strategy_analysis["ai-ai"]:.2f}</p>
-                <p>Human-AI Strategy Effectiveness: {result.strategy_analysis["human-ai"]:.2f}</p>
+                <p>AI-AI Strategy Effectiveness: <span class="metric-value">{result.strategy_analysis["ai-ai"]:.2f}</span></p>
+                <p>Human-AI Strategy Effectiveness: <span class="metric-value">{result.strategy_analysis["human-ai"]:.2f}</span></p>
             </div>
         </div>
         """
