@@ -8,7 +8,7 @@ import logging
 import re
 import yaml
 
-from ollama import AsyncClient
+from ollama import AsyncClient, ChatResponse, chat
 from typing import List, Dict, Optional, TypeVar
 from dataclasses import dataclass
 import io
@@ -29,7 +29,7 @@ from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, Discussion
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-CONFIG_PATH = "discussion_config.yaml"
+CONFIG_PATH = "config.yaml"
 
 # File type configurations
 SUPPORTED_FILE_TYPES = {
@@ -295,8 +295,8 @@ Generate a natural but sophisticated prompt that:
 @dataclass
 class GeminiClient(BaseClient):
     """Client for Gemini API interactions"""
-    def __init__(self, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
-        super().__init__(mode="ai-ai", api_key=api_key, domain=domain, model=model)
+    def __init__(self, mode:str, role:str, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
+        super().__init__(mode=mode, api_key=api_key, domain=domain, model=model)
         self.model_name = self.model
         try:
             self.client = genai.Client(api_key=self.api_key)
@@ -314,12 +314,7 @@ class GeminiClient(BaseClient):
             candidateCount = 1,
             #enableEnhancedCivicAnswers=True,
             responseMimeType = "text/plain",
-            safety_settings=[
-                types.SafetySetting(
-                    category="HARM_CATEGORY_HATE_SPEECH",
-                    maxOutputTokens=2048
-                )
-            ]
+            safety_settings=[]
             )
         
 
@@ -559,10 +554,15 @@ class ClaudeClient(BaseClient):
             model_config = ModelConfig()
 
         self.role=role
-
         # Update instructions based on conversation history
-        current_instructions = self._update_instructions(history) if history else self.instructions
-        
+        if role and role is not None and history is not None and len(history)>0:
+            current_instructions = self._update_instructions(history) if history else self.instructions
+        elif ((history and len(history)>0) or (self.mode is None or self.mode == "ai-ai")):
+            current_instructions = self._get_mode_aware_instructions(role=role, mode=self.mode)
+        elif self.role == "human" or self.role == "user":
+            current_instructions = self.generate_human_instructions() or self.instructions
+        else:
+            current_instructions = self.instructions if self.instructions else "You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history)
         ai_response = conversation_analysis.get("ai_response")
@@ -571,39 +571,22 @@ class ClaudeClient(BaseClient):
 
 
         # Build context-aware prompt
-        context_prompt = f"""
-        {conversation_summary}
-
-        Previous AI Response: {ai_response if ai_response else 'No previous response'}
-
-        Assessment:
-        {json.dumps(ai_assessment, indent=2) if ai_assessment else 'No assessment available'}
-
-        As a human expert in {self.domain}, analyze the conversation:
-        1. What points do you agree/disagree with?
-        2. What needs clarification?
-        3. What important aspects were missed?
-        4. What follow-up questions would advance the discussion?
-
-        Use <thinking> tags to show your reasoning process.
-        Respond naturally as a human expert, maintaining the conversation flow.
-        """
-
+        context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" else prompt
         # Format messages for Claude API
         #messages = [{
         #    "role": "user",
         #    "content": context_prompt + "\\n\\nCurrent prompt: " + prompt
         #}]
-        messages = history
+        #messages = history
+        #messages.append({"role": "user", "content": prompt})
         logger.debug(f"Using instructions: {current_instructions}")
         logger.debug(f"Context prompt: {context_prompt}")
-        logger.debug(f"Messages: {messages}")
-        history.append({"role": "user", "content": prompt})
+        history.append({'role': "user", 'content': context_prompt})
         try:
             response = self.client.messages.create(
                 model=self.model,
-                system = system_instruction,
-                messages=[message for message in history if message['role'] in ['user','assistant']],
+                system = current_instructions,
+                messages=[ { 'role': msg['role'], 'content' : ''.join(msg['content']) } for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role']=="assistant"],
                 max_tokens=8192,
                 temperature=0.75,  # Higher temperature for human-like responses
                 #system=[{
@@ -619,30 +602,6 @@ class ClaudeClient(BaseClient):
         except Exception as e:
             logger.error(f"Error generating Claude response: {str(e)}")
             return f"Error generating Claude response: {str(e)}"
-
-    def format_history(self, history: List[Dict[str, str]] = None, system_instruction: str = None) -> str:
-        """Format conversation history for Claude API
-        
-        Args:
-            history: List of conversation turns
-            system_instruction: System instructions for Claude
-            
-        Returns:
-            str: Formatted conversation history
-        """
-        formatted = ""
-        
-        # Add system instruction if provided
-        #if system_instruction:
-        #    formatted += f"USER: {system_instruction}\\nASSISTANT: I understand and will follow these instructions."
-            
-        # Format conversation history
-        if history:
-            for msg in history:
-                role = "HUMAN" if msg["role"] == "user" else "assistant"
-                formatted += f"""{role}: {formatted(msg['content'].strip().strip('\n'))}"""
-                
-        return formatted.strip()
 
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
@@ -691,18 +650,17 @@ class OllamaClient(BaseClient):
 
         text = ""
         try:
-            for chunk in AsyncClient().chat(
+            response:ChatResponse = chat(
                 model=self.model, 
                 messages=history,
-                #stream=True, 
                 options = {
-                    "num_ctx": 6172, 
-                    "num_predict": 2048, 
-                    "temperature": 0.75
+                    "num_ctx": 4096, 
+                    "num_predict": 1532, 
+                    "temperature": 0.7
                     }
-                ):
-                print(part['message']['content'], end='', flush=True)
-                text += part['message']['content']
+                )
+                #print(part['message']['content'], end='', flush=True)
+                #text += part['message']['content']
             return text
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
@@ -910,8 +868,8 @@ class ConversationManager:
         anthropic_api_key = claude_api_key
         openai_api_key = os.getenv("OPENAI_API_KEY")
         # Initialize all clients with their specific models
-        self.claude_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
-        self.haiku_client = ClaudeClient(role='assistant', api_key=claude_api_key, mode=mode, domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
+        self.claude_client = ClaudeClient(role=None, api_key=claude_api_key, mode=None, domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
+        self.haiku_client = ClaudeClient(role=None, api_key=claude_api_key, mode=None, domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
         
         self.openai_o1_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model='o1-preview') if openai_api_key else None
         self.openai_4o_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model="chatgpt-4o-latest") if openai_api_key else None
@@ -922,9 +880,9 @@ class ConversationManager:
         self.mlx_qwq_client = MLXClient(mode=self.mode, domain=domain, base_url=None, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
         self.mlx_abliterated_client =  MLXClient(mode=self.mode, domain=domain, base_url=None, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
         
-        self.gemini_2_reasoning_client =  GeminiClient(api_key=gemini_api_key, mode=mode, domain=domain, model="gemini-2.0-flash-thinking-exp-01-21") if gemini_api_key else None
-        self.gemini_client =  GeminiClient(api_key=gemini_api_key, mode=mode, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
-        self.gemini_1206_client =  GeminiClient(api_key=gemini_api_key, mode=mode, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
+        self.gemini_2_reasoning_client =  GeminiClient(api_key=gemini_api_key, role=None, mode=mode, domain=domain, model="gemini-2.0-flash-thinking-exp-01-21") if gemini_api_key else None
+        self.gemini_client =  GeminiClient(api_key=gemini_api_key, role=None, mode=mode, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
+        self.gemini_1206_client =  GeminiClient(api_key=gemini_api_key, role=None, mode=mode, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
         
         self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi4:latest')
         self.ollama_client =  OllamaClient(mode=self.mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
@@ -1170,18 +1128,18 @@ class ConversationManager:
                 model_type=human_model,
                 client=human_client
             )
-            print(f"\\n\\n\\nHUMAN: ({human_model.upper()}): {human_response}\\n\\n")
+            print(f"\\n\\n\\nHUMAN: ({human_model.upper()}): {human_response}\n\n")
 
             # AI turn
             ai_response =  self.run_conversation_turn(
-                prompt=f"Respond: {human_response}",# if mode=="human-aiai" else f"Last response: {human_response}\n{ai_client.generate_human_prompt(self.conversation_history.copy())}",
-                #system_instruction=ai_system_instruction if mode=="human-aiai" else human_client.generate_human_system_instructions(),
+                prompt=f"{human_response}",# if mode=="human-aiai" else f"Last response: {human_response}\n{ai_client.generate_human_prompt(self.conversation_history.copy())}",
+                system_instruction=ai_system_instruction if mode=="human-aiai" else human_client.generate_human_system_instructions(),
                 role="assistant",
                 mode=self.mode,
                 model_type=ai_model,
                 client=ai_client
             )
-            print(f"\\n\\n\\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\\n\\n\\n")
+            print(f"\n\\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
 
         return self.conversation_history
 
@@ -1545,8 +1503,8 @@ def validate_model_capabilities(config: DiscussionConfig) -> None:
 
 def run_from_config(config_path: str) -> None:
     """Run discussion from configuration file"""
-    config = load_config(config_path)
-    
+    #config = load_config(config_path)
+    config = None
     # Validate model capabilities
     validate_model_capabilities(config)
     
@@ -1665,17 +1623,20 @@ def main():
     Retrieves API keys from environment variables GEMINI_KEY and CLAUDE_KEY if present,
     otherwise prompts user for input.
     """
-    config:DiscussionConfig = load_config()
-    rounds = config.turns
-    initial_prompt = config.goal
+    #config:DiscussionConfig = load_config()
+    rounds = 4 #config.turns
+    initial_prompt = "Which factors most strongly influence pleasable conversational experiences by humans when evaluating LLMs and why?" #config.goal
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("CLAUDE_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
+    human_model = "ollama-phi4"
+    ai_model = "claude"
+
     # Default to local models
-    ai_model = config.models.get("ai_model", "ollama-phi4")
-    human_model = config.models.get("human_model", "ollama-phi4")
+    #ai_model = config.models.get("ai_model", "ollama-phi4")
+    #human_model = config.models.get("human_model", "ollama-phi4")
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(domain=initial_prompt, openai_api_key=openai_api_key, claude_api_key=anthropic_api_key,gemini_api_key=gemini_api_key)
@@ -1834,19 +1795,4 @@ def main():
 
 if __name__ == "__main__":
     # Test client initialization
-    def test_clients():
-        try:
-            print('Testing client initialization...')
-            ollama = OllamaClient(mode='ai-ai', domain='test')
-            print(f'Ollama client initialized: {ollama}')
-            claude = ClaudeClient(role='user', api_key=anthropic_api_key, mode='ai-ai', domain='test')
-            print(f'Claude client initialized: {claude}')
-            mlx = MLXClient(mode='ai-ai', domain='test')
-            print(f'MLX client initialized: {mlx}')
-            openai = OpenAIClient(api_key=openai_api_key, mode='ai-ai', domain='test')
-            print(f'OpenAI client initialized: {openai}')
-            return # Skip conversation tests
-        except Exception as e:
-            print(f'Error testing clients: {e}')
-
-asyncio.run(main())
+    asyncio.run(main())
