@@ -1,0 +1,67 @@
+discussion:
+  mode: "ai-ai"
+  turns: 8
+  models:
+    architect:
+      type: "claude-3-sonnet"
+      role: "human"
+      parameters:
+        temperature: 0.8
+        max_tokens: 8192
+        top_p: 0.9
+      instructions:
+        template: "human_system_instructions"
+        params:
+          domain: "Software Architecture"
+          expertise: "System Design"
+          focus: "Architectural Patterns"
+    
+    design_assistant:
+      type: "o3-mini"
+      role: "assistant"
+      parameters:
+        temperature: 0.6
+        max_tokens: 8192
+        top_p: 0.9
+      instructions:
+        template: "ai_assistant_instructions"
+        params:
+          domain: "Software Architecture"
+          expertise: "Design Analysis"
+          focus: "Implementation Feasibility"
+  
+  input_file:
+    path: "./docs/system_design.md"
+    type: "text"
+  
+  timeouts:
+    request: 600
+    retry_count: 2
+    notify_on:
+      - timeout
+      - retry
+      - error
+  
+  execution:
+    parallel: false
+    delay_between_turns: 2.0
+    max_conversation_tokens: 32768
+  
+  goal: |
+    Review the proposed system architecture document, focusing on:
+    1. Scalability considerations
+    2. Component interactions
+    3. Data flow patterns
+    4. Security architecture
+    5. Integration points
+    
+    The review should evaluate both the high-level design decisions
+    and their practical implementation implications, considering
+    current best practices and future maintainability.
+    
+    Key aspects to consider:
+    - Microservices boundaries and communication
+    - Data consistency and transaction management
+    - API design and versioning strategy
+    - Monitoring and observability
+    - Deployment and scaling strategies

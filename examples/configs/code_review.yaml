@@ -1,0 +1,60 @@
+discussion:
+  mode: "ai-ai"  # ai-ai or human-aiai
+  turns: 5
+  models:
+    senior_dev:
+      type: "claude-3-sonnet"
+      role: "human"
+      parameters:
+        temperature: 0.7
+        max_tokens: 8192
+        top_p: 0.9
+      instructions:
+        template: "human_system_instructions"
+        params:
+          domain: "Code Review"
+          expertise: "Senior Software Engineer"
+          focus: "Code Quality and Architecture"
+    
+    code_assistant:
+      type: "o3-mini"
+      role: "assistant"
+      parameters:
+        temperature: 0.6
+        max_tokens: 8192
+        top_p: 0.9
+      instructions:
+        template: "ai_assistant_instructions"
+        params:
+          domain: "Code Review"
+          expertise: "Code Analysis"
+          focus: "Implementation Details"
+  
+  input_file:
+    path: "./src/main.py"
+    type: "text"
+  
+  timeouts:
+    request: 300
+    retry_count: 3
+    notify_on:
+      - timeout
+      - retry
+      - error
+  
+  execution:
+    parallel: false
+    delay_between_turns: 2.0
+    max_conversation_tokens: 32768
+  
+  goal: |
+    Perform a comprehensive code review of the provided Python file, focusing on:
+    1. Code quality and best practices
+    2. Performance considerations
+    3. Security implications
+    4. Architecture and design patterns
+    5. Potential improvements and refactoring suggestions
+    
+    The review should be collaborative, with both participants contributing insights
+    and building on each other's observations. Consider both immediate improvements
+    and long-term maintainability.

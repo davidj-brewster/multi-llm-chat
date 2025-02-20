@@ -1,0 +1,60 @@
+discussion:
+  mode: "human-ai"  # ai-ai or human-aiai
+  turns: 10
+  models:
+    radiologist:
+      type: "o1"
+      role: "assistant"
+      parameters:
+        temperature: 1.0
+        max_tokens: 49152
+      instructions:
+        template: "ai_assistant_instructions"
+        params:
+          domain: "Medical Imaging"
+          expertise: "Neuroradiology"
+          focus: "Diagnostic Analysis"
+    
+    medical_ai:
+      type: "gemini-2-pro"
+      role: "assistant"
+      parameters:
+        temperature: 0.35  # Lower temperature for more precise analysis
+        max_tokens: 8192
+        top_p: 0.95
+      instructions:
+        template: "human_system_instructions"
+        params:
+          domain: "Medical Imaging"
+          expertise: "Image Analysis"
+          focus: "Pattern Recognition"
+  
+  input_file:
+    path: "./data/brain_scan_sequence.png"
+    type: "video"
+    max_resolution: "4K"
+  
+  timeouts:
+    request: 600
+    retry_count: 2
+    notify_on:
+      - timeout
+      - retry
+      - error
+  
+  execution:
+    parallel: false
+    delay_between_turns: 2.0
+    max_conversation_tokens: 32768
+  
+  goal: |
+    Analyze the provided brain scan video sequence, focusing on:
+    1. Temporal changes in key regions
+    2. Identification of potential abnormalities
+    3. Comparison with typical patterns
+    4. Correlation with clinical implications
+    5. Recommendations for further investigation
+    
+    The discussion should leverage both clinical expertise and advanced
+    pattern recognition capabilities to provide comprehensive insights
+    into the patient's condition.
