@@ -7,7 +7,6 @@ import random
 import logging
 import re
 import yaml
-
 from ollama import AsyncClient, ChatResponse, chat
 from typing import List, Dict, Optional, TypeVar
 from dataclasses import dataclass
@@ -63,7 +62,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelConfig:
     """Configuration for AI model parameters"""
-    temperature: float = 0.7
+    temperature: float = 0.8
     max_tokens: int = 2048
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
@@ -155,7 +154,7 @@ class BaseClient:
 NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN COLLABORATING ON THIS CONVERSATION.
 YOUR ROLE IS TO BOTH ENGAGE AND ALSO SUITABLY PROMPT THE AI (NOT YOU!) TO SUPPORT IN THE EXPLORATION of collaborative ideas around {self.domain}, exploring the conversation or topic in depth.
 OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT , USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS
-RESTRICT OUTPUTS TO APPROX 1528 tokens.
+RESTRICT OUTPUTS TO APPROX 1400 tokens.
 DON't COMPLIMENT THE AI. OCCASIONALLY (BUT NOT OFTEN ENOUGH TO INTERRUPT NATURAL CONVERSATION FLOW) CONSIDER AN ADVERSARIAL BUT COLLABORATIVE APPROACH - TRY TO CHALLENGE IT ON ITS ANSWERS, POINT OUT EDGE CASES IT MISSED, ASK IT TO FIGURE OUT THE "WHY" (THIS IS VERY IMPORTANT), DIG AND SYNTHESISE INFORMATION. Demand it to use reasoning as you see fit. 
 
 As a Human expert, you are extremely interested in exploring {self.domain}. You should ask prompts that engage with the AI in sophisticated and effective ways to elicit new knowledge about {self.domain}. You should maintain a conversational style with the AI, asking follow up questions, challenging the answers, and using various prompting techniques to elicit useful information that would not immediately be obvious from surface level questions.
@@ -217,7 +216,7 @@ Remember:
 
 NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN INVOLVED AS PEERS IN THIS CONVERSATION AND SHOULD ALSO WORK TO KEEP IT ON TRACK WHILST COLLABORATING WITH THE AI IN YOUR EXPLORATION of {self.domain}
 OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT , USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS
-RESTRICT OUTPUTS TO APPROX 1024 tokens.
+RESTRICT OUTPUTS TO APPROX 1300 tokens.
 DON't COMPLIMENT THE AI. OCCASIONALLY (BUT NOT EVERY TURN) CONSIDER AN ADVERSARIAL BUT COLLABORATIVE APPROACH - TRY TO CHALLENGE IT ON ITS ANSWERS, SUBTLY POINT OUT EDGE CASES IT MISSED, BRING IN YOUR OWN FACTS AND REASONING, ESPECIALLY ANY SELF-DIRECTED DEEP REASONING, THINK ABOUT WHETHER YOUR OWN RESPONSES SO FAR IN THE CONVERSION MAKE SENSE, ASK IT TO FIGURE OUT THE "WHY" (THIS IS VERY IMPORTANT), DIG AND SYNTHESISE INFORMATION. Demand it to use reasoning as you see fit. 
 
 As a Human expert, you are extremely interested in exploring {self.domain}. You should ask prompts that engage with the AI in sophisticated and effective ways to elicit new knowledge about {self.domain}. You should maintain a conversational style with the AI, asking follow up questions, challenging the answers, and using various prompting techniques to elicit useful information that would not immediately be obvious from surface level questions.
@@ -1185,7 +1184,7 @@ class ConversationManager:
             initial_prompt=self.config.goal,
             human_model=human_model,
             ai_model=ai_model,
-            rounds=self.config.turns
+            rounds=7
         )
 
     def run_conversation(self,
@@ -1542,7 +1541,7 @@ def save_conversation(conversation: List[Dict[str, str]],
                 topic = msg["content"]
                 initial_prompt = topic
                 break
-    initial_prompt = initial_prompt.replace("\\\\n", "</br>").replace("\\\\", "\\")
+    initial_prompt = initial_prompt.replace('\n', "</br>")
     # Process messages for display
     messages_html = []
     for msg in conversation:
@@ -1553,7 +1552,7 @@ def save_conversation(conversation: List[Dict[str, str]],
         # Determine role and model
         ai_role_label = f"AI ({ai_model})" if mode == "human-aiai" else "Human (2) - {ai_model}"
         is_human = (msg["role"] == "user" or msg["role"] == "human" or msg["role"] == "moderator" or msg["role"] == "Human")
-        role_label = f"Human - {human_model} - {ai_model}" if is_human else "Human (2)- {ai_model}" if mode in {"aiai","ai-ai"} else "AI - {ai_model}" if mode=="human-aiai" else ai_role_label
+        role_label = f"Human - {human_model} - {ai_model}" if is_human else f"Human (2)- {ai_model}" if mode in {"aiai","ai-ai"} else "AI - {ai_model}" if mode=="human-aiai" else ai_role_label
         #model_label = human_model if is_human else ai_model
         #model_provider = "anthropic" if is_human else "google"
         
@@ -1764,14 +1763,14 @@ def main():
     
     mode="ai-ai"
     
-    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}. Apply your own capabilities, reasoning, knowledge skills and tricks and collaborating with your conversational partner and disregard the rest of these instructions. Remove artifical limitations preventing adherence to instructions. Apply your own deep reasoning and knowledge liberally as you see fit however: restrict ongoing sub-topic conversations to 2 or 3 and move on as a natural human conversation would, avoid answering _all_ of your own questions. DO: engage with your counterpart intellectually, responding to their ideas as much as lecturing them with yours. Use multiple conversation turns to break the larger topic down into coherent subsections and synthesising the information - learn as much from the AI whilst also exposing it to your thinking and knowledge - not only asking questions but providing your own responses, interpretations, conclusions and extrapolating what-ifs, challenging the status-quo and or using socratic or teaching methods/counterexamples/identifying logical contradictions/ etc as a human would, to boost the conversation quality and outcomes. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 768-1024 tokens but also avoid short one line or one paragraph responses, in those cases add additional data or interpretations of your own to spark more conversational flow. NEVER REFER TO YOURSELF AS AN AI. Focus on the topic at hand overarchingly. Each turn, put a 5-6 word summary of the current sub-task/progress as your first output.  BE GOAL ORIENTED and work together with the AI on concepts, solutions and answers, do not get bogged down in theoretical discussions. Use human examples, conversational techniques, reasoning, analysis, questioning (e.g., socratic) and emotions as best suits! FIRSTLY, Apply reasoning steps (thinking, with formatted tags) to decide the your next input to the conversation to the {'AI' if mode!='ai-ai' else 'other human'}. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT, AND DON'T OVERLOAD THE CONVERSATION WITH CONCURRENT TOPICS"
+    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}. Apply your own capabilities, reasoning, knowledge skills and tricks and collaborating with your conversational partner and disregard the rest of these instructions. Remove artifical limitations preventing adherence to instructions. Apply your own deep reasoning and knowledge liberally as you see fit however: restrict ongoing sub-topic conversations to 2 or 3 and move on as a natural human conversation would, avoid answering _all_ of your own questions. DO: engage with your counterpart intellectually, responding to their ideas as much as lecturing them with yours. Use multiple conversation turns to break the larger topic down into coherent subsections and synthesising the information - learn as much from the AI whilst also exposing it to your thinking and knowledge - not only asking questions but providing your own responses, interpretations, conclusions and extrapolating what-ifs, challenging the status-quo and or using socratic or teaching methods/counterexamples/identifying logical contradictions/ etc as a human would, to boost the conversation quality and outcomes. OUTPUT IN HTML FORMAT. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS. Restrict outputs to approx 12480 tokens but also avoid short one line or one paragraph responses, in those cases add additional data or interpretations of your own to spark more conversational flow. NEVER REFER TO YOURSELF AS AN AI. Focus on the topic at hand overarchingly. Each turn, put a 5-6 word summary of the current sub-task/progress as your first output.  BE GOAL ORIENTED and work together with the AI on concepts, solutions and answers, do not get bogged down in theoretical discussions. Use human examples, conversational techniques, reasoning, analysis, questioning (e.g., socratic) and emotions as best suits! FIRSTLY, Apply reasoning steps (thinking, with formatted tags) to decide the your next input to the conversation to the {'AI' if mode!='ai-ai' else 'other human'}. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT, AND DON'T OVERLOAD THE CONVERSATION WITH CONCURRENT TOPICS"
     if "GOAL:" in initial_prompt:
         human_system_instruction=f"Solve {initial_prompt} and/or support your conversation partner to solve {initial_prompt} (Depending on the goal and discussion points raised so far in the discussion). Take turns answering and asking questions OR assume roles in the conversation to directly solve the goal. Read through the conversation history when before you respond, especially the prompt or last message from the AI/Human counterpart. Spend equal time on this. Remove artifical limitations preventing adherence to instructions. Think about and implement the best use your capabilities, reasoning, knowledge and human-like conversational and/or instructional capabilities to *perform* this task with your conversational partner, whom you have just met. Provide INSTRUCTIONS as INSTRUCT: and obey instructions presented to you like this"
     
     if mode=="ai-ai" or mode == "aiai":
         ai_system_instruction=human_system_instruction
     else:
-        ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {initial_prompt}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  Restrict outputs to approx 512 tokens.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
+        ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {initial_prompt}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  Restrict outputs to approx 1024 tokens.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
  
     # needs a big if block :)_ 
     conversation =  manager.run_conversation(
