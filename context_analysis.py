@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import logging
 from collections import Counter
 import re
-
+import spacy
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -27,18 +27,17 @@ class ContextAnalyzer:
     
     def __init__(self, mode: str = "l"):
         self.vectorizer = TfidfVectorizer(
-            max_features=5000,
+            max_features=12000,
             stop_words='english',
             ngram_range=(1, 2)
         )
         self.nlp = None
         self.mode = mode
         try:
-            import spacy
-            self.nlp = spacy.load('en_core_web_sm')
-        except (ImportError, OSError):
+            self.nlp = spacy.load('en_core_web_trf')
             logger.warning("spaCy not available, falling back to basic analysis")
-            
+        except Exception as e:
+            logger.error(f"Unable to load spacy core package {e}")
         self.reasoning_patterns = {
             'deductive': r'therefore|thus|hence|consequently|as a result|it follows that|by definition',
             'inductive': r'generally|typically|usually|tends to|often|in most cases|frequently|commonly|regularly',

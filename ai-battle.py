@@ -24,6 +24,7 @@ from adaptive_instructions import AdaptiveInstructionManager
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
+from arbiter_v2 import evaluate_conversations
 
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -340,8 +341,8 @@ class GeminiClient(BaseClient):
 
     def _setup_generation_config(self):
         self.generation_config = types.GenerateContentConfig(
-            temperature = 0.7,
-            maxOutputTokens=4096,
+            temperature = 0.5,
+            maxOutputTokens=8192,
             candidateCount = 1,
             #enableEnhancedCivicAnswers=True,
             responseMimeType = "text/plain",
@@ -451,8 +452,8 @@ class GeminiClient(BaseClient):
                 model=self.model_name,
                 contents=assessment_prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    maxOutputTokens=2048
+                    temperature=0.1,
+                    maxOutputTokens=4096
                 )
             )
 
@@ -592,7 +593,7 @@ class ClaudeClient(BaseClient):
                 system = current_instructions,
                 messages=messages,
                 max_tokens=2048,
-                temperature=0.7  # Higher temperature for human-like responses
+                temperature=0.9  # Higher temperature for human-like responses
                 #system=[{
                 #    "role": "system",
                 #    "content": current_instructions
@@ -682,9 +683,9 @@ class OllamaClient(BaseClient):
                 messages=history,
                 options = {
                     "num_ctx": 6144, 
-                    "num_predict": 1532, 
-                    "temperature": 0.7,
-                    "num_batch": 512,
+                    "num_predict": 1280, 
+                    "temperature": 0.8,
+                    "num_batch": 256,
                     }
                 )
                 #print(part['message']['content'], end='', flush=True)
@@ -1738,7 +1739,7 @@ def main():
     otherwise prompts user for input.
     """
     #config:DiscussionConfig = load_config()
-    rounds = 7 #config.turns
+    rounds = 3 #config.turns
     initial_prompt = "Why did the USSR collapse" #config.goal
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("CLAUDE_API_KEY")
@@ -1827,9 +1828,7 @@ def main():
     # Run arbiter analysis
     logger.info("Running arbiter analysis...")
     
-    try:
-        from arbiter import evaluate_conversations
-        
+    try:        
         # Optional: Initialize search client for grounding assertions
         search_client = None  # Add search client implementation if needed
         
@@ -1921,22 +1920,14 @@ def main():
     except Exception as e:
         logger.error(f"Error running arbiter analysis: {e}")
         logger.error("Continuing without arbiter report")
-    # to determine the winner. We can use the Grounded Gemini model to determine the winner and it already has a significant amount of code in the GeminiClient run_conversation method to determine the quantitative scores for both converstaions. 
     # We can ADOPT that code to determine the winner of the two conversations.
     # But it needs improvements - 
     # 0. The context analysis and adaptive instructions are completely uninstrumented and we have no idea what impact they're having on the prompting or response or attention mechanisms of models, this is critical
-    # 1. It needs to be able to compare two conversations and determine the winner
-    # 2. It needs to use a core set of scoring metrics to rate conversations and participants
-    # 3. We still need to determine what those metrics are and how to score them, but its likely the Gemini 2.0 Pro model can do some of that for us
-    # 4. We need to compare models across multiple conversations and multiple adversary models, to see how and perhaps why some perform better than others or how to optimise prompting for some
     # 5. We would perhaps like to be able to run multiple conversations in parallel and compare them to determine the best model and the best conversation
     # 6. Model parameter tuning has been considered out of scope for now but we should consider it in terms of some small scale tests, e.g. high vs low temperatures
     # 7. A summariser or message level deduplicator for conversations would signficantly help smaller models and potentially reasoning models which might be overloaded by the volume of context being sent
     # 8. Context caching approaches haven't been explicitly targeted, there are also some per-vendor API possibilities that need to be investigated.
     # 9. Some tighter output constraints such as not answering its own questions, were lifted from the human prompt to enable a shared human-prompter and human-engaged ai simulation through the same core prompts. This needs reviewing
-    # 10. It would be very nice to format the html better, with an executive summary, perhaps some tabulation of the long conversations, and some more detailed analysis of the conversation, as well as better visualisation of <thinking> tags and fixes to model name presentation on the output and some minor formatting.
-    # 11. The human-ai conversation is not yet being evaluated by the arbiter, this needs to be done.
-    # 12. The ai-ai conversation is not yet being evaluated by the arbiter, this needs to be done.
     # 13. The streamlit UI is not really implemented
 
 if __name__ == "__main__":
