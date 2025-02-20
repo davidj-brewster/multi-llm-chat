@@ -25,6 +25,7 @@ from configuration import load_config, DiscussionConfig, detect_model_capabiliti
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
 from arbiter_v2 import evaluate_conversations
+from file_handler import ConversationMediaHandler, FileConfig as MediaConfig
 
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -115,6 +116,44 @@ class BaseClient:
             "summary": conversation_summary
         }
 
+    def handle_media(self, 
+                    file_path: str,
+                    human_model: str,
+                    ai_model: str,
+                    context: str = "") -> Optional[str]:
+        """Handle media files in conversation context"""
+        try:
+            # Process media file
+            metadata = self.media_handler.process_file(file_path)
+            if not metadata:
+                logger.error(f"Failed to process media file: {file_path}")
+                return None
+
+            # Check if current models can handle this media type
+            if not (MediaConfig.can_handle_media(human_model, metadata.type) and 
+                   MediaConfig.can_handle_media(ai_model, metadata.type)):
+                logger.warning(f"Models {human_model} and {ai_model} cannot handle {metadata.type} files")
+                return None
+
+            # Create media message with conversation context
+            media_msg = self.media_handler.prepare_media_message(
+                file_path,
+                conversation_context=context or self.domain,
+                role="user"
+            )
+            if not media_msg:
+                logger.error("Failed to prepare media message")
+                return None
+
+            # Add to conversation history
+            self.conversation_history.append(media_msg)
+
+            # Create appropriate prompt for next turn
+            return self.media_handler.create_media_prompt(metadata, context=context or self.domain)
+            
+        except Exception as e:
+            logger.error(f"Error handling media file: {e}")
+            return None
     def _get_initial_instructions(self) -> str:
         """Get initial instructions before conversation history exists"""
         if self.adaptive_manager is None:
@@ -954,6 +993,7 @@ class ConversationManager:
         self.domain = config.goal if config else domain
         self.human_delay = human_delay
         self.mode = mode  # "human-aiai" or "ai-ai"
+        self.media_handler = ConversationMediaHandler()
         self.min_delay = min_delay
         self.conversation_history: List[Dict[str, str]] = []
         self.is_paused = False

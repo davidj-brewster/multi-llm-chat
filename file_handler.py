@@ -208,18 +208,29 @@ class ConversationMediaHandler:
 
             if task == "analyze":
                 prompts.extend([
-                    "Please analyze this image considering:",
+                    "Let's analyze this image together. Consider:",
                     "1. Visual content and composition",
                     "2. Any text or writing present",
                     "3. Relevance to our discussion",
-                    "4. Key insights or implications"
+                    "4. Key insights or implications",
+                    "\nShare your initial analysis, but also:",
+                    "- Ask your conversation partner what aspects stand out to them",
+                    "- Identify any patterns or details that might need closer examination",
+                    "- Suggest specific elements that could benefit from your partner's expertise",
+                    "- Be open to alternative interpretations and encourage deeper exploration",
+                    "\nRemember to:",
+                    "- Connect your analysis to the ongoing discussion",
+                    "- Challenge assumptions and invite different perspectives",
+                    "- Build on your partner's insights to develop a richer understanding",
+                    "- Identify potential areas for further investigation"
                 ])
             elif task == "enhance":
                 prompts.extend([
                     "Please suggest improvements for this image:",
                     "1. Quality enhancements",
                     "2. Composition adjustments",
-                    "3. Relevant modifications based on our discussion"
+                    "3. Relevant modifications based on our discussion",
+                    "4. Ask your partner's opinion on these suggestions"
                 ])
 
         elif metadata.type == "video":
@@ -230,11 +241,16 @@ class ConversationMediaHandler:
             ])
 
             prompts.extend([
-                "Please analyze this video considering:",
+                "Let's analyze this video together. Consider:",
                 "1. Visual content and scene composition",
                 "2. Motion and temporal elements",
                 "3. Relevance to our discussion",
-                "4. Key moments or insights"
+                "4. Key moments or insights",
+                "\nAfter sharing your initial observations:",
+                "- Ask which scenes or moments caught your partner's attention",
+                "- Discuss any patterns or themes you notice",
+                "- Explore how different interpretations might affect our understanding",
+                "- Consider what aspects deserve deeper analysis"
             ])
 
         return "\n".join(filter(None, prompts))

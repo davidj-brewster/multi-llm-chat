@@ -35,6 +35,7 @@ class ContextAnalyzer:
         self.mode = mode
         try:
             self.nlp = spacy.load('en_core_web_trf')
+        except OSError:
             logger.warning("spaCy not available, falling back to basic analysis")
         except Exception as e:
             logger.error(f"Unable to load spacy core package {e}")
