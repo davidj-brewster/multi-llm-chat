@@ -96,7 +96,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.43.1"
+version = "0.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -107,9 +107,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/d8/238c2bc59e41a787e7b62460adfc7b2edd88f28b0a14e292801a72725369/anthropic-0.43.1.tar.gz", hash = "sha256:c7f13e4b7b515ac4a3111142310b214527c0fc561485e5bc9b582e49fe3adba2", size = 195298 }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/68/3b4c045edf6dc6933895e8f279cc77c7684874c8aba46a4e6241c8b147cf/anthropic-0.46.0.tar.gz", hash = "sha256:eac3d43271d02321a57c3ca68aca84c3d58873e8e72d1433288adee2d46b745b", size = 202191 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/2b/63b167d76401f759c8c4ff0266042e60aac6fd3cc0685b27437ceaaf95eb/anthropic-0.43.1-py3-none-any.whl", hash = "sha256:20759c25cd0f4072eb966b0180a41c061c156473bbb674da6a3f1e92e1ad78f8", size = 208170 },
+    { url = "https://files.pythonhosted.org/packages/50/6f/346beae0375df5f6907230bc63d557ef5d7659be49250ac5931a758322ae/anthropic-0.46.0-py3-none-any.whl", hash = "sha256:1445ec9be78d2de7ea51b4d5acd3574e414aea97ef903d0ecbb57bec806aaa49", size = 223228 },
 ]
 
 [[package]]
@@ -280,6 +280,7 @@ dependencies = [
     { name = "mlx-lm" },
     { name = "multidict" },
     { name = "narwhals" },
+    { name = "networkx" },
     { name = "numpy" },
     { name = "ollama" },
     { name = "openai" },
@@ -336,7 +337,7 @@ requires-dist = [
     { name = "aiosignal", specifier = "==1.3.2" },
     { name = "altair", specifier = "==5.5.0" },
     { name = "annotated-types", specifier = "==0.7.0" },
-    { name = "anthropic", specifier = "==0.43.1" },
+    { name = "anthropic", specifier = "==0.46.0" },
     { name = "anyio", specifier = "==4.8.0" },
     { name = "attrs", specifier = "==24.3.0" },
     { name = "beautifulsoup4", specifier = "==4.12.3" },
@@ -372,6 +373,7 @@ requires-dist = [
     { name = "mlx-lm", specifier = "==0.21.1" },
     { name = "multidict", specifier = "==6.1.0" },
     { name = "narwhals", specifier = "==1.23.0" },
+    { name = "networkx", specifier = "==3.4.2" },
     { name = "numpy", specifier = "==2.2.2" },
     { name = "ollama", specifier = ">=0.4.7" },
     { name = "openai", specifier = ">=1.63.2" },
@@ -984,6 +986,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7a/78/45bf964ecfb5a2b87f9d143babb5d25290043e83165324ff20bd060cafb8/narwhals-1.23.0.tar.gz", hash = "sha256:3da4b1e7675b3d8ed69bd40c263b135066248af28354f104ea36c788b23d1e3e", size = 249372 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/38/13/23b73a1f300521613f967763ef4ada4737474f9d5b620b7e5ba9e4857ee7/narwhals-1.23.0-py3-none-any.whl", hash = "sha256:8d6e7fa0b13af01784837efc060e2a663e5d888decf31f261ff8fc06a7cefeb4", size = 306212 },
+]
+
+[[package]]
+name = "networkx"
+version = "3.4.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/1d/06475e1cd5264c0b870ea2cc6fdb3e37177c1e565c43f56ff17a10e3937f/networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1", size = 2151368 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f", size = 1723263 },
 ]
 
 [[package]]

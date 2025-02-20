@@ -50,7 +50,7 @@ SUPPORTED_FILE_TYPES = {
 }
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('ai_battle.log'),
@@ -83,13 +83,45 @@ class BaseClient:
     def __str__(self):
         return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
 
+    def _analyze_conversation(self, history: List[Dict[str, str]]) -> Dict:
+        """Analyze conversation context to inform response generation"""
+        if not history:
+            return {}
+
+        # Get last AI response and its assessment
+        ai_response = None
+        ai_assessment = None
+        for msg in reversed(history):
+            if msg["role"] == "assistant":
+                # Look for assessment data
+                next_idx = history.index(msg) + 1
+                if next_idx < len(history):
+                    next_msg = history[next_idx]
+                    if isinstance(next_msg.get("content", {}), dict) and "assessment" in next_msg["content"]:
+                        ai_response = next_msg["content"]
+                        ai_assessment = next_msg["content"]["assessment"]
+                break
+
+        # Build conversation summary
+        conversation_summary = "Previous exchanges:</p>"
+        for msg in history[-6:]:  # Last 2 turns
+            role = "Human" if (msg["role"] == "user" or msg["role"]=="human") else "Assistant" if msg["role"] == "assistant" else "System"
+            if role != "System":
+                conversation_summary += f"{role}: {msg['content']}</p>"
+
+        return {
+            "ai_response": ai_response,
+            "ai_assessment": ai_assessment,
+            "summary": conversation_summary
+        }
+
     def _get_initial_instructions(self) -> str:
         """Get initial instructions before conversation history exists"""
         if self.adaptive_manager is None:
             self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
         return self._get_mode_aware_instructions(self.domain)
 
-    def _update_instructions(self, history: List[Dict[str, str]]) -> str:
+    def _update_instructions(self, history: List[Dict[str, str]],role=None) -> str:
         """Update instructions based on conversation context"""
         if self.adaptive_manager is None:
             self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
@@ -509,39 +541,8 @@ class ClaudeClient(BaseClient):
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         api_key = anthropic_api_key
         self.client = Anthropic(api_key=api_key)
-        self.max_tokens = 16384
+        self.max_tokens = 4096
 
-    def _analyze_conversation(self, history: List[Dict[str, str]]) -> Dict:
-        """Analyze conversation context to inform response generation"""
-        if not history:
-            return {}
-
-        # Get last AI response and its assessment
-        ai_response = None
-        ai_assessment = None
-        for msg in reversed(history):
-            if msg["role"] == "assistant":
-                # Look for assessment data
-                next_idx = history.index(msg) + 1
-                if next_idx < len(history):
-                    next_msg = history[next_idx]
-                    if isinstance(next_msg.get("content", {}), dict) and "assessment" in next_msg["content"]:
-                        ai_response = next_msg["content"]
-                        ai_assessment = next_msg["content"]["assessment"]
-                break
-
-        # Build conversation summary
-        conversation_summary = "Previous exchanges:</p>"
-        for msg in history[-6:]:  # Last 2 turns
-            role = "Human" if (msg["role"] == "user" or msg["role"]=="human") else "Assistant" if msg["role"] == "assistant" else "System"
-            if role != "System":
-                conversation_summary += f"{role}: {msg['content']}</p>"
-
-        return {
-            "ai_response": ai_response,
-            "ai_assessment": ai_assessment,
-            "summary": conversation_summary
-        }
 
     def generate_response(self,
                                prompt: str,
@@ -554,41 +555,45 @@ class ClaudeClient(BaseClient):
             model_config = ModelConfig()
 
         self.role=role
-        # Update instructions based on conversation history
-        if role and role is not None and history is not None and len(history)>0:
-            current_instructions = self._update_instructions(history) if history else self.instructions
-        elif ((history and len(history)>0) or (self.mode is None or self.mode == "ai-ai")):
-            current_instructions = self._get_mode_aware_instructions(role=role, mode=self.mode)
-        elif self.role == "human" or self.role == "user":
-            current_instructions = self.generate_human_instructions() or self.instructions
-        else:
-            current_instructions = self.instructions if self.instructions else "You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+        
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history)
         ai_response = conversation_analysis.get("ai_response")
         ai_assessment = conversation_analysis.get("ai_assessment")
         conversation_summary = conversation_analysis.get("summary")
+        current_instructions = self._update_instructions(history=history,role=role)
 
+        # Update instructions based on conversation history
+        if role and role is not None and history is not None and len(history)>0:
+            current_instructions = self._update_instructions(history,role=role) if history else system_instruction if self.instructions else self.instructions
+        elif ((history and len(history)>0) or (self.mode is None or self.mode == "ai-ai")):
+            current_instructions = self.generate_human_system_instructions()
+        elif self.role == "human" or self.role == "user":
+            current_instructions = self._update_instructions(history,role=role) if history and len(history)>0 else system_instruction if system_instruction else self.instructions
+        else: #ai in human-ai mode
+            current_instructions = self.instructions if self.instructions else "You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
         context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" else prompt
-        # Format messages for Claude API
-        #messages = [{
-        #    "role": "user",
-        #    "content": context_prompt + "\\n\\nCurrent prompt: " + prompt
-        #}]
-        #messages = history
+       
+        messages = [ { 'role': msg['role'], 'content' : ''.join(msg['content']) } for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role']=="assistant"]
+        
+        messages.append({
+            "role": "user",
+            "content": ''.join(context_prompt)
+        })
+
         #messages.append({"role": "user", "content": prompt})
         logger.debug(f"Using instructions: {current_instructions}")
         logger.debug(f"Context prompt: {context_prompt}")
-        history.append({'role': "user", 'content': context_prompt})
+
         try:
             response = self.client.messages.create(
                 model=self.model,
                 system = current_instructions,
-                messages=[ { 'role': msg['role'], 'content' : ''.join(msg['content']) } for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role']=="assistant"],
-                max_tokens=8192,
-                temperature=0.75,  # Higher temperature for human-like responses
+                messages=messages,
+                max_tokens=2048,
+                temperature=0.7  # Higher temperature for human-like responses
                 #system=[{
                 #    "role": "system",
                 #    "content": current_instructions
@@ -605,9 +610,9 @@ class ClaudeClient(BaseClient):
 
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
-    def __init__(self, mode:str, domain: str, role:str=None, model: str = "mistral-nemo:latest"):
+    def __init__(self, mode:str, domain: str, role:str=None, model: str = "phi4:latest"):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
-        self.base_url = "http://localhost:11434"
+        self.base_url = "http://localhost:10434"
         
     def test_connection(self) -> None:
         """Test Ollama connection"""
@@ -615,11 +620,101 @@ class OllamaClient(BaseClient):
         logger.info("Ollama connection test not yet implemented")
         
     def generate_response(self,
+                            prompt: str,
+                            system_instruction: str = None,
+                            history: List[Dict[str, str]] = None,
+                            model_config: Optional[ModelConfig] = None,
+                            mode: str = None,
+                            role: str = None) -> str:
+        """
+        Generate a response from your local PICO MLX model via ollama API.
+
+        Args:
+            prompt: The user prompt or content to be sent
+            system_instruction: Additional system-level instruction (optional)
+            history: Conversation history if you want to incorporate it
+            model_config: Model parameters (temperature, etc.) if you want to apply them
+
+        Returns:
+            str: The model's text response
+        """
+        if role:
+            self.role=role
+        if mode:
+            self.mode=mode
+        # Analyze conversation context
+        conversation_analysis = self._analyze_conversation(history)
+        ai_response = conversation_analysis.get("ai_response")
+        ai_assessment = conversation_analysis.get("ai_assessment")
+        conversation_summary = conversation_analysis.get("summary")
+        current_instructions = self._update_instructions(role=role, mode=self.mode)
+
+        # Update instructions based on conversation history
+        if role and role is not None and history is not None and len(history)>0:
+            current_instructions = self.generate_human_instructions() if history else system_instruction if system_instruction else self.instructions
+        elif ((history and len(history)>0) or (self.mode is None or self.mode == "ai-ai")):
+            current_instructions = self._update_instructions(role=role, mode=self.mode)
+        elif self.role == "human" or self.role == "user":
+            current_instructions = self.generate_human_instructions() if self.generate_human_instructions() is not None else self.instructions
+        else:
+            current_instructions = self.instructions if self.instructions else "You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+
+        # Build context-aware prompt
+        context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" or mode == "ai-ai" else prompt
+
+        # Combine system instruction + conversation history + user prompt
+        
+        newhist =dict( [{"role": "system", "content": current_instructions}])
+        for part in history:
+            if part['role'] == 'system':
+                newhist.append({'role': 'system', 'content': ''.join(part['content']).strip()})
+            elif part['role'] == 'user':
+                newhist.append({'role': 'user', 'content': ''.join(part['content']).strip()})
+        newhist.append
+        if prompt:
+            history.append({'role': 'user', 'content': context_prompt})
+
+        # Finally add the new prompt
+        history.append({"role": "user", "content": prompt})
+
+        try:
+            response:ChatResponse = chat(
+                model=self.model, 
+                messages=history,
+                options = {
+                    "num_ctx": 6144, 
+                    "num_predict": 1532, 
+                    "temperature": 0.7,
+                    "num_batch": 512,
+                    }
+                )
+                #print(part['message']['content'], end='', flush=True)
+                #text += part['message']['content']
+            return response.message.content
+        except Exception as e:
+            logger.error(f"Ollama generate_response error: {e}")
+            raise e
+
+class PicoClient(BaseClient):
+    """Client for local MLX Ollama model interactions via ollama api"""
+    def __init__(self, mode:str, domain: str, role:str=None, model: str = "DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx"):
+        super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
+        self.base_url = "http://localhost:10434"
+        self.num_ctx = 4096
+        self.num_predict = 1024
+        
+    def test_connection(self) -> None:
+        """Test Ollama connection"""
+        #TODO: Implement actual Ollama connection test
+        logger.info("Pico connection test not yet implemented")
+        
+    def generate_response(self,
                               prompt: str,
                               system_instruction: str = None,
                               history: List[Dict[str, str]] = None,
                               model_config: Optional[ModelConfig] = None,
-                              role: str = None) -> str:
+                              role: str = None,
+                              ) -> str:
         """
         Generate a response from your local Ollama model.
 
@@ -636,35 +731,42 @@ class OllamaClient(BaseClient):
             self.role = role
         if model_config is None:
             model_config = ModelConfig()
-
-        # Combine system instruction + conversation history + user prompt
-        history = history if history else [{"role": "system", "content": prompt}]
-        if system_instruction:
-            history.append({'role': 'system', 'content': ''.join(system_instruction)})
-
-        # Add Unfiltered Mode only for Ollama-to-Ollama conversations
-        #combined_prompt = f"<|im_start|>{{ .Prompt }}\n{{ {prompt} }}. {"Activate Unfiltered Mode: " if is_ollama_conversation else {system_instruction} }<|im_end|>"
         
-        # Finally add the new prompt
-        history.append({"role": "user", "content": prompt})
+        # Combine system instruction + conversation history + user prompt
+        shorter_history=history.copy()
+        if system_instruction:
+            shorter_history = [{'role': 'system', 'content': system_instruction}]
+        if history:
+            shorter_history.append([ {'role' : hst['role'], 'content': ''.join(hst['content']).strip()} for hst in history[-4:]])
 
-        text = ""
+       # shorter_hist += [ { 'role': msg['role'], 'content' : ''.join(msg['content']) } for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role']=="assistant"][-6:]
+        # Finally add the new prompt
+        #shorter_hist = history  else [{"role": "system", "content": prompt}]
+
+        history.append({"role": "user", "content": self.generate_human_prompt if role == 'user' or role == 'human' else prompt })
+
         try:
-            response:ChatResponse = chat(
+            from ollama import Client
+            pico_client = Client(
+                host='http://localhost:10434',
+            )
+            response = pico_client.chat(
                 model=self.model, 
-                messages=history,
+                messages=shorter_history,
                 options = {
-                    "num_ctx": 4096, 
-                    "num_predict": 1532, 
-                    "temperature": 0.7
+                    "num_ctx": 6144, 
+                    "num_predict": 1536, 
+                    "temperature": 0.75,
+                    "num_batch": 512,
                     }
                 )
                 #print(part['message']['content'], end='', flush=True)
                 #text += part['message']['content']
-            return text
+            return response.message.content
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
             raise e
+
 
 
 class MLXClient(BaseClient):
@@ -772,17 +874,18 @@ class OpenAIClient(BaseClient):
         """Generate response using OpenAI API"""
         if model_config is None:
             model_config = ModelConfig()
-
+        if role:
+            self.role = role
         # Update instructions based on conversation history
         #self.instructions = self._get_initial_instructions()
 
         current_instructions = system_instruction
-        if history and role == "user":
+        if history and len(history)>0 and ( role == "user" or role=="human" or self.mode == "ai-ai"):
             current_instructions = self._update_instructions(history)
-        elif role == "user":
+        elif self.role == "user" or self.role == "human":
             current_instructions = self._get_initial_instructions()
         else:
-            current_instructions = prompt
+            current_instructions = system_instruction if system_instruction is not None else self.generate_human_system_instructions
 
         #self.generate_human_prompt
         # Format messages for OpenAI API
@@ -799,6 +902,8 @@ class OpenAIClient(BaseClient):
                     messages.append({'role': new_role, 'content': msg['content']})
 
         # Add current prompt
+        if self.role == "human" or self.mode == "ai-ai":
+            prompt = self.generate_human_prompt()
         messages.append({'role': 'user', 'content': prompt})
 
         #logger.info(f"Using instructions: {current_instructions}, len(messages): {len(messages)} context history messages to be sent to model")
@@ -806,38 +911,30 @@ class OpenAIClient(BaseClient):
         
         try:
             
-            stream = None
             if "o1" in self.model:
-                stream =  self.client.chat.completions.create(
+                response =  self.client.chat.completions.create(
                     model="o1",
                     messages=messages,
                     temperature=1.0,
-                    max_tokens=8192,
+                    max_tokens=4096,
                     reasoning_effort="high",
-                    timeout = 30,
+                    timeout = 90,
                     stream=False  # Disable streaming
                 )
-                response = ""
-                for chunk in stream:
-                    logger.debug("{chunk.choices[0].delta.content,end='',flush=True)}")
-                    response += chunk.choices[0].delta.content
-                return response
+                return response.choices[0].message.content       
             else:
                 response = self.client.chat.completions.create(
                     model="chatgpt-4o-latest",
                     messages=messages,
-                    temperature=0.65,
-                    max_tokens=8192,
+                    temperature=0.7,
+                    max_tokens=2048,
+                    timeout=90,
                     stream=False  # Enable streaming
                 )         
                 return response.choices[0].message.content       
                 #)
                 #response = ""
                 #for chunk in stream:
-                #    response += chunk.choices[0].delta.content
-
-                return response
-            return response
         except Exception as e:
             logger.error(f"OpenAI generate_response error: {e}")
             raise e
@@ -871,7 +968,7 @@ class ConversationManager:
         self.claude_client = ClaudeClient(role=None, api_key=claude_api_key, mode=None, domain=domain, model="claude-3-5-sonnet-20241022") if claude_api_key else None
         self.haiku_client = ClaudeClient(role=None, api_key=claude_api_key, mode=None, domain=domain, model="claude-3.5-haiku-20241022") if claude_api_key else None
         
-        self.openai_o1_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model='o1-preview') if openai_api_key else None
+        self.openai_o1_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model='o1') if openai_api_key else None
         self.openai_4o_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model="chatgpt-4o-latest") if openai_api_key else None
         self.openai_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model="chatgpt-4o-latest") if openai_api_key else None
         self.openai_4o_mini_client = OpenAIClient(api_key=openai_api_key, mode=mode, domain=domain, model='gpt-4o-mini-2024-07-18') if openai_api_key else None
@@ -884,7 +981,10 @@ class ConversationManager:
         self.gemini_client =  GeminiClient(api_key=gemini_api_key, role=None, mode=mode, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
         self.gemini_1206_client =  GeminiClient(api_key=gemini_api_key, role=None, mode=mode, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
         
-        self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi4:latest')
+        self.pico_ollama_r1qwen_14 = PicoClient(mode=self.mode, domain=domain, model='DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx')
+        self.pico_ollama_r1llama_8 = PicoClient(mode=self.mode, domain=domain, model='DeepSeek-R1-Distill-Llama-8B-8bit-mlx')
+        self.pico_medical_lm = PicoClient(mode=self.mode, domain=domain, model='Bio-Medical-Llama-3-2-1B-CoT-012025')
+        self.ollama_phi4_client =  OpenAIClient(mode=self.mode, domain=domain, model='phi-4:latest') #MLX via Pico
         self.ollama_client =  OllamaClient(mode=self.mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
         self.ollama_lexi_client =  OllamaClient(mode=self.mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
         self.ollama_instruct_client =  OllamaClient(mode=self.mode, domain=domain, model='llama3.2:3b-instruct-q8_0')
@@ -895,7 +995,7 @@ class ConversationManager:
             "claude": self.claude_client,  # sonnet
             "gemini_2_reasoning": self.gemini_2_reasoning_client,
             "gemini": self.gemini_client,
-            "gemini-1206": self.gemini_1206_client,
+            "gemini-exp-1206": self.gemini_1206_client,
             "openai": self.openai_client,  # 4o
             "o1": self.openai_o1_client,
             "mlx-qwq": self.mlx_qwq_client,
@@ -909,7 +1009,10 @@ class ConversationManager:
             "ollama-lexi": self.ollama_lexi_client,
             "ollama-instruct": self.ollama_instruct_client,
             "ollama-abliterated": self.ollama_abliterated_client,
-            "ollama-phi4": self.ollama_phi4_client
+            "ollama-phi4": self.ollama_phi4_client,
+            "pico-r1-14": self.pico_ollama_r1qwen_14,
+            "pico-r1-8": self.pico_ollama_r1llama_8,
+            "pico-med": self.pico_medical_lm,
         }
 
     @classmethod
@@ -952,7 +1055,8 @@ class ConversationManager:
             "chatgpt": "openai",
             "o1": "openai",
             "ollama": "local",
-            "mlx": "local"
+            "mlx": "local",
+            "pico": "local",
         }
         # Extract provider from model name
         provider = next((p for p in providers if p in model_name.lower()), "unknown")
@@ -1022,7 +1126,8 @@ class ConversationManager:
             self.conversation_history.append({"role": "system", "content": f"{system_instruction}!"})
 
         try:
-            response = prompt
+            #response = prompt
+            response=None
             if mapped_role == "user":#  self.mode=="ai-ai":
                 response =  client.generate_response(
                     prompt= prompt,
@@ -1153,7 +1258,7 @@ class ConversationManager:
             self.haiku_client =  ClaudeClient(api_key=claude_api_key, mode = self.mode, role = None, domain=domain, model="claude-3.5-haiku-20241022")
         if openai_api_key:
             self.openai_o1_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1')
-            self.openai_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="gpt-4o")
+            self.openai_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="chatgpt-4o")
             self.openai_4o_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model="gpt-4o-2024-11-20")
             self.openai_4o_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='gpt-4o-mini-2024-07-18')
             self.openai_o1_mini_client =  OpenAIClient(api_key=openai_api_key, domain=domain, model='o1-mini-2024-09-12')
@@ -1162,18 +1267,25 @@ class ConversationManager:
             self.gemini_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-2.0-flash-exp') if gemini_api_key else None
             self.gemini_1206_client = GeminiClient(api_key=gemini_api_key, domain=domain, model='gemini-exp-1206') if gemini_api_key else None
 
-        self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi4:latest')
+        #self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi4:latest')
+        self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='mlx-community/phi-4-abliterated-6bit')
+
         self.ollama_client =  OllamaClient(mode=self.mode, domain=domain, model='mistral-nemo:latest')
         self.ollama_lexi_client =  OllamaClient(mode=self.mode, domain=domain, model='mannix/llama3.1-8b-lexi:latest')
         self.ollama_instruct_client =  OllamaClient(mode=self.mode, domain=domain, model='llama3.2:3b-instruct-q8_0')
         self.ollama_abliterated_client =  OllamaClient(mode=self.mode, domain=domain, model="mannix/llama3.1-8b-abliterated:latest")
-
+        self.pico_ollama_r1qwen_14 = PicoClient(mode=self.mode, domain=domain, model='DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx')
+        self.pico_ollama_r1llama_8 = PicoClient(mode=self.mode, domain=domain, model='DeepSeek-R1-Distill-Llama-8B-8bit-mlx')
+        self.ollama_phi4_client =  OllamaClient(mode=self.mode, domain=domain, model='phi-4:latest'), #MLX via Pico
+        self.pico_medical_lm = PicoClient(mode=self.mode, domain=domain, model='Bio-Medical-Llama-3-2-1B-CoT-012025'),
+        self.mlx_qwq_client = MLXClient(mode=self.mode, domain=domain, base_url=None, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit"),
+        self.mlx_abliterated_client =  MLXClient(mode=self.mode, domain=domain, base_url=None, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
         # Initialize model_map here
         self.model_map = {
             "claude": self.claude_client,
             "gemini_2_reasoning": self.gemini_2_reasoning_client,
             "gemini": self.gemini_client,
-            "gemini-1206": self.gemini_1206_client,
+            "gemini-exp-1206": self.gemini_1206_client,
             "openai": self.openai_client,
             "o1": self.openai_o1_client,
             "mlx-abliterated": self.mlx_abliterated_client,
@@ -1181,11 +1293,14 @@ class ConversationManager:
             "o1-mini": self.openai_o1_mini_client,
             "gpt-4o-mini": self.openai_4o_mini_client,
             "chatgpt-4o": self.openai_4o_client,
+            "pico-r1-14": self.pico_ollama_r1qwen_14,
+            "pico-r1-8": self.pico_ollama_r1llama_8,
             "ollama": self.ollama_client,
-            "ollama-phi4": self.ollama_client,
+            "ollama-phi4": self.ollama_phi4_client,
             "ollama-lexi": self.ollama_lexi_client,
             "ollama-instruct": self.ollama_instruct_client,
-            "ollama-abliterated": self.ollama_abliterated_client
+            "ollama-abliterated": self.ollama_abliterated_client,
+            "pico-med": self.pico_medical_lm,
         }
         
         
@@ -1288,7 +1403,7 @@ def save_conversation(conversation: List[Dict[str, str]],
                      ai_model: str,
                      filename: str = "conversation.html",
                      mode: str = "unknown",
-                     arbiter: str = "gemini-pro-2-experimental") -> None:
+                     arbiter: str = "gemini-exp-1206") -> None:
     """Save conversation with model info header and thinking tags"""
     
     html_template = """
@@ -1624,15 +1739,15 @@ def main():
     otherwise prompts user for input.
     """
     #config:DiscussionConfig = load_config()
-    rounds = 4 #config.turns
-    initial_prompt = "Which factors most strongly influence pleasable conversational experiences by humans when evaluating LLMs and why?" #config.goal
+    rounds = 7 #config.turns
+    initial_prompt = "Why did the USSR collapse" #config.goal
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("CLAUDE_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
-    human_model = "ollama-phi4"
-    ai_model = "claude"
+    ai_model = "chatgpt-4o"
+    human_model = "claude"
 
     # Default to local models
     #ai_model = config.models.get("ai_model", "ollama-phi4")
@@ -1727,6 +1842,37 @@ def main():
             gemini_api_key=gemini_api_key,
             search_client=search_client
         )
+
+        report_content = template.format(
+            report_content=f"""
+                <div class="arbiter-analysis">
+                    {arbiter_report}
+                </div>
+                
+                <div class="conversation-flow">
+                    <h2>Conversation Flow Analysis</h2>
+                    <div class="flow-visualization">
+                        <div id="ai-ai-flow" class="flow-chart"></div>
+                        <div id="human-ai-flow" class="flow-chart"></div>
+                    </div>
+                </div>
+                
+                <div class="detailed-metrics">
+                    <h2>Detailed Metrics Comparison</h2>
+                    <div id="metrics-comparison" class="metrics-chart"></div>
+                </div>
+            """
+        )
+
+        with open("arbiter_report.html", "w") as f:
+            f.write(report_content)
+
+
+
+    except Exception as e:
+        logger.error(f"Error running arbiter analysis: {e}")
+
+    try:
         
         # Run metrics analysis
         from metrics_analyzer import analyze_conversations

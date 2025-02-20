@@ -74,7 +74,7 @@ class AdaptiveInstructionManager:
         
         template_prefix = 'ai-ai-' if mode == 'ai-ai' else ''
         
-        if len(context.topic_evolution) < 1:
+        if len(context.topic_evolution) < 2:
             # Early in conversation - use exploratory template
             logger.debug("_select_template: Early in conversation - using exploratory template")
             return self.instruction_templates[f'{template_prefix}exploratory']

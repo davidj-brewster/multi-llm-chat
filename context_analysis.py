@@ -33,11 +33,11 @@ class ContextAnalyzer:
         )
         self.nlp = None
         self.mode = mode
-        #try:
-        #    import spacy
-        #    self.nlp = spacy.load('en_core_web_sm')
-        #except (ImportError, OSError):
-        #    logger.warning("spaCy not available, falling back to basic analysis")
+        try:
+            import spacy
+            self.nlp = spacy.load('en_core_web_sm')
+        except (ImportError, OSError):
+            logger.warning("spaCy not available, falling back to basic analysis")
             
         self.reasoning_patterns = {
             'deductive': r'therefore|thus|hence|consequently|as a result|it follows that|by definition',
@@ -74,7 +74,7 @@ class ContextAnalyzer:
         
     def _analyze_semantic_coherence(self, contents: List[str]) -> float:
         """Measure how well responses relate to previous context"""
-        if len(contents) < 2:
+        if len(contents) < 3:
             return 1.0
             
         # Create TF-IDF matrix
@@ -88,7 +88,7 @@ class ContextAnalyzer:
                     tfidf_matrix[i+1:i+2]
                 )[0][0]
                 similarities.append(similarity)
-            return np.mean(similarities)
+            return np.mean(similarities)/2
         except Exception as e:
             logger.error(f"Error calculating semantic coherence: {e}")
             return 0.0
@@ -326,17 +326,21 @@ class ContextAnalyzer:
     def _detect_uncertainty(self, contents: List[str]) -> Dict[str, float]:
         """Detect markers of uncertainty or confidence"""
         markers = {
+            'socratic': 0.0,
             'uncertainty': 0.0,
             'confidence': 0.0,
             'qualification': 0.0
         }
         
         try:
-            uncertainty_patterns = r'maybe|perhaps|might|could|possibly|unsure|potentially|theoretically|probably'
+            socratic_patterns = r'what|why|how|where|when|who|which|whom|think|would it|could it|should it|may|might|can|could|would|should|will|is it|are they|are we|is there|are there|do you|does it|did it|have you|has it|had it|will it|won\'t it|can it|could it|should it|would it|isn\'t it|aren\'t they|isn\'t there|aren\'t there|don\'t you|doesn\'t it|didn\'t it|haven\'t you|hasn\'t it|hadn\'t it|won\'t it|can\'t it|couldn\'t it|shouldn\'t it|wouldn\'t it'
+            uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably'
             confidence_patterns = r'definitely|certainly|clearly|obviously|undoubtedly|even if|regardless|always'
-            qualification_patterns = r'however|although|but|except|unless|only if'
+            qualification_patterns = r'possibly|however|though|except|unless|only if'
             
             for content in contents[-3:]:  # Focus on recent messages
+                markers['socratic'] += len(re.findall(socratic_patterns, 
+                                                       content.lower()))
                 markers['uncertainty'] += len(re.findall(uncertainty_patterns, 
                                                        content.lower()))
                 markers['confidence'] += len(re.findall(confidence_patterns, 
@@ -346,7 +350,7 @@ class ContextAnalyzer:
                 
             # Normalize by message count
             logger.info("_detect_uncertainty: " + ''.join(contents) + f": {markers}")
-            return {k: v/3 for k, v in markers.items()}
+            return {k: v/4 for k, v in markers.items()}
         except Exception as e:
             logger.error(f"Error detecting uncertainty: {e}")
             return markers

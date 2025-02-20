@@ -142,9 +142,10 @@ class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with grounded analysis"""
     
     def __init__(self, api_key: str, 
-                 model: str = "gemini-2.0-pro",
+                 model: str = "gemini-exp-1206",
                  search_client: Optional[Any] = None):
         self.client = genai.Client(api_key=api_key)
+        #self.client =
         self.model = model
         self.grounder = AssertionGrounder(search_client) if search_client else None
         
