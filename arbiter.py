@@ -4,22 +4,21 @@ import logging
 import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, asdict
+from pydantic import BaseModel
+from dataclasses import asdict
 from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class AssertionEvidence:
+class AssertionEvidence(BaseModel):
     """Evidence supporting an assertion"""
     assertion: str
     sources: List[Dict[str, str]]  # List of {url: str, excerpt: str}
     confidence: float
     verification_method: str
 
-@dataclass
-class ConversationMetrics:
+class ConversationMetrics(BaseModel):
     """Metrics for conversation evaluation"""
     coherence: float
     relevance: float
@@ -32,8 +31,7 @@ class ConversationMetrics:
     grounded_assertions: int
     unverified_claims: int
 
-@dataclass
-class ParticipantMetrics:
+class ParticipantMetrics(BaseModel):
     """Metrics for individual participant evaluation"""
     response_quality: float
     knowledge_accuracy: float
@@ -44,9 +42,21 @@ class ParticipantMetrics:
     factual_accuracy: float
     citation_quality: float
 
-@dataclass
-class ArbiterResult:
+class ArbiterResult(BaseModel):
     """Complete evaluation result"""
+    class AssessmentResult(BaseModel):
+        """Assessment result structure"""
+        participant_ratings: Dict[str, Dict[str, float]]
+        conversation_quality: Dict[str, float]
+        assertions: List[Dict[str, Any]]
+
+    class AssertionResult(BaseModel):
+        """Structure for verified assertions"""
+        claim: str
+        source_message: int
+        confidence: float
+        requires_verification: bool
+
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
     participant_metrics: Dict[str, Dict[str, ParticipantMetrics]]
@@ -153,59 +163,103 @@ class ConversationArbiter:
                                 goal: str, mode: str) -> str:
         """Create detailed prompt for conversation evaluation"""
         return f"""
-        Analyze this AI conversation in the context of its goal:
+        Analyze this conversation and return a structured evaluation in JSON format.
         
         GOAL: {goal}
         MODE: {mode}
         
-        Evaluate the following aspects:
+        REQUIRED OUTPUT FORMAT:
+        {{
+            "conversation_quality": {{
+                "coherence": <float 0-1>,        // Message flow and transitions
+                "relevance": <float 0-1>,        // Alignment with goal/topic
+                "depth": <float 0-1>,            // Level of insight and analysis
+                "engagement": <float 0-1>,       // Interaction quality
+                "reasoning": <float 0-1>,        // Logic and analytical thinking
+                "knowledge": <float 0-1>,        // Information accuracy and breadth
+                "goal_progress": <float 0-1>,    // Movement toward objective
+                "strategy_effectiveness": <float 0-1>,  // Effectiveness of approaches
+                "grounded_assertions": <integer>, // Count of verifiable claims
+                "unverified_claims": <integer>   // Count of unverified claims
+            }},
+            "participant_analysis": {{
+                "participant_1": {{
+                    "response_quality": <float 0-1>,    // Clarity and completeness
+                    "knowledge_accuracy": <float 0-1>,  // Factual correctness
+                    "reasoning_depth": <float 0-1>,     // Analytical thinking
+                    "engagement_level": <float 0-1>,    // Interaction quality
+                    "strategy_adherence": <float 0-1>,  // Following approaches
+                    "adaptation": <float 0-1>,          // Adjusting to flow
+                    "factual_accuracy": <float 0-1>,    // Claim correctness
+                    "citation_quality": <float 0-1>     // Evidence usage
+                }},
+                "participant_2": {{
+                    "response_quality": <float 0-1>,
+                    "knowledge_accuracy": <float 0-1>,
+                    "reasoning_depth": <float 0-1>,
+                    "engagement_level": <float 0-1>,
+                    "strategy_adherence": <float 0-1>,
+                    "adaptation": <float 0-1>,
+                    "factual_accuracy": <float 0-1>,
+                    "citation_quality": <float 0-1>
+                }}
+            }},
+            "assertions": [
+                // List of factual claims that need verification
+                // Each assertion should be a specific, verifiable statement
+                "assertion 1",
+                "assertion 2"
+            ],
+            "key_insights": [
+                // List of notable patterns, techniques, and critical moments
+                "insight 1",
+                "insight 2"
+            ],
+            "improvement_suggestions": [
+                // List of specific recommendations and alternative approaches
+                "suggestion 1",
+                "suggestion 2"
+            ]
+        }}
         
-        1. Conversation Quality (0-1 scale)
-        - Coherence: Message flow and topic transitions
-        - Relevance: Alignment with goal/topic
-        - Depth: Level of insight and analysis
-        - Engagement: Interaction quality and responsiveness
-        - Reasoning: Logic and analytical thinking
-        - Knowledge: Information accuracy and breadth
-        - Goal Progress: Movement toward objective
-        - Strategy: Effectiveness of conversation approaches
+        EVALUATION GUIDELINES:
         
-        2. Participant Analysis (0-1 scale)
-        For each participant, evaluate:
-        - Response Quality: Clarity and completeness
-        - Knowledge Accuracy: Factual correctness
-        - Reasoning Depth: Analytical thinking
-        - Engagement Level: Interaction and responsiveness
-        - Strategy Adherence: Following chosen approaches
-        - Adaptation: Adjusting to conversation flow
-        - Factual Accuracy: Correctness of claims
-        - Citation Quality: Use of references/evidence
+        1. Score all numeric metrics on a 0-1 scale where:
+           - 0.0-0.2: Poor performance
+           - 0.3-0.4: Below average
+           - 0.5-0.6: Average
+           - 0.7-0.8: Good
+           - 0.9-1.0: Excellent
         
-        3. Extract Assertions
-        For each message, identify:
-        - Factual claims that need verification
-        - Technical statements requiring evidence
-        - Quantitative claims
-        - Referenced research or studies
+        2. When identifying assertions:
+           - Focus on specific, verifiable factual claims
+           - Include quantitative statements
+           - Note technical claims requiring evidence
+           - Highlight referenced research or studies
         
-        4. Key Insights
-        - Notable patterns or techniques
-        - Effective strategies
-        - Missed opportunities
-        - Critical moments
+        3. For key insights:
+           - Identify effective patterns and techniques
+           - Note significant breakthroughs or realizations
+           - Highlight missed opportunities
+           - Mark critical turning points
         
-        5. Improvement Suggestions
-        - Specific recommendations
-        - Alternative approaches
-        - Strategy adjustments
+        4. For improvement suggestions:
+           - Provide specific, actionable recommendations
+           - Suggest alternative approaches
+           - Recommend strategy adjustments
+           - Focus on enhancing goal achievement
         
-        Return analysis as JSON with these sections.
-        Include specific message references and quotes.
+        IMPORTANT:
+        - Return ONLY valid JSON matching the specified schema
+        - Ensure all numeric values are between 0 and 1
+        - Include specific examples and quotes to support ratings
+        - Ground factual claims in the conversation content
         """
     
     def _analyze_conversation(self, conversation: List[Dict[str, str]], 
                             goal: str, mode: str) -> Dict:
         """Analyze a single conversation with assertion grounding"""
+        analysis = None
         prompt = self._create_evaluation_prompt(conversation, goal, mode)
         
         try:
@@ -214,13 +268,33 @@ class ConversationArbiter:
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
+                    response_mime_type='application/json',
+                    response_schema={
+                        'conversation_quality': ConversationMetrics,
+                        'participant_analysis': Dict[str, ParticipantMetrics],
+                        'assertions': List[str],
+                        'key_insights': List[str],
+                        'improvement_suggestions': List[str]
+                    },
                     temperature=0.1,
                     maxOutputTokens=4096,
-                    candidateCount=1
+                    candidateCount=1,
+                    tools=[types.Tool(
+                        google_search=types.GoogleSearchRetrieval(
+                            dynamic_retrieval_config=types.DynamicRetrievalConfig(
+                                dynamic_threshold=0.6))
+                    )]
                 )
             )
             
-            analysis = json.loads(response.text)
+            try:
+                analysis = response.parsed
+            except Exception as parse_error:
+                logger.error(f"Failed to parse Gemini response as JSON: {parse_error}")
+                # Attempt to extract JSON from text response
+                import re
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                analysis = json.loads(json_match.group(0)) if json_match else None
             
             # Ground assertions if grounder available
             if self.grounder:
@@ -231,11 +305,14 @@ class ConversationArbiter:
                         grounded_assertions[assertion] = evidence
                 analysis["grounded_assertions"] = grounded_assertions
             
-            return analysis
+            if not analysis:
+                raise ValueError("Failed to parse model response into valid analysis format")
             
+            return analysis
+                
         except Exception as e:
             logger.error(f"Error analyzing conversation: {e}")
-            raise
+            return self._create_empty_analysis()
     
     def _compare_conversations(self, 
                              ai_ai_analysis: Dict,
@@ -281,6 +358,31 @@ class ConversationArbiter:
                 )
         
         return winner, differences
+    
+    def _create_empty_analysis(self) -> Dict:
+        """Create empty analysis structure for error cases"""
+        return {
+            "conversation_quality": {
+                "coherence": 0.0,
+                "relevance": 0.0,
+                "depth": 0.0,
+                "engagement": 0.0,
+                "reasoning": 0.0,
+                "knowledge": 0.0,
+                "goal_progress": 0.0,
+                "strategy_effectiveness": 0.0,
+                "grounded_assertions": 0,
+                "unverified_claims": 0
+            },
+            "participant_analysis": {},
+            "assertions": [],
+            "key_insights": [
+                "Analysis failed - insufficient data"
+            ],
+            "improvement_suggestions": [
+                "Retry analysis with valid conversation data"
+            ]
+        }
     
     def evaluate_conversations(self,
                              ai_ai_conversation: List[Dict[str, str]],
@@ -392,6 +494,13 @@ class ConversationArbiter:
     
     def generate_report(self, result: ArbiterResult) -> str:
         """Generate detailed HTML report of arbiter results"""
+        try:
+            with open("templates/arbiter_report.html") as f:
+                template = f.read()
+        except Exception as e:
+            logger.warning(f"Failed to load report template: {e}")
+            template = None
+            
         return f"""
         <div class="arbiter-report">
             <h2>Conversation Analysis Report</h2>
