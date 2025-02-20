@@ -422,11 +422,11 @@ def analyze_conversations(ai_ai_conversation: List[Dict[str, str]],
     
     return {
         "metrics": {
-            "ai_ai": ai_ai_metrics.__dict__,
-            "human_ai": human_ai_metrics.__dict__
+            "ai-ai": ai_ai_metrics.__dict__,
+            "human-ai": human_ai_metrics.__dict__
         },
         "flow": {
-            "ai_ai": analyzer.generate_flow_visualization(ai_ai_flow),
-            "human_ai": analyzer.generate_flow_visualization(human_ai_flow)
+            "ai-ai": analyzer.generate_flow_visualization(ai_ai_flow),
+            "human-ai": analyzer.generate_flow_visualization(human_ai_flow)
         }
     }

@@ -1843,10 +1843,13 @@ def main():
             search_client=search_client
         )
 
+        with open("templates/arbiter_report.html") as f:
+            template = f.read()
+
         report_content = template.format(
             report_content=f"""
                 <div class="arbiter-analysis">
-                    {arbiter_report}
+                    {template}
                 </div>
                 
                 <div class="conversation-flow">
@@ -1867,8 +1870,6 @@ def main():
         with open("arbiter_report.html", "w") as f:
             f.write(report_content)
 
-
-
     except Exception as e:
         logger.error(f"Error running arbiter analysis: {e}")
 
@@ -1883,13 +1884,13 @@ def main():
         time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
         combined_filename = f"combined_report_{safe_prompt}_{time_stamp}.html"
         
-        with open("templates/arbiter_report.html") as f:
+        with open("templates/arbiter_report.html") as  f:
             template = f.read()
             
         report_content = template.format(
             report_content=f"""
                 <div class="arbiter-analysis">
-                    {arbiter_report}
+                    {template}
                 </div>
                 
                 <div class="conversation-flow">
