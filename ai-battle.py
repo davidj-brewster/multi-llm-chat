@@ -101,7 +101,7 @@ class ConversationManager:
                 if model_name == "claude":
                     client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-sonnet-20241022")
                 elif model_name == "haiku":
-                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3.5-haiku-20241022")
+                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku-20241022")
                 elif model_name == "openai":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="chatgpt-4o-latest")
                 elif model_name == "o1":
@@ -123,7 +123,7 @@ class ConversationManager:
                 elif model_name == "ollama":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
                 elif model_name == "ollama-phi4":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="phi-4:latest")
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="phi4:latest")
                 elif model_name == "ollama-lexi":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
                 elif model_name == "ollama-instruct":
@@ -415,13 +415,11 @@ async def main():
     
     human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}..."  # Truncated for brevity
     if "GOAL:" in initial_prompt:
-        human_system_instruction = f"Solve {initial_prompt}..."  # Truncated for brevity
+        human_system_instruction = f"Solve {initial_prompt} together..."  # Truncated for brevity
     
-    ai_system_instruction = f"You are an AI assistant..."  # Truncated for brevity
+    ai_system_instruction = f"You are a helpful and knowledgeable AI assistant..."  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
         ai_system_instruction = human_system_instruction
-    else:
-        ai_system_instruction = f"You are an AI assistant..."  # Truncated for brevity
  
     try:
         # Run AI-AI conversation
@@ -464,7 +462,7 @@ async def main():
         )
         
         # Generate reports
-        save_arbiter_report(arbiter_report)
+        save_arbiter_report(arbiter_report._update_instructions())
         save_metrics_report(conversation, conversation_as_human_ai)
         
     finally:

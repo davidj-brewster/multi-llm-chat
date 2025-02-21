@@ -84,9 +84,9 @@ class BaseClient:
         """Get initial instructions before conversation history exists"""
         return self._get_mode_aware_instructions(self.domain)
 
-    def _update_instructions(self, history: List[Dict[str, str]], role=None) -> str:
+    def _update_instructions(self, history: List[Dict[str, str]], role: str = None) -> str:
         """Update instructions based on conversation context"""
-        return self.adaptive_manager.generate_instructions(history, self.domain)
+        return self.adaptive_manager.generate_instructions(history, self.domain) if history else ""
 
     def _get_mode_aware_instructions(self, role: str = None, mode: str = None) -> str:
         """Get instructions based on conversation mode and role"""
@@ -203,12 +203,13 @@ class GeminiClient(BaseClient):
         """Generate response using Gemini API with assertion verification"""
         if model_config is None:
             model_config = ModelConfig()
-
+        if role:
+            self.role = role
         if not self.instructions:
             self.instructions = self._get_initial_instructions()
 
         # Update instructions based on conversation history
-        current_instructions = self._update_instructions(history,role)
+        current_instructions = self._update_instructions(history=history,role=self.role)
 
         try:
             # Generate final response
@@ -442,7 +443,7 @@ class PicoClient(BaseClient):
 
         try:
             from ollama import Client
-            pico_client = Client(host='http://localhost:10434')
+            pico_client = Client(host='http://localhost:11434')
             response = pico_client.chat(
                 model=self.model, 
                 messages=[shorter_history],
@@ -555,15 +556,15 @@ class OllamaClient(BaseClient):
 
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history[-10:])  # Limit history analysis
-        current_instructions = self._update_instructions(role=role, mode=self.mode)
+        current_instructions = self._update_instructions(history=history, role=role)
 
         # Update instructions based on conversation history
         if role and role is not None and history is not None and len(history) > 0:
-            current_instructions = self.generate_human_instructions() if history else system_instruction if system_instruction else self.instructions
+            current_instructions = self.generate_human_prompt() if history else system_instruction if system_instruction else self.instructions
         elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
             current_instructions = self._update_instructions(history, role=role)
         elif self.role == "human" or self.role == "user":
-            current_instructions = self.generate_human_instructions() if self.generate_human_instructions() is not None else self.instructions
+            current_instructions = self.generate_human_prompt() if self.generate_human_prompt() is not None else self.instructions
         else:
             current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
