@@ -259,6 +259,114 @@ print(f"Knowledge Depth: {context.knowledge_depth:.2f}")
    - Parameter tuning
    - HTML output enhancement
 
+## Adaptive Prompting System
+
+### Conversation State Detection
+
+The framework continuously monitors several conversation states that trigger specific adaptive prompts:
+
+1. **Low Coherence State** (coherence < 0.7)
+```python
+adaptive_prompts = {
+    "refocus": "Let's maintain focus on {topic}. Consider how {last_point} relates to our main discussion.",
+    "clarify": "Could you clarify the connection between {current_point} and {initial_goal}?",
+    "bridge": "To bridge these ideas, let's explore how {point_a} and {point_b} are connected."
+}
+```
+
+2. **High Uncertainty State** (uncertainty > 0.6)
+```python
+adaptive_prompts = {
+    "ground": "Let's establish some concrete examples of {concept}.",
+    "evidence": "What specific evidence supports {claim}?",
+    "validate": "How confident are you about {assertion}, and what factors influence this?"
+}
+```
+
+3. **Topic Drift Detection** (topic_similarity < 0.5)
+```python
+adaptive_prompts = {
+    "redirect": "Returning to our core discussion of {main_topic}...",
+    "integrate": "How does this new direction ({current_topic}) relate to {original_goal}?",
+    "synthesize": "Can we synthesize these different perspectives on {topic}?"
+}
+```
+
+4. **Depth Enhancement** (depth_score < 0.6)
+```python
+adaptive_prompts = {
+    "deepen": "Let's explore the underlying mechanisms of {concept}.",
+    "analyze": "What are the key factors that influence {phenomenon}?",
+    "examine": "Could you break down the components of {system}?"
+}
+```
+
+### Trigger Conditions
+
+The system employs Bayesian inference to determine when to activate specific prompts:
+
+```python
+class AdaptivePromptTrigger:
+    def __init__(self):
+        self.thresholds = {
+            "coherence": 0.7,
+            "uncertainty": 0.6,
+            "topic_drift": 0.5,
+            "depth": 0.6
+        }
+        
+    def should_trigger(self, metrics: Dict[str, float]) -> bool:
+        return any(
+            metrics[key] < threshold 
+            for key, threshold in self.thresholds.items()
+        )
+```
+
+### Response Pattern Adaptation
+
+The framework adjusts its prompting strategy based on observed response patterns:
+
+1. **Technical Depth Pattern**
+```python
+if response.technical_depth > threshold:
+    prompt_style = "explanatory"
+    include_examples = True
+```
+
+2. **Engagement Pattern**
+```python
+if response.engagement_level < threshold:
+    prompt_style = "socratic"
+    include_challenges = True
+```
+
+3. **Reasoning Pattern**
+```python
+if response.reasoning_depth < threshold:
+    prompt_style = "analytical"
+    request_justification = True
+```
+
+### Dynamic Instruction Templates
+
+The system uses templates that adapt to conversation context:
+
+```python
+instruction_templates = {
+    "expert": """You are an expert in {domain} with the following characteristics:
+- Deep technical knowledge in {specialization}
+- {years} years of experience
+- Focus on {methodology}
+Maintain these traits while {task}.""",
+
+    "collaborative": """Engage in a collaborative discussion about {topic}.
+- Build on previous points
+- Acknowledge uncertainties
+- Propose new perspectives
+Your role is to {role} while keeping the discussion {style}."""
+}
+```
+
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
