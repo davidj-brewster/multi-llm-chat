@@ -646,6 +646,29 @@ class ConversationArbiter:
             ]
         }
 
+    def _create_evaluation_prompt(self, conversation: List[Dict[str, str]],
+                               goal: str, mode: str) -> str:
+        """Create a structured evaluation prompt for Gemini model"""
+        prompt = f"""
+        Evaluate the following conversations and provide detailed analysis on how well the conversations achieve the goal of discussing "{goal}".:
+        Conversation 1 ({mode}):
+        {self._format_conversation(conversation[1], mode)}
+        Conversation 2 ({mode}):
+        {self._format_conversation(conversation[2], mode)}
+        Your output should ground any claims made in the conversations and provide quantitative insights on the quality of the conversation, including coherence, depth, engagement, reasoning, knowledge exchange, goal progress, and strategy effectiveness.
+        Addititionally, provide a summary of the conversation context, key insights, and suggestions for improvement.
+        Finally determine the winner of each conversation based on the quality of the discussion and provide a table detailed performance metrics for each actor in the conversation and how well they performed their role in terms of:
+        - Response quality
+        - Knowledge accuracy
+        - Reasoning depth
+        - Engagement level
+        - Strategy adherence
+        - Adaptation
+        - Factual accuracy
+        - Citation quality
+        """
+        return prompt
+        
     def _save_metrics(self, result: ArbiterResult) -> None:
         """Save metrics to JSON file for analytics"""
         metrics_dir = Path("metrics")

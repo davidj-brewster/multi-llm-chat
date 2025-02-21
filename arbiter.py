@@ -330,7 +330,8 @@ class ConversationArbiter:
                 
         except Exception as e:
             logger.error(f"Error analyzing conversation: {e}")
-            return self._create_empty_analysis()
+            raise
+            #return self._create_empty_analysis()
     
     def _compare_conversations(self, 
                              ai_ai_analysis: Dict,

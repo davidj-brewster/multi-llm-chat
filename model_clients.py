@@ -282,19 +282,14 @@ class ClaudeClient(BaseClient):
             current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else "Prompt: prompt"
+        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"Prompt: {prompt}"
        
-        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history[-10:] if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
+        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
         messages.append({
             "role": "assistant" if role == "assistant" else "user",
             "content": (
-                context_prompt if isinstance(context_prompt, str)
-                else '\n'.join(
-                    line if line.strip().startswith('<') 
-                    else f'<p>{line}</p>' 
-                    for line in context_prompt
-                )
+                context_prompt
             )
         })
 
@@ -306,8 +301,8 @@ class ClaudeClient(BaseClient):
                 max_tokens=2048,
                 temperature=0.9  # Higher temperature for human-like responses
             )
-            logger.debug(f"Claude (Human) response generated successfully {prompt}")
-            logger.debug(f"response: {str(response.content).strip()}")
+            #logger.debug(f"Claude (Human) response generated successfully")
+            logger.debug(f"response: {str(response.content)}")
             return response.content if response else ""
         except Exception as e:
             logger.error(f"Error generating Claude response: {str(e)}")
