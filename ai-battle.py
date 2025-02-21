@@ -102,8 +102,8 @@ class ConversationManager:
                     client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-sonnet-20241022")
                 elif model_name == "haiku":
                     client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku-20241022")
-                elif model_name == "openai":
-                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="chatgpt-4o-latest")
+                elif model_name == "chatgpt-4o":
+                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-2024-08-06")
                 elif model_name == "o1":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="o1")
                 elif model_name == "gemini":
@@ -381,7 +381,7 @@ def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 3
+    rounds = 2
     initial_prompt = "Why did the USSR collapse"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -395,8 +395,8 @@ async def main():
     #else:
     #    ai_model = "openai"
     mode = "ai-ai"
-    human_model = "ollama-phi4"
-    ai_model = "claude"
+    human_model = "claude"
+    ai_model = "chatgpt-4o"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(

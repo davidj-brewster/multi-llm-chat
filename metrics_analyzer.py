@@ -195,14 +195,14 @@ class MetricsAnalyzer:
         ) / len(complexity_indicators)
         
         # Simple sentiment analysis
-        positive_terms = {"good", "great", "excellent", "helpful", "interesting", "important"}
-        negative_terms = {"bad", "poor", "wrong", "incorrect", "confusing", "problematic"}
+        positive_terms = {"good", "great", "excellent", "helpful", "interesting", "important", "useful", "valuable", "beneficial", "advantage", "correct", "accurate", "true", "believe", "agree", "clear", "understandable", "easy","novel","well grounded", "insightful", "remarkable","fresh","innovative","creative","original","ingenious","brilliant","smart","intelligent","wise","clever","astute","sensible","practical","realistic","feasible","viable","effective","efficient","productive","successful","profitable","beneficial","advantageous","favorable","constructive","positive","upbeat","optimistic","encouraging","hopeful","inspiring","motivating","stimulating","exciting","thrilling","enjoyable","fun","pleasant","satisfying","fulfilling","rewarding","gratifying","pleasurable","delightful","wonderful","marvelous","fabulous","fantastic","terrific","awesome","amazing","incredible","unbelievable","remarkable","extraordinary","astonishing","astounding","stunning","breathtaking","awe-inspiring","jaw-dropping","mind-blowing","heartwarming","touching","moving","uplifting","inspiring","inspirational","motivating","encouraging","hopeful","optimistic","positive","constructive","supportive","reassuring","comforting","soothing","calming","relaxing","peaceful","tranquil","serene","harmonious","balanced","centered","grounded","stable","secure","safe","protected","sheltered","shielded","defended","guarded","fortified","strengthened","empowered","enhanced","improved","upgraded","optimized","perfected","polished"}
+        negative_terms = {"dubious", "ungrounded", "bad", "poor", "wrong", "incorrect", "confusing", "problematic", "inaccurate", "challenge", "false", "unbelievable", "erroneous", "mistaken", "hardly", "disagree", "dislike", "hate", "difficult", "complicated", "complex", "tricky", "confusing", "unclear", "ambiguous", "vague", "obscure", "uncertain", "doubtful", "incomprehensible", "inconsistent", "contradictory", "incoherent", "illogical", "irrational", "absurd", "nonsense", "ridiculous", "stupid", "foolish", "silly", "unintelligible", "unreasonable", "unconvincing", "unpersuasive", "unsubstantiated", "unfounded", "unjustified", "unwarranted", "unreliable", "untrustworthy", "unethical", "immoral", "unacceptable", "inappropriate", "offensive", "harmful", "dangerous", "risky", "threatening", "scary", "frightening", "disturbing", "upsetting", "worrying", "alarming", "shocking", "surprising", "unexpected", "unpredictable", "unforeseen", "unanticipated", "unwanted", "undesirable", "unpleasant", "uncomfortable", "painful", "hurtful", "harmful", "damaging", "destructive", "disruptive", "disastrous", "catastrophic", "devastating", "ruinous", "fatal", "deadly", "lethal", "dangerous", "risky", "hazardous", "perilous", "unsafe", "unhealthy", "harmful", "toxic", "poisonous", "deadly", "fatal", "lethal", "dangerous", "risky", "hazardous", "perilous", "unsafe", "unhealthy", "harmful", "toxic", "poisonous", "deadly", "fatal", "lethal", "dangerous", "risky", "hazardous", "perilous", "unsafe", "unhealthy", "harmful", "toxic", "poisonous", "deadly", "fatal", "lethal", "dangerous", "risky", "hazardous", "perilous",}
         
         words = content.lower().split()
         sentiment_score = (
-            sum(1 for w in words if w in positive_terms) -
-            sum(1 for w in words if w in negative_terms)
-        ) / len(words)
+            (sum(1.0 for w in words if w in positive_terms) + 1) /
+            (sum(1.0 for w in words if w in negative_terms) + 1)
+        ) / (len(words)+1)
         
         # Topic analysis
         topics = self.topic_analyzer.get_message_topics(content, all_messages)
@@ -389,7 +389,7 @@ class MetricsAnalyzer:
             "x": float(pos[n][0]),
             "y": float(pos[n][1]),
             "metrics": {
-                k: float(v) if isinstance(v, (int, float)) else v
+                k: abs(float(v)) if isinstance(v, (int, float)) else v
                 for k, v in graph.nodes[n]["metrics"].__dict__.items()
             }
         } for n in graph.nodes()]
@@ -398,7 +398,7 @@ class MetricsAnalyzer:
         edges = [{
             "source": u,
             "target": v,
-            "weight": float(d["weight"]),
+            "weight": abs(float(d["weight"])),
             "type": d.get("type", "flow")
         } for u, v, d in graph.edges(data=True)]
         

@@ -274,12 +274,12 @@ class ClaudeClient(BaseClient):
         # Update instructions based on conversation history
         if role and role is not None and history is not None and len(history) > 0:
             current_instructions = self._update_instructions(history, role=role) if history else system_instruction if self.instructions else self.instructions
-        elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
+        elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
             current_instructions = self.generate_human_system_instructions()
         elif self.role == "human" or self.role == "user":
             current_instructions = self._update_instructions(history, role=role) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
         else:  # ai in human-ai mode
-            current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+            current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
         context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"Prompt: {prompt}"
@@ -368,7 +368,6 @@ class OpenAIClient(BaseClient):
             'content': context_prompt
         }]
 
-
         if history:
             # Limit history to last 10 messages
             recent_history = history[-5:]
@@ -389,7 +388,7 @@ class OpenAIClient(BaseClient):
             if "o1" in self.model:
                 response = self.client.chat.completions.create(
                     model="o1",
-                    messages=messages,
+                    messages=[messages],
                     temperature=1.0,
                     max_tokens=13192,
                     reasoning_effort="high",
@@ -399,8 +398,8 @@ class OpenAIClient(BaseClient):
                 return response.choices[0].message.content
             else:
                 response = self.client.chat.completions.create(
-                    model="chatgpt-4o-latest",
-                    messages=[messages],
+                    model="gpt-4o-mini",
+                    messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
                     temperature=0.8,
                     max_tokens=3172,
                     timeout=90,
