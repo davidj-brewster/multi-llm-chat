@@ -38,7 +38,7 @@ graph TD
 
 Recent performance analysis of the framework's adaptive instruction system revealed significant improvements in conversation quality:
 
-- **Conversation Depth**: 45% improvement through dynamic template selection and instruction modification
+- **Conversation Depth**: With two LMs collaborating in "human" personas, we see a 45% improvement in critical conversation success and relevance metrics, achieved through dynamic turn-by-turn template selection and instruction modification, and that's compared to a single highly-effectively prompted "Human" LM.
 - **Topic Coherence**: 50% enhancement via real-time coherence assessment
 - **Information Density**: 40% optimization through balanced content delivery
 - **Engagement Quality**: 35% increase in sustained interaction quality
