@@ -35,7 +35,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 CONFIG_PATH = "config.yaml"
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('ai_battle.log'),
@@ -384,18 +384,19 @@ async def main():
     rounds = 3
     initial_prompt = "Why did the USSR collapse"
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    claude_api_key = os.getenv("CLAUDE_API_KEY")
+    claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     # Check if OpenAI API key is available
-    if not openai_api_key:
-        logger.error("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
-        ai_model = "claude"  # Fallback to Claude if OpenAI key not available
-    else:
-        ai_model = "openai"
-
-    human_model = "claude"
+    #if not openai_api_key:
+    #    logger.error("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
+    #    ai_model = "claude"  # Fallback to Claude if OpenAI key not available
+    #else:
+    #    ai_model = "openai"
+    mode = "ai-ai"
+    human_model = "ollama-phi4"
+    ai_model = "haiku"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -411,7 +412,6 @@ async def main():
             logger.error("Failed to validate required model connections")
             return
     
-    mode = "ai-ai"
     
     human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}..."  # Truncated for brevity
     if "GOAL:" in initial_prompt:
@@ -431,7 +431,7 @@ async def main():
             human_model=human_model,
             ai_model=ai_model,
             human_system_instruction=human_system_instruction,
-            ai_system_instruction=ai_system_instruction,
+            ai_system_instruction=human_system_instruction,
             rounds=rounds
         )
         

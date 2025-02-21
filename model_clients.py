@@ -208,7 +208,7 @@ class GeminiClient(BaseClient):
             self.instructions = self._get_initial_instructions()
 
         # Update instructions based on conversation history
-        current_instructions = self._update_instructions(history)
+        current_instructions = self._update_instructions(history,role)
 
         try:
             # Generate final response
@@ -262,7 +262,7 @@ class ClaudeClient(BaseClient):
 
         self.role = role
         self.mode = mode
-        
+        history = history if history else [{"role": "user", "content": prompt}]
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history)
         ai_response = conversation_analysis.get("ai_response")
@@ -281,9 +281,9 @@ class ClaudeClient(BaseClient):
             current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" else prompt
+        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else "Prompt: prompt"
        
-        messages = [{'role': msg['role'], 'content': ''.join(msg['content'])} for msg in history[-10:] if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
+        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history[-10:] if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
         messages.append({
             "role": "assistant" if role == "assistant" else "user",
@@ -327,8 +327,8 @@ class OpenAIClient(BaseClient):
                          prompt: str,
                          system_instruction: str,
                          history: List[Dict[str, str]],
-                         role: str,
-                         mode: str,
+                         role: str = None,
+                         mode: str = None,
                          model_config: Optional[ModelConfig] = None) -> str:
         """Generate response using OpenAI API"""
         if role:
@@ -336,15 +336,16 @@ class OpenAIClient(BaseClient):
         if mode:
             self.mode = mode
 
+        history = history if history else [{"role": "user", "content": prompt}]
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history[-6:])  # Limit history analysis
-        current_instructions = self._update_instructions(role=role, mode=self.mode)
+        current_instructions = self._update_instructions(history=history,role=self.role)
 
         # Update instructions based on conversation history
         if role and role is not None and role in ["human", "user"] or mode == "ai-ai" and history is  None or len(history) == 0:
             current_instructions = self.generate_human_instructions() if role == "human" or role =="user" else system_instruction if system_instruction else self.instructions
         elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
-            current_instructions = self._update_instructions(role=role, mode=self.mode)
+            current_instructions = self._update_instructions(history,role=role)
         elif self.role == "human" or self.role == "user":
             current_instructions = self.generate_human_instructions() if self.generate_human_instructions() is not None else self.instructions
         else:
@@ -367,7 +368,7 @@ class OpenAIClient(BaseClient):
 
         if history:
             # Limit history to last 10 messages
-            recent_history = history[-10:]
+            recent_history = history[-5:]
             for msg in recent_history:
                 old_role = msg["role"]
                 if old_role in ["user", "assistant", "moderator", "system"]:
@@ -396,10 +397,9 @@ class OpenAIClient(BaseClient):
             else:
                 response = self.client.chat.completions.create(
                     model="chatgpt-4o-latest",
-                    messages=messages,
+                    messages=[messages],
                     temperature=0.8,
                     max_tokens=3172,
-                    n_batch=512,
                     timeout=90,
                     stream=False
                 )
@@ -445,7 +445,7 @@ class PicoClient(BaseClient):
             pico_client = Client(host='http://localhost:10434')
             response = pico_client.chat(
                 model=self.model, 
-                messages=shorter_history,
+                messages=[shorter_history],
                 options={
                     "num_ctx": 6144,
                     "num_predict": 1536,
@@ -561,7 +561,7 @@ class OllamaClient(BaseClient):
         if role and role is not None and history is not None and len(history) > 0:
             current_instructions = self.generate_human_instructions() if history else system_instruction if system_instruction else self.instructions
         elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
-            current_instructions = self._update_instructions(role=role, mode=self.mode)
+            current_instructions = self._update_instructions(history, role=role)
         elif self.role == "human" or self.role == "user":
             current_instructions = self.generate_human_instructions() if self.generate_human_instructions() is not None else self.instructions
         else:
