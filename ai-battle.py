@@ -462,7 +462,7 @@ async def main():
         )
         
         # Generate reports
-        save_arbiter_report(arbiter_report._update_instructions())
+        save_arbiter_report(arbiter_report)
         save_metrics_report(conversation, conversation_as_human_ai)
         
     finally:
