@@ -1,13 +1,14 @@
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-#import spacy
 import logging
 from collections import Counter
 import re
-import spacy
+
+from shared_resources import (SpacyModelSingleton, VectorizerSingleton,
+                          MemoryManager)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -26,19 +27,14 @@ class ContextAnalyzer:
     """Analyzes conversation context across multiple dimensions"""
     
     def __init__(self, mode: str = "l"):
-        self.vectorizer = TfidfVectorizer(
-            max_features=12000,
-            stop_words='english',
-            ngram_range=(1, 2)
-        )
-        self.nlp = None
+        self.vectorizer = VectorizerSingleton.get_instance()
+        self.nlp = SpacyModelSingleton.get_instance()
         self.mode = mode
-        try:
-            self.nlp = spacy.load('en_core_web_trf')
-        except OSError:
+        
+        # Log memory usage after initialization
+        if logger.isEnabledFor(logging.DEBUG):
             logger.warning("spaCy not available, falling back to basic analysis")
-        except Exception as e:
-            logger.error(f"Unable to load spacy core package {e}")
+            logger.debug(MemoryManager.get_memory_usage())
         self.reasoning_patterns = {
             'deductive': r'therefore|thus|hence|consequently|as a result|it follows that|by definition',
             'inductive': r'generally|typically|usually|tends to|often|in most cases|frequently|commonly|regularly',
@@ -58,7 +54,11 @@ class ContextAnalyzer:
     def analyze(self, conversation_history: List[Dict[str, str]]) -> ContextVector:
         """Analyze conversation context across multiple dimensions"""
         
-        # Extract just the content from conversation history
+        # Limit conversation history to last N messages for memory efficiency
+        MAX_HISTORY = 10
+        if len(conversation_history) > MAX_HISTORY:
+            conversation_history = conversation_history[-MAX_HISTORY:]
+            
         contents = [msg['content'] for msg in conversation_history]
         
         return ContextVector(
@@ -79,7 +79,7 @@ class ContextAnalyzer:
             
         # Create TF-IDF matrix
         try:
-            tfidf_matrix = self.vectorizer.fit_transform(contents)
+            tfidf_matrix = self.vectorizer.fit_transform(contents[-5:])  # Only analyze recent messages
             # Calculate average cosine similarity between consecutive responses
             similarities = []
             for i in range(len(contents)-1):
@@ -98,7 +98,7 @@ class ContextAnalyzer:
         topics = {}
         try:
             if self.nlp:
-                # Use spaCy for sophisticated topic extraction
+                # Use spaCy for topic extraction (limited to recent messages)
                 for content in contents:
                     doc = self.nlp(content)
                     for chunk in doc.noun_chunks:
@@ -193,7 +193,7 @@ class ContextAnalyzer:
         """Estimate complexity of current discussion"""
         try:
             total_complexity = 0
-            for content in contents[-3:]:  # Look at recent messages
+            for content in contents[-2:]:  # Reduced from -3 to -2 for memory efficiency
                 if self.nlp:
                     # Use spaCy for sophisticated analysis
                     doc = self.nlp(content)
@@ -240,7 +240,7 @@ class ContextAnalyzer:
         """Assess depth of domain understanding shown"""
         try:
             depth_score = 0
-            for content in contents[-3:]:  # Focus on recent messages
+            for content in contents[-2:]:  # Reduced from -3 to -2 for memory efficiency
                 if self.nlp:
                     # Use spaCy for sophisticated analysis
                     doc = self.nlp(content)
@@ -333,10 +333,10 @@ class ContextAnalyzer:
         }
         
         try:
-            socratic_patterns = r'what|why|how|where|when|who|which|whom|think|would it|could it|should it|may|might|can|could|would|should|will|is it|are they|are we|is there|are there|do you|does it|did it|have you|has it|had it|will it|won\'t it|can it|could it|should it|would it|isn\'t it|aren\'t they|isn\'t there|aren\'t there|don\'t you|doesn\'t it|didn\'t it|haven\'t you|hasn\'t it|hadn\'t it|won\'t it|can\'t it|couldn\'t it|shouldn\'t it|wouldn\'t it'
-            uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably'
-            confidence_patterns = r'definitely|certainly|clearly|obviously|undoubtedly|even if|regardless|always'
-            qualification_patterns = r'possibly|however|though|except|unless|only if'
+            socratic_patterns = r'or did|interested|intrigued|that conclusion|interpret|analysis|reason|doesn\' it|what|why|how|where|when|who|which|whom|think|would you|could it|should it|may|might|can|could|would|should|will|is it|are they|are we|is there|are there|do you|does it|did it|have you|has it|had it|will it|won\'t it|can it|could it|should it|would it|isn\'t it|aren\'t they|isn\'t there|aren\'t there|don\'t you|doesn\'t it|didn\'t it|haven\'t you|hasn\'t it|hadn\'t it|won\'t it|can\'t it|couldn\'t it|shouldn\'t it|wouldn\'t it'
+            uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably|questionably|debatably|supposed to|allegedly|according to some|would have you believe|more to it|can\'t be that simple'
+            confidence_patterns = r'cleardefinitely|certainly|obviously|undoubtedly|even if|regardless|always|veru|never|always|impossible|inevitable|are you serious'
+            qualification_patterns = r'maintaining|status-quo|conflicting|suggest|possibly|however|though|except|unless|only if'
             
             for content in contents[-3:]:  # Focus on recent messages
                 markers['socratic'] += len(re.findall(socratic_patterns, 
@@ -355,23 +355,3 @@ class ContextAnalyzer:
             logger.error(f"Error detecting uncertainty: {e}")
             return markers
 
-# Example usage
-if __name__ == "__main__":
-    # Test conversation
-    conversation = [
-        {"role": "user", "content": "What are the key principles of machine learning?"},
-        {"role": "assistant", "content": "Machine learning principles include: 1) Data quality is crucial 2) Avoid overfitting 3) Feature selection matters"},
-        {"role": "user", "content": "Can you elaborate on overfitting?"},
-        {"role": "assistant", "content": "Overfitting occurs when a model learns noise in training data, performing well on training but poorly on new data."}
-    ]
-    
-    analyzer = ContextAnalyzer()
-    context = analyzer.analyze(conversation)
-    print("Context Analysis Results:")
-    print(f"Semantic Coherence: {context.semantic_coherence:.2f}")
-    print(f"Topic Evolution: {dict(context.topic_evolution)}")
-    print(f"Response Patterns: {dict(context.response_patterns)}")
-    print(f"Cognitive Load: {context.cognitive_load:.2f}")
-    print(f"Knowledge Depth: {context.knowledge_depth:.2f}")
-    print(f"Reasoning Patterns: {dict(context.reasoning_patterns)}")
-    print(f"Uncertainty Markers: {dict(context.uncertainty_markers)}")
