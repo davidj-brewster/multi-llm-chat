@@ -68,11 +68,11 @@ class BaseClient:
                 break
 
         # Build conversation summary
-        conversation_summary = "Previous exchanges:</p>"
+        conversation_summary = "<p>Previous exchanges:</p>"
         for msg in history[-6:]:  # Last 2 turns
             role = "Human" if (msg["role"] == "user" or msg["role"] == "human") else "Assistant" if msg["role"] == "assistant" else "System"
             if role != "System":
-                conversation_summary += f"{role}: {msg['content']}</p>"
+                conversation_summary += f"<p>{role}: {msg['content']}</p>"
 
         return {
             "ai_response": ai_response,
@@ -107,7 +107,7 @@ class BaseClient:
         return f"""You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
 
 NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN INVOLVED AS PEERS IN THIS CONVERSATION AND SHOULD ALSO WORK TO KEEP IT ON TRACK WHILST COLLABORATING WITH THE AI IN YOUR EXPLORATION of {self.domain}
-OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS
+OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. USE PROPER HTML TAGS FOR PARAGRAPHS (<p>), LINE BREAKS (<br>), AND LISTS (<ul>/<li>).
 RESTRICT OUTPUTS TO APPROX 1300 tokens.
 DON't COMPLIMENT THE AI. OCCASIONALLY (BUT NOT EVERY TURN) CONSIDER AN ADVERSARIAL BUT COLLABORATIVE APPROACH - TRY TO CHALLENGE IT ON ITS ANSWERS, SUBTLY POINT OUT EDGE CASES IT MISSED, BRING IN YOUR OWN FACTS AND REASONING, ESPECIALLY ANY SELF-DIRECTED DEEP REASONING, THINK ABOUT WHETHER YOUR OWN RESPONSES SO FAR IN THE CONVERSION MAKE SENSE, ASK IT TO FIGURE OUT THE "WHY" (THIS IS VERY IMPORTANT), DIG AND SYNTHESISE INFORMATION. Demand it to use reasoning as you see fit.
 
@@ -141,7 +141,7 @@ Prompt Guidelines:
 9. Your prompts must be GOAL ORIENTED, sometimes contributing new information to the conversation as well, and not losing sight of hidden (or overt) questions, assumptions, biases etc in the AIs responses and should be designed to elicit useful DISCUSSION WITH the AI. You may act a human who is frustrated might do
 10. Vary responses in tone, depth and complexity to see what works best. Keep the flow of the conversation going but don't get bogged down in irrelevant details - remember the name of the game ({self.domain})!
 
-- OUTPUT IN HTML FORMAT FOR READABILITY, PARAGRAPH FORM BY DEFAULT USING LISTS AND TABLES SPARINGLY, DO NOT INCLUDE OPENING AND CLOSING HTML OR BODY TAGS
+- OUTPUT IN HTML FORMAT FOR READABILITY, PARAGRAPH FORM BY DEFAULT USING LISTS AND TABLES SPARINGLY, DO NOT INCLUDE OPENING AND CLOSING HTML OR BODY TAGS. USE PROPER HTML TAGS FOR PARAGRAPHS (<p>), LINE BREAKS (<br>), AND LISTS (<ul>/<li>).
 
 Generate a natural but sophisticated prompt that:
 - Demonstrates advanced and effective prompting techniques and/or prompt-handling reasoning when responding to the AI (or human)
@@ -288,7 +288,14 @@ class ClaudeClient(BaseClient):
         
         messages.append({
             "role": "assistant" if role == "assistant" else "user",
-            "content": ''.join(context_prompt)
+            "content": (
+                context_prompt if isinstance(context_prompt, str)
+                else '\n'.join(
+                    line if line.strip().startswith('<') 
+                    else f'<p>{line}</p>' 
+                    for line in context_prompt
+                )
+            )
         })
 
         try:
