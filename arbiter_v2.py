@@ -562,7 +562,13 @@ class ConversationArbiter:
                             goal: str, mode: str) -> Dict:
         """Analyze a single conversation with assertion grounding"""
         analysis = None
-        prompt = self._create_evaluation_prompt(conversation, goal, mode)
+        # Create empty conversation for the other mode to maintain structure
+        empty_conversation = []
+        
+        if mode == "ai-ai":
+            prompt = self._create_evaluation_prompt(conversation, empty_conversation, goal, mode)
+        else:
+            prompt = self._create_evaluation_prompt(empty_conversation, conversation, goal, mode)
         
         try:
             # Get initial analysis
@@ -646,15 +652,21 @@ class ConversationArbiter:
             ]
         }
 
-    def _create_evaluation_prompt(self, conversation: List[Dict[str, str]],
-                               goal: str, mode: str) -> str:
+    def _create_evaluation_prompt(self, 
+                                ai_ai_conversation: List[Dict[str, str]],
+                                human_ai_conversation: List[Dict[str, str]],
+                               goal: str,
+                                mode: str) -> str:
         """Create a structured evaluation prompt for Gemini model"""
         prompt = f"""
         Evaluate the following conversations and provide detailed analysis on how well the conversations achieve the goal of discussing "{goal}".:
-        Conversation 1 ({mode}):
-        {self._format_conversation(conversation[1], mode)}
-        Conversation 2 ({mode}):
-        {self._format_conversation(conversation[2], mode)}
+
+        AI-AI CONVERSATION:
+        {self._format_conversation(ai_ai_conversation, "ai-ai")}
+
+        HUMAN-AI CONVERSATION:
+        {self._format_conversation(human_ai_conversation, "human-ai")}
+
         Your output should ground any claims made in the conversations and provide quantitative insights on the quality of the conversation, including coherence, depth, engagement, reasoning, knowledge exchange, goal progress, and strategy effectiveness.
         Addititionally, provide a summary of the conversation context, key insights, and suggestions for improvement.
         Finally determine the winner of each conversation based on the quality of the discussion and provide a table detailed performance metrics for each actor in the conversation and how well they performed their role in terms of:
@@ -875,6 +887,29 @@ class ConversationArbiter:
             f"<li><strong>{k}:</strong> {', '.join(v) if isinstance(v, list) else v}</li>"
             for k, v in d.items()
         ) + "</ul>"
+
+    def _format_conversation(self, conversation: List[Dict[str, str]], mode: str) -> str:
+        """Format conversation messages for evaluation"""
+        if not conversation:
+            return "No conversation data available."
+        
+        formatted = []
+        for i, msg in enumerate(conversation, 1):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            # Handle content that might be a dictionary
+            if isinstance(content, dict):
+                if "response" in content:
+                    content = content["response"]
+                elif "text" in content:
+                    content = content["text"]
+                else:
+                    content = str(content)  # Fallback to string representation
+            
+            formatted.append(f"Message {i} - {role.upper()}: {content}")
+            
+        return "\n\n".join(formatted)
 
     def _format_assertions(self, assertions: Dict[str, AssertionEvidence]) -> str:
         """Format grounded assertions as HTML"""

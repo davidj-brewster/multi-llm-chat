@@ -277,7 +277,7 @@ class ConversationManager:
                     model_type=human_model,
                     client=human_client
                 )
-                print(f"\n\n\nHUMAN: ({human_model.upper()}): {human_response}\n\n")
+                #print(f"\n\n\nHUMAN: ({human_model.upper()}): {human_response}\n\n")
 
                 # AI turn
                 ai_response = self.run_conversation_turn(
@@ -396,7 +396,7 @@ async def main():
     #    ai_model = "openai"
     mode = "ai-ai"
     human_model = "ollama-phi4"
-    ai_model = "haiku"
+    ai_model = "claude"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(

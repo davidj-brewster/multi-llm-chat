@@ -182,7 +182,78 @@ class ConversationArbiter:
         #self.client =
         self.model = model
         self.grounder = AssertionGrounder(search_client) if search_client else None
+
+    def _compare_conversations(self, 
+                             ai_ai_analysis: Dict,
+                             human_ai_analysis: Dict) -> Tuple[str, List[str]]:
+        """Compare analyses to determine winner"""
         
+        # Calculate overall scores with grounding bonus
+        def calc_score(analysis: Dict) -> float:
+            base_score = sum([
+                analysis["conversation_quality"]["coherence"],
+                analysis["conversation_quality"]["depth"],
+                analysis["conversation_quality"]["goal_progress"]
+            ]) / 3
+            
+            # Bonus for grounded assertions
+            grounding_score = len(analysis.get("grounded_assertions", {})) * 0.05
+            
+            return base_score + min(grounding_score, 0.2)  # Cap grounding bonus
+        
+        ai_ai_score = calc_score(ai_ai_analysis)
+        human_ai_score = calc_score(human_ai_analysis)
+        
+        # Determine winner
+        winner = "ai-ai" if ai_ai_score > human_ai_score else "human-ai"
+        
+        # Extract key differences
+        differences = []
+        metrics = ["coherence", "depth", "goal_progress", "grounded_assertions"]
+        for metric in metrics:
+            ai_ai_val = (ai_ai_analysis["conversation_quality"].get(metric, 0) 
+                        if metric != "grounded_assertions"
+                        else len(ai_ai_analysis.get("grounded_assertions", {})))
+            human_ai_val = (human_ai_analysis["conversation_quality"].get(metric, 0)
+                          if metric != "grounded_assertions" 
+                          else len(human_ai_analysis.get("grounded_assertions", {})))
+            
+            diff = abs(ai_ai_val - human_ai_val)
+            if diff > 0.1 or (metric == "grounded_assertions" and diff > 0):
+                better = "AI-AI" if ai_ai_val > human_ai_val else "Human-AI"
+                differences.append(
+                    f"{better} performed better at {metric}: "
+                    f"({ai_ai_val:.2f} vs {human_ai_val:.2f})"
+                )
+        
+        return winner, differences
+    
+    def _create_empty_analysis(self) -> Dict:
+        """Create empty analysis structure for error cases"""
+        return {
+            "conversation_quality": {
+                "coherence": 0.0,
+                "relevance": 0.0,
+                "depth": 0.0,
+                "engagement": 0.0,
+                "reasoning": 0.0,
+                "knowledge": 0.0,
+                "goal_progress": 0.0,
+                "strategy_effectiveness": 0.0,
+                "grounded_assertions": 0,
+                "unverified_claims": 0
+            },
+            "participant_analysis": {},
+            "assertions": [],
+            "key_insights": [
+                "Analysis failed - insufficient data"
+            ],
+            "improvement_suggestions": [
+                "Retry analysis with valid conversation data"
+            ]
+        }
+    
+
     def _create_evaluation_prompt(self, conversation: List[Dict[str, str]], 
                                 goal: str, mode: str) -> str:
         """Create detailed prompt for conversation evaluation"""
@@ -332,76 +403,6 @@ class ConversationArbiter:
             logger.error(f"Error analyzing conversation: {e}")
             raise
             #return self._create_empty_analysis()
-    
-    def _compare_conversations(self, 
-                             ai_ai_analysis: Dict,
-                             human_ai_analysis: Dict) -> Tuple[str, List[str]]:
-        """Compare analyses to determine winner"""
-        
-        # Calculate overall scores with grounding bonus
-        def calc_score(analysis: Dict) -> float:
-            base_score = sum([
-                analysis["conversation_quality"]["coherence"],
-                analysis["conversation_quality"]["depth"],
-                analysis["conversation_quality"]["goal_progress"]
-            ]) / 3
-            
-            # Bonus for grounded assertions
-            grounding_score = len(analysis.get("grounded_assertions", {})) * 0.05
-            
-            return base_score + min(grounding_score, 0.2)  # Cap grounding bonus
-        
-        ai_ai_score = calc_score(ai_ai_analysis)
-        human_ai_score = calc_score(human_ai_analysis)
-        
-        # Determine winner
-        winner = "ai-ai" if ai_ai_score > human_ai_score else "human-ai"
-        
-        # Extract key differences
-        differences = []
-        metrics = ["coherence", "depth", "goal_progress", "grounded_assertions"]
-        for metric in metrics:
-            ai_ai_val = (ai_ai_analysis["conversation_quality"].get(metric, 0) 
-                        if metric != "grounded_assertions"
-                        else len(ai_ai_analysis.get("grounded_assertions", {})))
-            human_ai_val = (human_ai_analysis["conversation_quality"].get(metric, 0)
-                          if metric != "grounded_assertions" 
-                          else len(human_ai_analysis.get("grounded_assertions", {})))
-            
-            diff = abs(ai_ai_val - human_ai_val)
-            if diff > 0.1 or (metric == "grounded_assertions" and diff > 0):
-                better = "AI-AI" if ai_ai_val > human_ai_val else "Human-AI"
-                differences.append(
-                    f"{better} performed better at {metric}: "
-                    f"({ai_ai_val:.2f} vs {human_ai_val:.2f})"
-                )
-        
-        return winner, differences
-    
-    def _create_empty_analysis(self) -> Dict:
-        """Create empty analysis structure for error cases"""
-        return {
-            "conversation_quality": {
-                "coherence": 0.0,
-                "relevance": 0.0,
-                "depth": 0.0,
-                "engagement": 0.0,
-                "reasoning": 0.0,
-                "knowledge": 0.0,
-                "goal_progress": 0.0,
-                "strategy_effectiveness": 0.0,
-                "grounded_assertions": 0,
-                "unverified_claims": 0
-            },
-            "participant_analysis": {},
-            "assertions": [],
-            "key_insights": [
-                "Analysis failed - insufficient data"
-            ],
-            "improvement_suggestions": [
-                "Retry analysis with valid conversation data"
-            ]
-        }
     
     def evaluate_conversations(self,
                              ai_ai_conversation: List[Dict[str, str]],
