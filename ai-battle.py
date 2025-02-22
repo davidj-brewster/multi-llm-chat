@@ -423,15 +423,9 @@ async def main():
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
-    # Check if OpenAI API key is available
-    #if not openai_api_key:
-    #    logger.error("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
-    #    ai_model = "claude"  # Fallback to Claude if OpenAI key not available
-    #else:
-    #    ai_model = "openai"
     mode = "ai-ai"
-    human_model = "haiku"
-    ai_model = "gpt-4o-mini"
+    ai_model = "haiku"
+    human_model = "gpt-4o-mini"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(

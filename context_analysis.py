@@ -55,7 +55,7 @@ class ContextAnalyzer:
         """Analyze conversation context across multiple dimensions"""
         
         # Limit conversation history to last N messages for memory efficiency
-        MAX_HISTORY = 10
+        MAX_HISTORY = 12
         if len(conversation_history) > MAX_HISTORY:
             conversation_history = conversation_history[-MAX_HISTORY:]
             
