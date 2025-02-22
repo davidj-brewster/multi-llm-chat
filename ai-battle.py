@@ -416,8 +416,8 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 1
-    initial_prompt = "Has German reunification been a net positive or negative"
+    rounds = 6
+    initial_prompt = "Lasting effects of the cold war"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -468,10 +468,10 @@ async def main():
             rounds=rounds
         )
         
-        safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
-        time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conversation, filename=f"processed_files/{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
+        await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
         
         # Run human-AI conversation
         mode = "human-aiai"
@@ -485,16 +485,16 @@ async def main():
             rounds=rounds
         )
         
+        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conversation_as_human_ai, filename=f"processed_files/{filename}", human_model=human_model, ai_model=ai_model, mode="human-aiai")
-        
+        await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
         
         # Run analysis
-        winner, arbiter_report = evaluate_conversations(
+        arbiter_report = evaluate_conversations(
             ai_ai_convo=conversation,
             human_ai_convo=conversation_as_human_ai,
             goal=initial_prompt,
-            #gemini_api_key=gemini_api_key
         )
 
         print(arbiter_report)
