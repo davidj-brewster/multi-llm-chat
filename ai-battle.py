@@ -416,7 +416,7 @@ def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 3
+    rounds = 2
     initial_prompt = "Why did the USSR collapse"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")

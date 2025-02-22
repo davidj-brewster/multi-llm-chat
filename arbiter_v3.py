@@ -12,9 +12,20 @@ from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
+MODEL_CONFIG = ConfigDict(
+    extra='allow',  # Allow additional fields
+    arbitrary_types_allowed=True,
+    protected_namespaces=('model_', ),
+    extra_fields='allow',  # Allow additional fields
+    json_schema_extra = {
+        "additionalProperties": True
+    }
+
+)
 
 # Keep the enhanced model classes from v2
 class NLPAnalysis(BaseModel):
+    model_config = MODEL_CONFIG
     """Advanced NLP analysis results"""
     entities: Dict[str, List[str]] = Field(default_factory=dict)
     key_phrases: List[str] = Field(default_factory=list)
@@ -26,6 +37,7 @@ class NLPAnalysis(BaseModel):
     reference_chains: List[List[str]] = Field(default_factory=list)
 
 class ConversationMetrics(BaseModel):
+    model_config = MODEL_CONFIG
     """Metrics for conversation quality assessment"""
     coherence: float = Field(default=0.0, ge=0.0, le=1.0)
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -37,6 +49,7 @@ class ConversationMetrics(BaseModel):
     strategy_effectiveness: float = Field(default=0.0, ge=0.0, le=1.0)
 
 class ParticipantMetrics(BaseModel):
+    model_config = MODEL_CONFIG
     """Metrics for individual participant performance"""
     response_quality: float = Field(default=0.0, ge=0.0, le=1.0)
     knowledge_accuracy: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -46,12 +59,14 @@ class ParticipantMetrics(BaseModel):
     adaptation: float = Field(default=0.0, ge=0.0, le=1.0)
 
 class AssertionEvidence(BaseModel):
+    model_config = MODEL_CONFIG
     """Evidence supporting a grounded assertion"""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     sources: List[Dict[str, str]] = Field(default_factory=list)
     verification_method: str = "search"
 
 class ArbiterResult(BaseModel):
+    model_config = MODEL_CONFIG
     """Complete results of conversation arbitration"""
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
@@ -65,9 +80,8 @@ class ArbiterResult(BaseModel):
 
 # Add the Gemini model response schema
 class AssessmentSchema(BaseModel):
+    model_config = MODEL_CONFIG
     """Schema for Gemini model response validation"""
-    model_config = ConfigDict(extra='allow')  # Allow additional properties
-    
     conversation_quality: Dict[str, float] = Field(
         default_factory=dict,
         description="Quality metrics for the conversation"
@@ -88,9 +102,6 @@ class AssessmentSchema(BaseModel):
         default_factory=list,
         description="Suggestions for improvement"
     )
-
-    class Config:
-        extra = "allow"  # Allow additional fields in the data
 
 class AssertionGrounder:
     """Verifies and grounds assertions using search and NLP"""
@@ -899,6 +910,7 @@ def evaluate_conversations(ai_ai_conversation: List[Dict[str, str]],
     Returns:
         Tuple of (winner, HTML report)
     """
+    model_config = MODEL_CONFIG
     try:
         arbiter = ConversationArbiter(
             api_key=gemini_api_key,
