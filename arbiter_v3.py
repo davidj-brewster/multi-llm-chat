@@ -15,15 +15,11 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG = ConfigDict(
     extra='allow',  # Allow additional fields
     arbitrary_types_allowed=True,
-    protected_namespaces=('model_', ),
-    extra_fields='allow',  # Allow additional fields
-    json_schema_extra = {
-        "additionalProperties": True
-    }
-
+    #protected_namespaces=('model_', ),
 )
 
 # Keep the enhanced model classes from v2
+
 class NLPAnalysis(BaseModel):
     model_config = MODEL_CONFIG
     """Advanced NLP analysis results"""
@@ -105,8 +101,9 @@ class AssessmentSchema(BaseModel):
 
 class AssertionGrounder:
     """Verifies and grounds assertions using search and NLP"""
-    
+    model_config = MODEL_CONFIG
     def __init__(self, search_client: Any):
+        self.model_config = MODEL_CONFIG
         self.search_client = search_client
         try:
             self.nlp = spacy.load('en_core_web_trf')
@@ -167,10 +164,11 @@ class AssertionGrounder:
 
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
-    
+    model_config=MODEL_CONFIG
     def __init__(self, api_key: str, 
                  model: str = "gemini-exp-1206",
                  search_client: Optional[Any] = None):
+        self.model_config = MODEL_CONFIG
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.grounder = AssertionGrounder(search_client) if search_client else None

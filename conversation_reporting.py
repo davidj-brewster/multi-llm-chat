@@ -7,8 +7,14 @@ from datetime import datetime
 from pathlib import Path
 
 from config_integration import DiscussionConfig, ModelConfig, FileConfig, TimeoutConfig
+MODEL_CONFIG = ConfigDict(
+    extra='allow',  # Allow additional fields
+    arbitrary_types_allowed=True,
+    #protected_namespaces=('model_', ),
+)
 
 class MessageAnalysis(BaseModel):
+    model_config = MODEL_CONFIG
     """Detailed analysis of a single message"""
     content: str
     nlp_analysis: NLPAnalysis
@@ -20,6 +26,7 @@ class MessageAnalysis(BaseModel):
     discourse_level: str  # e.g., "surface", "analytical", "evaluative", "synthetic"
 
 class ConversationSummary(BaseModel):
+    model_config = MODEL_CONFIG
     """Structured summary of conversation context"""
     key_points: List[str] = Field(default_factory=list)
     main_topics: Dict[str, float] = Field(default_factory=dict)  # Topic -> importance score
@@ -29,6 +36,7 @@ class ConversationSummary(BaseModel):
     summary_length: int = 0  # Summarized length in tokens
 
 class AssertionEvidence(BaseModel):
+    model_config = MODEL_CONFIG
     """Evidence supporting an assertion"""
     assertion: str
     sources: List[Dict[str, str]]  # List of {url: str, excerpt: str}
@@ -36,6 +44,7 @@ class AssertionEvidence(BaseModel):
     verification_method: str
 
 class ConversationMetrics(BaseModel):
+    model_config = MODEL_CONFIG
     """Metrics for conversation evaluation"""
     coherence: float
     relevance: float
@@ -49,6 +58,7 @@ class ConversationMetrics(BaseModel):
     unverified_claims: int = 0
 
 class ParticipantMetrics(BaseModel):
+    model_config = MODEL_CONFIG
     """Metrics for individual participant evaluation"""
     response_quality: float
     knowledge_accuracy: float
@@ -61,8 +71,7 @@ class ParticipantMetrics(BaseModel):
     message_analyses: List[MessageAnalysis] = Field(default_factory=list)
 
 class AssessmentSchema(BaseModel):
-    """Schema for conversation assessment results"""
-    model_config = ConfigDict(extra='allow')  # Allow extra fields
+    model_config = MODEL_CONFIG
 
     class ParticipantRating(BaseModel):
         model_config = ConfigDict(extra='allow')
@@ -86,6 +95,7 @@ class AssessmentSchema(BaseModel):
 
 class ArbiterResult(BaseModel):
     """Complete evaluation result"""
+    model_config = ConfigDict(extra='allow')
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
     participant_metrics: Dict[str, Dict[str, ParticipantMetrics]]
@@ -98,8 +108,10 @@ class ArbiterResult(BaseModel):
 
 
 class ConversationMetrics:
+    model_config = ConfigDict(extra='allow')
     """Tracks and analyzes conversation quality metrics"""
     def __init__(self):
+        self.model_config = ConfigDict(extra='allow')
         self.turn_metrics = []
         self.overall_metrics = {
             "semantic_coherence": 0.0,
@@ -161,8 +173,10 @@ class ConversationMetrics:
         }
 
 class StrategyTracker:
+    model_config = ConfigDict(extra='allow')
     """Tracks conversation strategies and their outcomes"""
     def __init__(self):
+        self.model_config = ConfigDict(extra='allow')
         self.strategies = []
         self.adaptations = []
         self.effectiveness = {}

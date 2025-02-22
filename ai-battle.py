@@ -239,7 +239,7 @@ class ConversationManager:
                         mode: str,
                         human_system_instruction: str=None,
                         ai_system_instruction: str=None,
-                        rounds: int = 2) -> List[Dict[str, str]]:
+                        rounds: int = 1) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
         
         # Clear history and set up initial state
