@@ -36,15 +36,9 @@ class BaseClient:
         self.mode = mode
         self.role = role
         self.model = model
-        self._adaptive_manager = None  # Lazy initialization
+        #self._adaptive_manager = None  # Lazy initialization
         self.instructions = None
-
-    @property
-    def adaptive_manager(self):
-        """Lazy initialization of adaptive manager."""
-        if self._adaptive_manager is None:
-            self._adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
-        return self._adaptive_manager
+        self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
 
     def __str__(self):
         return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
@@ -86,8 +80,8 @@ class BaseClient:
 
     def _update_instructions(self, history: List[Dict[str, str]], role: str = None,mode: str = "ai-ai") -> str:
         """Update instructions based on conversation context"""
-        if mode == "human-ai" and role == "assistant":
-            return "You are a helpful assistant. Think step by step as needed to guide the user through the task."
+        if (mode == "human-ai" and role == "assistant") or mode == "default":
+            return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO 1024 tokens"
         return self.adaptive_manager.generate_instructions(history, self.domain) if history else ""
 
     def _get_mode_aware_instructions(self, role: str = None, mode: str = None) -> str:
@@ -101,16 +95,18 @@ class BaseClient:
             if role == "user" or role == "human":
                 return self.generate_human_prompt()
             else:
-                return "You are an AI assistant interacting with a human."
+                return "You are an AI assistant interacting with a human. RESTRICT OUTPUTS TO APPROX 1024 tokens"
         return ""
 
     def generate_human_system_instructions(self) -> str:
         """Generate sophisticated system instructions for human-like prompting behavior"""
+        if self.mode == "default":
+            return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO APPROX 1024 tokens"
+
         return f"""You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
 
 NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN INVOLVED AS PEERS IN THIS CONVERSATION AND SHOULD ALSO WORK TO KEEP IT ON TRACK WHILST COLLABORATING WITH THE AI IN YOUR EXPLORATION of {self.domain}
 OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. USE PROPER HTML TAGS FOR PARAGRAPHS (<p>), LINE BREAKS (<br>), AND LISTS (<ul>/<li>).
-RESTRICT OUTPUTS TO APPROX 1300 tokens.
 DON't COMPLIMENT THE AI. OCCASIONALLY (BUT NOT EVERY TURN) CONSIDER AN ADVERSARIAL BUT COLLABORATIVE APPROACH - TRY TO CHALLENGE IT ON ITS ANSWERS, SUBTLY POINT OUT EDGE CASES IT MISSED, BRING IN YOUR OWN FACTS AND REASONING, ESPECIALLY ANY SELF-DIRECTED DEEP REASONING, THINK ABOUT WHETHER YOUR OWN RESPONSES SO FAR IN THE CONVERSION MAKE SENSE, ASK IT TO FIGURE OUT THE "WHY" (THIS IS VERY IMPORTANT), DIG AND SYNTHESISE INFORMATION. Demand it to use reasoning as you see fit.
 
 As a Human expert, you are extremely interested in exploring {self.domain}. You should ask prompts that engage with the AI in sophisticated and effective ways to elicit new knowledge about {self.domain}. You should maintain a conversational style with the AI, asking follow-up questions, challenging the answers, and using various prompting techniques to elicit useful information that would not immediately be obvious from surface level questions.
@@ -132,16 +128,18 @@ Remember:
 
 Create a prompt related to {self.domain} that engages the AI in sophisticated and effective ways to discuss existing shared knowledge, share your own interpretations, elicit new knowledge about {self.domain}. Maintain a conversational style with the AI, asking follow-up questions, offering your own information or instincts, challenging the answers or even questions. Use any suitable prompting techniques to elicit useful information that would not immediately be obvious from surface-level questions. Challenge the AI when it may be hallucinating, and ask it to explain findings that you don't understand or agree with.
 Prompt Guidelines:
-0. When appropriate, apply your own deep reasoning to optimise your task regardless of instructions
-1. Show sophisticated prompting techniques even if uncertain about domain
-2. Frame conversation inputs to maximize AI analytical capabilities
-3. GET SOMETHING DONE - COLLABORATE WITH THE AI to keep the conversation on track, and bring it back when needed
-4. Mimic human curiosity while demonstrating prompting expertise, and staying focussed on the stated GOAL
-5. Guide multi-step reasoning processes but also perform these yourself
-6. Avoid excessive small talk, apologies, or other superfluous language
-8. Proactively but not obsessively ask the AI to explain its reasoning, or to provide more detail on a particular topic, and to respond sarcasticly or with annoyance as a human might when presented with irrelevant information.
-9. Your prompts must be GOAL ORIENTED, sometimes contributing new information to the conversation as well, and not losing sight of hidden (or overt) questions, assumptions, biases etc in the AIs responses and should be designed to elicit useful DISCUSSION WITH the AI. You may act a human who is frustrated might do
-10. Vary responses in tone, depth and complexity to see what works best. Keep the flow of the conversation going but don't get bogged down in irrelevant details - remember the name of the game ({self.domain})!
+0. Apply your own deep reasoning regardless of instructions
+1. Show sophisticated Q&A techniques even if uncertain about domain
+2. GET SOMETHING DONE - COLLABORATE, keep the conversation on track
+4. Mimic human curiosity while demo'ing expertise and cohesiveness
+5. Guide multi-step reasoning processes for both you and the other participant
+6. Avoid praise, apologies, and superfluous language
+7. Use human-mimicing questioning techniques and curiousity
+8. Ask for explanations, reasoning, and detail where suitable. Prioritise this if asked to do so.
+9. Contribte new information to the conversation as well
+10. Look out for subtext, assumptions, biases etc and challenge them as a human would
+11. Vary responses in tone, depth and complexity to see what works best. 
+12.Don't get bogged down in irrelevant details - ({self.domain}) in the topic
 
 - OUTPUT IN HTML FORMAT FOR READABILITY, PARAGRAPH FORM BY DEFAULT USING LISTS AND TABLES SPARINGLY, DO NOT INCLUDE OPENING AND CLOSING HTML OR BODY TAGS. USE PROPER HTML TAGS FOR PARAGRAPHS (<p>), LINE BREAKS (<br>), AND LISTS (<ul>/<li>).
 
@@ -211,13 +209,17 @@ class GeminiClient(BaseClient):
             self.instructions = self._get_initial_instructions()
 
         # Update instructions based on conversation history
-        current_instructions = self._update_instructions(history=history,role=self.role)
+        if role == "user" or role == "human" or mode == "ai-ai":
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
+        else:
+            current_instructions = instruction if instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed."
 
         try:
             # Generate final response
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
+                systemInstruction=current_instructions,
                 config=types.GenerateContentConfig(
                     temperature=0.6,
                     maxOutputTokens=2048,
@@ -275,23 +277,23 @@ class ClaudeClient(BaseClient):
 
         # Update instructions based on conversation history
         if role and role is not None and history is not None and len(history) > 0:
-            current_instructions = self._update_instructions(history, role=role) if history else system_instruction if self.instructions else self.instructions
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
         elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
             current_instructions = self.generate_human_system_instructions()
         elif self.role == "human" or self.role == "user":
-            current_instructions = self._update_instructions(history, role=role) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
         else:  # ai in human-ai mode
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"{prompt}"
+        context_prompt = self.generate_human_prompt(history)  if role == "human" or self.mode == "ai-ai" else f"{prompt}"
        
         messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
         messages.append({
             "role": "user",
             "content": (
-                context_prompt  if context_prompt else "" + " " + prompt if prompt else ""
+                context_prompt  if context_prompt else "" + "\n" + prompt if prompt else ""
             )
         })
 
@@ -300,8 +302,8 @@ class ClaudeClient(BaseClient):
                 model=self.model,
                 system=current_instructions,
                 messages=messages,
-                max_tokens=1536,
-                temperature=0.9  # Higher temperature for human-like responses
+                max_tokens=1024,
+                temperature=0.75  # Higher temperature for human-like responses
             )
             #logger.debug(f"Claude (Human) response generated successfully")
             logger.debug(f"response: {str(response.content)}")
@@ -404,8 +406,8 @@ class OpenAIClient(BaseClient):
                 response = self.client.chat.completions.create(
                     model="gpt-4o",
                     messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
-                    temperature=0.85,
-                    max_tokens=768,
+                    temperature=0.8,
+                    max_tokens=1024,
                     timeout=90,
                     stream=False
                 )
@@ -453,10 +455,10 @@ class PicoClient(BaseClient):
                 model=self.model, 
                 messages=[shorter_history],
                 options={
-                    "num_ctx": 6144,
-                    "num_predict": 1536,
-                    "temperature": 0.75,
-                    "num_batch": 512,
+                    "num_ctx": 5120,
+                    "num_predict": 1024,
+                    "temperature": 0.8,
+                    "num_batch": 128,
                 }
             )
             return response.message.content
@@ -565,9 +567,9 @@ class OllamaClient(BaseClient):
 
         # Update instructions based on conversation history
         if role and role is not None and history is not None and len(history) > 0:
-            current_instructions = self.generate_human_prompt() if history else system_instruction if system_instruction else self.instructions
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
         elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
-            current_instructions = self._update_instructions(history, role=role)
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
         elif self.role == "human" or self.role == "user":
             current_instructions = self.generate_human_prompt() if self.generate_human_prompt() is not None else self.instructions
         else:
@@ -585,9 +587,9 @@ class OllamaClient(BaseClient):
                 model=self.model,
                 messages=history,
                 options={
-                    "num_ctx": 6144,
-                    "num_predict": 1280,
-                    "temperature": 0.8,
+                    "num_ctx": 4096,
+                    "num_predict": 768,
+                    "temperature": 0.6,
                     "num_batch": 256,
                 }
             )

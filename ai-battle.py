@@ -61,9 +61,9 @@ class ConversationManager:
     def __init__(self,
                  config: DiscussionConfig   = None,
                  domain: str = "General knowledge",
-                 human_delay: float = 20.0,
+                 human_delay: float = 4.0,
                  mode: str = None,
-                 min_delay: float = 10,
+                 min_delay: float = 2,
                  gemini_api_key: Optional[str] = None,
                  claude_api_key: Optional[str] = None,
                  openai_api_key: Optional[str] = None) -> None:
@@ -133,6 +133,8 @@ class ConversationManager:
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q8_0")
                 elif model_name == "ollama-abliterated":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-abliterated:latest")
+                elif model_name == "ollama-zephyr":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="zephyr:latest")
                 else:
                     logger.error(f"Unknown model: {model_name}")
                     return None
@@ -191,23 +193,22 @@ class ConversationManager:
         """Single conversation turn with specified model and role."""
         self.mode = mode
         mapped_role = "user" if (role == "human" or role == "HUMAN" or role == "user") else "assistant"
-        
+        prompt_level = "no-meta-prompting" if mode == "no-meta-prompting" or mode =="default" else mapped_role
         if not self.conversation_history:
             self.conversation_history.append({"role": "system", "content": f"{system_instruction}!"})
 
         try:
-            if mapped_role == "user" or mapped_role == "human":
+            if prompt_level == "no-meta-prompting":
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client._update_instructions(history = self.conversation_history, mode=mode, role="user"),
+                    system_instruction="You are a helpful assistant. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX 1024 tokens",
                     history=self.conversation_history.copy(),  # Limit history
-                    role=role
+                    role="assistant" #even if its the user role, it should get no instructions
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
-                
-                self.conversation_history.append({"role": "user" if role=="user" else "assistant", "content": response})
-            else:
+                self.conversation_history.append({"role": role, "content": response})
+            elif (mapped_role == "user" or mapped_role == "human" or mode == "human-aiai"):
                 reversed_history = []
                 for msg in self.conversation_history:  # Limit history
                     if msg["role"] == "assistant":
@@ -216,12 +217,25 @@ class ConversationManager:
                         reversed_history.append({"role": "assistant", "content": msg["content"]})
                     else:
                         reversed_history.append(msg)
+                if mode == "human-aiai" and role == "assistant":
+                    reversed_history = self.conversation_history.copy()
+                response = client.generate_response(
+                    prompt=prompt,
+                    system_instruction=client.adaptive_manager.generate_instructions(history = reversed_history, mode=mode, role="user",domain=self.domain),
+                    history=reversed_history,  # Limit history
+                    role=role
+                )
+                if isinstance(response, list) and len(response) > 0:
+                    response = response[0].text if hasattr(response[0], 'text') else str(response[0])
+                
+                self.conversation_history.append({"role": role, "content": response})
+            else:
 
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client._update_instructions(history = reversed_history, mode=mode, role="assistant"),
-                    history=reversed_history,
-                    role="assistant"
+                    system_instruction=client.adaptive_manager.generate_instructions(history = self.conversation_history, mode=mode, role="assistant",domain=self.domain),
+                    history=self.conversation_history.copy(),
+                    role="assistant",
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
@@ -277,7 +291,7 @@ class ConversationManager:
                 # Human turn
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
-                    system_instruction=human_client._get_mode_aware_instructions(mode=mode, role="user"),
+                    system_instruction="Think step by step. RESTRICT OUTPUTS TO APPROX 1024 tokens" if mode == "no-meta-prompting" else human_client._get_mode_aware_instructions(mode=mode, role="user"),
                     role="user",
                     mode=self.mode,
                     model_type=human_model,
@@ -288,7 +302,7 @@ class ConversationManager:
                 # AI turn
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
-                    system_instruction=ai_system_instruction if mode=="human-aiai" else human_client.generate_human_system_instructions(),
+                    system_instruction="You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX 1024 tokens" if mode == "no-meta-prompting" else ai_system_instruction if mode=="human-aiai" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",domain=self.domain,history=self.conversation_history),
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
@@ -297,7 +311,7 @@ class ConversationManager:
                 logger.debug(f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
 
             # Clean up unused clients
-            self.cleanup_unused_clients()
+            #self.cleanup_unused_clients()
             
             return self.conversation_history
             
@@ -419,7 +433,7 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 8
+    rounds = 6
     initial_prompt = "Lasting effects of the cold war"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -427,8 +441,8 @@ async def main():
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = "gemini_2_reasoning"
-    human_model = "claude"
+    ai_model = "claude"
+    human_model = "gpt-4o"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -454,6 +468,8 @@ async def main():
         ai_system_instruction = human_system_instruction
  
     try:
+        # Run default conversation
+        mode="ai-ai"
         # Run AI-AI conversation
         conversation = manager.run_conversation(
             initial_prompt=initial_prompt,
@@ -478,7 +494,7 @@ async def main():
             human_model=human_model,
             ai_model=ai_model,
             human_system_instruction=human_system_instruction,
-            ai_system_instruction=ai_system_instruction,
+            ai_system_instruction=human_system_instruction,
             rounds=rounds
         )
         
@@ -486,11 +502,28 @@ async def main():
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-humai_{safe_prompt}_{time_stamp}.html"
         await save_conversation(conversation=conversation_as_human_ai, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
+
+        mode = "no-meta-prompting"
+        conv_default = manager.run_conversation(
+            initial_prompt=initial_prompt,
+            mode=mode,
+            human_model=human_model,
+            ai_model=ai_model,
+            human_system_instruction=ai_system_instruction,
+            ai_system_instruction=ai_system_instruction,
+            rounds=rounds
+        )
+        
+        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
+        filename = f"conv-defaults_{safe_prompt}_{time_stamp}.html"
+        await save_conversation(conversation=conv_default, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
         
         # Run analysis
         arbiter_report = evaluate_conversations(
             ai_ai_convo=conversation,
             human_ai_convo=conversation_as_human_ai,
+            default_convo=conv_default,
             goal=initial_prompt,
         )
 

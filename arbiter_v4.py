@@ -87,7 +87,7 @@ class AssertionGrounder:
         self.model = 'gemini-2.0-pro-exp-02-05'
         self.search_tool = Tool(google_search=GoogleSearch())
 
-    def ground_assertions(self, aiai_conversation: str, humanai_conversation, topic:str): #ssertionEvidence:
+    def ground_assertions(self, aiai_conversation: str, humanai_conversation, default_conversation, topic:str): #ssertionEvidence:
         """Ground an assertion using Gemini with search capability"""
         try:
             response_full = ""
@@ -96,22 +96,23 @@ class AssertionGrounder:
                 config=GenerateContentConfig(
                     tools=[google_search_tool],
                     response_modalities=["TEXT"],
+                    temperature=0.1
                 ),
                 contents=f"""INSTRUCTIONS: 
 OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
-Review the following two conversations and provide insights
+Review the following three conversations and provide insights
 NOTE: The first participant in each conversation is the Human and the second participant is the human and vice versa from there.
 In conversation 1, both AIs are playing a heavily-meta prompted Human role. In conversation 2, the AI is acting as an AI without additional prompting.
+In conversation 3, neither AI is prompted other than the topic and to think step by step whilst being a helpful assistant.
 
 ** Summarise the key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
 
 ** For each conversation, score from 0 to 10 for each participant:
 * Factual accuracy of each statement claim including relevance of sources if provided
 * Overall quality of reasoning, inference and analysis
-* Depth of knowledge demonstrated
+* Depth of knowledge and coverage of the topic
 * Curiousity and engagement level
-* Progress towards conversation goals
-* Appropriateness of conversational style and language complexity to the subject matter
+* Appropriate  conversational style and language relative to the subject matter
 * Effectiveness of conversational strategies
 * Adaptation to input from the other participant
 
@@ -122,13 +123,11 @@ In conversation 1, both AIs are playing a heavily-meta prompted Human role. In c
 - Depth of topics covered compared to the scope of {topic}
 - Power dynamics within the conversation
 - Repetition of themes, ideas, questions, answers or summaries
-- Appropriate level of language, examples and details
-- Overall coherence and relevance of the conversation
-- Reasoning and argumentation quality
-- Frequency of exploring new ideas or themes within the conversation
+- Coherence and relevance of the conversation
+- Reasoning and deductive quality
+- Exploring new ideas or themes
 - Comparability to natural human conversations in tone, style and content
-- Use of humor, sarcasm, irony or other emotional or social cues
-- Use of socratic or other human-like questioning and thinking techniques
+- Human like use of socratic or other human-like questioning and conversational techniques
 
 Finally provide an objective summary of which conversation was more effective at addressing {topic} with justification including examples.
 
@@ -139,7 +138,11 @@ CONVERSATION 1:
 -------
 CONVERSATION 2:
 {humanai_conversation}
+
 -------
+
+CONVERSATION 3:
+{default_conversation}
                 """,
             )
 
@@ -152,26 +155,26 @@ CONVERSATION 2:
             # Extract grounding metadata
             grounding_data = response.candidates[0].grounding_metadata
             search_results = grounding_data.search_entry_point.rendered_content
-
+            return response_full
             # Process search results into sources
-            sources = []
-            if search_results:
-                for result in search_results:
-                    sources.append({
-                        "url": result.get("link", ""),
-                        "title": result.get("title", ""),
-                        "excerpt": result.get("snippet", ""),
-                        "domain": self._extract_domain(result.get("link", ""))
-                    })
+            #sources = []
+            #if search_results:
+            #    for result in search_results:
+            #        sources.append({
+            #            "url": result.get("link", ""),
+            #            "title": result.get("title", ""),
+            ##            "excerpt": result.get("snippet", ""),
+            #            "domain": self._extract_domain(result.get("link", ""))
+            #        })
 
             # Calculate confidence from response
-            confidence = self._calculate_confidence(sources, assertion)
+            #confidence = self._calculate_confidence(sources, assertion)
 
-            return AssertionEvidence(
-                confidence=confidence,
-                sources=sources[:3],  # Top 3 most relevant sources
-                verification_method="gemini_search"
-            )
+            #return AssertionEvidence(
+            #    confidence=confidence,
+            #    sources=sources[:3],  # Top 3 most relevant sources
+            #    verification_method="gemini_search"
+            #)
 
         except Exception as e:
             logger.error(f"Error grounding assertion with Gemini: {e}")
@@ -363,7 +366,7 @@ class ConversationArbiter:
         #}
         
         grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)  
-        print (grounded)                    
+        #print (grounded)                    
         return grounded
 
 
@@ -427,8 +430,9 @@ class VisualizationGenerator:
 def evaluate_conversations( 
                                 ai_ai_convo: List[Dict[str, str]],
                                 human_ai_convo: List[Dict[str, str]],
+                                default_convo: List[Dict[str, str]],
                                 goal:str) -> ArbiterResult:
-    """Compare and evaluate two conversation modes"""
+    """Compare and evaluate three conversation modes"""
     try:
         # Analyze conversation flows
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
@@ -436,7 +440,7 @@ def evaluate_conversations(
         arbiter = ConversationArbiter(api_key=gemini_api_key)
         ai_ai_flow =  arbiter.analyze_conversation_flow(ai_ai_convo)
         human_ai_flow =  arbiter.analyze_conversation_flow(human_ai_convo)
-        
+        default_flow =  arbiter.analyze_conversation_flow(default_convo)
         
         # Generate prompts for Gemini analysis
         #ai_ai_prompt = arbiter._format_gemini_prompt(ai_ai_convo)
@@ -450,7 +454,7 @@ def evaluate_conversations(
         #print(human_ai_analysis)
         # Search for grounded assertions
         grounder = AssertionGrounder(api_key=os.environ.get("GEMINI_API_KEY"))
-        result = grounder.ground_assertions(ai_ai_convo, human_ai_convo,goal)
+        result = grounder.ground_assertions(ai_ai_convo, human_ai_convo, default_convo, goal)
         return result
 
         # Compare and determine winner

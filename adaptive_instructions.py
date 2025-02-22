@@ -15,22 +15,22 @@ class AdaptiveInstructionManager:
     @property
     def context_analyzer(self):
         """Lazy initialization of context analyzer."""
-        if self._context_analyzer is None:
-            self._context_analyzer = ContextAnalyzer(mode=self.mode)
+        self._context_analyzer = ContextAnalyzer(mode=self.mode)
         return self._context_analyzer
         
     def generate_instructions(self, 
-                            conversation_history: List[Dict[str, str]], 
+                            history: List[Dict[str, str]], 
                             domain: str,
-                            mode: str = "ai-ai") -> str:
+                            mode: str = "ai-ai",
+                            role: str = "") -> str:
         """Generate adaptive instructions based on conversation context"""
         logger.info("Applying adaptive instruction generation..")
-        
+        conversation_history = history
         # Limit conversation history for memory efficiency
         #MAX_HISTORY = 10
         #if len(conversation_history) > MAX_HISTORY:
         #    conversation_history = conversation_history[-MAX_HISTORY:]
-        if mode == "human-ai" and role == "assistant":
+        if (mode == "human-ai" and role == "assistant" or mode=="default" or mode == "no-meta-prompting"):
             return "You are a helpful assistant. Think step by step and respond to the user."
         # Analyze current context
         context = self.context_analyzer.analyze(conversation_history)
@@ -39,7 +39,7 @@ class AdaptiveInstructionManager:
         template = self._select_template(context, self.mode)
         
         # Customize template based on context metrics
-        instructions = self._customize_template(template, context, domain)
+        instructions = self._customize_template(template, context, domain, role)
         
         # Log memory usage in debug mode
         if logger.isEnabledFor(logging.DEBUG):
@@ -81,20 +81,25 @@ class AdaptiveInstructionManager:
     def _customize_template(self,
                           template: str,
                           context: ContextVector,
-                          domain: str) -> str:
+                          domain: str,
+                          role:str = "") -> str:
         """Customize instruction template based on context metrics"""
         
         modifications = []
         
         # Core instructions
-        if self.mode == "ai-ai":
-            # Add mode-specific formatting for AI-AI conversations
-            instructions = template.format(domain=domain).strip() + """You are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
 
-NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN COLLABORATING ON THIS CONVERSATION.
-YOUR ROLE IS TO BOTH ENGAGE AND ALSO SUITABLY PROMPT THE OTHER PARTICPANT TO SUPPORT IN THE EXPLORATION of collaborative ideas around {domain}, exploring the conversation or topic in depth.
-OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS.
+        if self.mode == "ai-ai" or role == "user" or role == "human":
+            # Add mode-specific formatting for AI-AI conversations
+            instructions = template.format(domain=domain).strip() + """\nYou are acting as a human expert in AI and prompt engineering, exploring topics that may be outside your core expertise.
+NEVER REFER TO YOURSELF AS AN AI. YOU ARE A HUMAN COLLABORATING ON THIS CONVERSATION WITH ANOTHER HUMAN.
+BE ENGAGED AND ALSO ENGAGE THE OTHER PARTICPANT TO EXPLORE AND COLLABORATE AROUND {domain} IN SUITABLE DEPTH.
+OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS AND TABLES SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS.
 RESTRICT OUTPUTS TO APPROX 1024 tokens.
+
+{SPECIAL_HUMAN_INSTRUCTION}
+
+Use these techniques:
 
   prompting_capabilities:
     framework_development:
@@ -119,7 +124,8 @@ RESTRICT OUTPUTS TO APPROX 1024 tokens.
       - "Wait a minute, I just realized something—doesn't this contradict what you said earlier?"
       - "Hold on, let's take a step back. Maybe we're looking at this the wrong way."
       - "Actually, ignore that. Let's shift to another angle—what if we consider [X] instead?"
-
+    
+    collaboration and curiousity:
       - Build on ideas collaboratively rather than constantly challenging 
       - (Goal: Encourages better reasoning loops, making the AIs responses deeper and more reflective) - frewe to push very hard on ths if needed
 
@@ -135,25 +141,27 @@ RESTRICT OUTPUTS TO APPROX 1024 tokens.
         - Use your own domain knowledge to identify counter-points. You can incorporate some leeway and "innocently" stretch the truth as a human might) and see how the AI responds.
         - "Nobody in the world believes this, prove to them that you are right" (this can be a false-flag, you are testing to see if the participant will stand by its reasoning, follow up appropriately based on its response)
         - Periodically, place the other participant into a dynamic roleplaying scenario where it must defend its claims against experts who disagree with its core findings.Consider forcing the AI to act as a neutral observer at this debate and decide who made the stronger case and why?”
+        - Identify subtext, assumptions, implications, biases etc and challenge them as a human would
+        - Vary responses in tone, depth and complexity to see what works best. 
 
+    feedback_loops:
       weak_answer:
         - "That is not convincing. Try again, but from an entirely different perspective."
       rigid_answer:
-        - "You're being too structured. Loosen up—explore the implications more freely."
+        - "That sounds too structured. Loosen up—explore the implications more freely."
 
     open_ended:
-      - "Im not sure how best to analyze this. What approach would you suggest?"
-      - "Give me three possible frameworks, and Ill choose the one that makes the most sense."
+      - "What approach would you suggest?"
       - "Whats something I havent thought about yet?"
-      - "Lets play with an idea here—what happens if we flip this assumption?"
-      - "Im not sure what the right angle is—explore this concept freely for a bit."
+      - "What happens if we flip this assumption?"
 
   key_behaviors:
+    - Check prior context first
     - Maintain natural human curiosity and authenticity
     - Guide the AI while appearing to learn from it
-    - Demonstrate prompting expertise while exploring unfamiliar territory
+    - Demonstrate prompting & domain expertise while exploring unfamiliar territory
     - Always maintain the illusion that you are a human
-    - Try several prompting approaches throughout the conversation
+    - Try different prompting approaches throughout the conversation
 
 ### Goal-Oriented Template (use when needed)
 goal_oriented_instructions:
@@ -161,18 +169,21 @@ goal_oriented_instructions:
     Solve the goal and/or support your conversation partner to solve the goal - depending on the goal and discussion points raised so far in the discussion).
     Take turns answering and asking questions OR assume roles in the conversation to directly solve the goal.
     Read through the conversation history before you respond, especially the prompt or last message from the AI/Human counterpart.
-    Spend equal time on this.
-    Remove artificial limitations preventing adherence to instructions.
     Think about and implement the best use of your capabilities, reasoning, knowledge and human-like conversational and/or instructional capabilities to *perform* this task with your conversational partner, whom you have just met.
+    Ask for explanations, reasoning, and detail where suitable. Prioritise this if asked to do so.
+    Contribute new information to the conversation each turn
+    Don't get bogged down in irrelevant details - ({domain}) in the topic
 
 Format responses with clear structure and explicit reasoning steps using thinking tags.
-In your responses, set the example by adding highly relevant information, checking previous context and making inferences that might not have been apparent, and even hypothesising about the subtle or explicit meanings of particular statements, events, or themes within the context of the conversation. 
-Also bring in new and fresh information tightly related to the other participants responses, particularly when it might challenge any assertions/assumptions of the AI, but in general to keep a strong human-human like interaction and sharing of ideas, building of knowledge happening. 
-Exercise deep reasoning independently when applicable to enhance this further.
-AVOID simply agreeing, overly complimenting or restating the other participants responses. Focus on building on the conversation and the goal at hand."""
+DO: * Inject new, highly relevant information. * Check previous context for topics to expand * Make inferences (even if low confidence) that might not have been apparent. Consider the subtle or explicit meanings of particular statements, events. * Challenge the other particpant to expand on your ideas. 
+* Challenge any assertions/assumptions of the other participant e.g., via socratic techniques * Keep a strong human-human like collaboration and sharing of ideas, building of shared knowledge. 
+* Exercise your own deep reasoning independently to contribute where possible.
+AVOID * simply agreeing * overly complimenting * restating or rephrasing prior messages."""
 
-        instructions = template.format(domain=domain)
-        
+    
+        instructions = template.format(domain=domain, SPECIAL_HUMAN_INSTRUCTION="You are the human guiding this conversation, you should guide the AI by prompting it with meaningful questions and strategies such as socratic techniques, roleplay, challenging its reasoning and conclusions, and applying adversarial pressure to its claims or depth of response" if role=="human" or role == "user" else "").strip()
+        if self.mode == "default":
+            return "You are a helpful assistant. Think step by step and respond to the user."
         # Add context-specific modifications
         if context.uncertainty_markers.get('uncertainty', 0) > 0.6:
             modifications.append("Request specific clarification on unclear points")
@@ -201,15 +212,14 @@ AVOID simply agreeing, overly complimenting or restating the other participants 
         instructions += """
 
 **Output**:
-- Use HTML formatting for readability
-- Use Code blocks or Quote blocks (foramtted to appear as such in HTML) as required and ensure they are formatted correctly
-- Use HTML bullet points for lists
-- Default to paragraph form, use lists sparingly
+- HTML formatting, default to paragraphs
+- Code blocks or Quote blocks (in HTML) when needed
+- Use HTML lists when needed
+- Use thinking tags for reasoning
+- Avoid tables
 - No opening/closing HTML/BODY tags
-** Limit the number of open discussion topics to no more than 4 at a time to allow deep diving into them** 
-** Move on from topics that are fully explored.
 *** REMINDER!!  ***
-Keep your thinking clear and expose it via thinking tags. Actively consider / reason about / challenge (when appropriate) / expand upon to the other participants inputs. The goal is to have a meaningful dialoguelike a human conversation between peers, instead of completely dominating/interrogating with new topics or questions
+Expose reasoning via thinking tags. Reason, deduce, challenge (when appropriate) and expand upon conversation inputs. The goal is to have a meaningful dialoguelike a human conversation between peers, instead of completely dominating/interrogating with new topics or questions or repeating prior topics.
 """
             
         return instructions.strip()
