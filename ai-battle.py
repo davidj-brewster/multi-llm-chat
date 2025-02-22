@@ -24,10 +24,11 @@ from context_analysis import ContextAnalyzer
 from adaptive_instructions import AdaptiveInstructionManager
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
-from arbiter_v3 import evaluate_conversations, VisualizationGenerator, ArbiterResult
+from arbiter_v4 import evaluate_conversations, VisualizationGenerator, ArbiterResult
 from file_handler import ConversationMediaHandler, FileConfig as MediaConfig
 from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
 from shared_resources import MemoryManager
+from metrics_analyzer import analyze_conversations
 
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 class ModelConfig:
     """Configuration for AI model parameters"""
     temperature: float = 0.8
-    max_tokens: int = 2048
+    max_tokens: int = 1024
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
 
@@ -290,7 +291,7 @@ class ConversationManager:
                     model_type=ai_model,
                     client=ai_client
                 )
-                print(f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
+                logger.debug(f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
 
             # Clean up unused clients
             self.cleanup_unused_clients()
@@ -302,7 +303,7 @@ class ConversationManager:
             self.cleanup_unused_clients()
             MemoryManager.cleanup_all()
 
-def save_conversation(conversation: List[Dict[str, str]], 
+async def save_conversation(conversation: List[Dict[str, str]], 
                      filename: str,
                      human_model: str,
                      ai_model: str,
@@ -320,7 +321,7 @@ def save_conversation(conversation: List[Dict[str, str]],
                 content = str(content)
             
             if role == "system":
-                conversation_html += f'<div class="system-message">{content}</div>\n'
+                conversation_html += f'<div class="system-message">{content} ({mode})</div>\n'
             elif role in ["user", "human"]:
                 conversation_html += f'<div class="human-message"><strong>Human ({human_model}):</strong> {content}</div>\n'
             elif role == "assistant":
@@ -343,7 +344,7 @@ def _sanitize_filename_part(prompt: str) -> str:
     # Limit length
     return sanitized[:50]
 
-def save_arbiter_report(report: Dict[str, Any]) -> None:
+async def save_arbiter_report(report: Dict[str, Any]) -> None:
     """Save arbiter analysis report with visualization support."""
     try:
         with open("templates/arbiter_report.html") as f:
@@ -393,20 +394,19 @@ def save_arbiter_report(report: Dict[str, Any]) -> None:
         logger.info(f"Arbiter report saved successfully as {filename}")
         
         # Create symlink to latest report
-        latest_link = "arbiter_report_latest.html"
-        if os.path.exists(latest_link):
-            os.remove(latest_link)
-        os.symlink(filename, latest_link)
+        #latest_link = "arbiter_report_latest.html"
+        #if os.path.exists(latest_link):
+        #    os.remove(latest_link)
+        #os.symlink(filename, latest_link)
         
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
-def save_metrics_report(ai_ai_conversation: List[Dict[str, str]], 
+async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]], 
                        human_ai_conversation: List[Dict[str, str]]) -> None:
     """Save metrics analysis report."""
     try:
         if ai_ai_conversation and human_ai_conversation:
-            from metrics_analyzer import analyze_conversations
             analysis_data = analyze_conversations(ai_ai_conversation, human_ai_conversation)
             logger.info("Metrics report generated successfully")
         else:
@@ -416,8 +416,8 @@ def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 2
-    initial_prompt = "Why did the USSR collapse"
+    rounds = 1
+    initial_prompt = "Has German reunification been a net positive or negative"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GEMINI_API_KEY")
@@ -471,7 +471,7 @@ async def main():
         safe_prompt = _sanitize_filename_part(initial_prompt + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
         filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
-        save_conversation(conversation=conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+        await save_conversation(conversation=conversation, filename=f"processed_files/{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
         
         # Run human-AI conversation
         mode = "human-aiai"
@@ -486,19 +486,22 @@ async def main():
         )
         
         filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
-        save_conversation(conversation=conversation_as_human_ai, filename=filename, human_model=human_model, ai_model=ai_model, mode="human-aiai")
+        await save_conversation(conversation=conversation_as_human_ai, filename=f"processed_files/{filename}", human_model=human_model, ai_model=ai_model, mode="human-aiai")
+        
         
         # Run analysis
         winner, arbiter_report = evaluate_conversations(
-            ai_ai_conversation=conversation,
-            human_ai_conversation=conversation_as_human_ai,
+            ai_ai_convo=conversation,
+            human_ai_convo=conversation_as_human_ai,
             goal=initial_prompt,
-            gemini_api_key=gemini_api_key
+            #gemini_api_key=gemini_api_key
         )
+
+        print(arbiter_report)
         
         # Generate reports
-        save_arbiter_report(arbiter_report)
-        save_metrics_report(conversation, conversation_as_human_ai)
+        await save_arbiter_report(arbiter_report)
+        await save_metrics_report(conversation, conversation_as_human_ai)
         
     finally:
         # Ensure cleanup

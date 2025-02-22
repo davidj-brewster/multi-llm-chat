@@ -187,7 +187,7 @@ class GeminiClient(BaseClient):
     def _setup_generation_config(self):
         self.generation_config = types.GenerateContentConfig(
             temperature=0.5,
-            maxOutputTokens=8192,
+            maxOutputTokens=2048,
             candidateCount=1,
             responseMimeType="text/plain",
             safety_settings=[]
@@ -247,7 +247,7 @@ class ClaudeClient(BaseClient):
         except Exception as e:
             logger.error(f"Failed to initialize Claude client: {e}")
             raise
-        self.max_tokens = 4096
+        self.max_tokens = 1536
 
 
     def generate_response(self,
@@ -298,7 +298,7 @@ class ClaudeClient(BaseClient):
                 model=self.model,
                 system=current_instructions,
                 messages=messages,
-                max_tokens=2048,
+                max_tokens=1536,
                 temperature=0.9  # Higher temperature for human-like responses
             )
             #logger.debug(f"Claude (Human) response generated successfully")
@@ -401,7 +401,7 @@ class OpenAIClient(BaseClient):
                     model="gpt-4o-mini",
                     messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
                     temperature=0.8,
-                    max_tokens=3172,
+                    max_tokens=1536,
                     timeout=90,
                     stream=False
                 )

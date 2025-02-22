@@ -4,7 +4,7 @@ import logging
 import datetime
 import spacy
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Literal
 from collections import defaultdict, Counter
 from pydantic import BaseModel, Field, ConfigDict
 from dataclasses import asdict
@@ -13,15 +13,36 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 MODEL_CONFIG = ConfigDict(
-    extra='allow',  # Allow additional fields
     arbitrary_types_allowed=True,
-    #protected_namespaces=('model_', ),
+    extra='allow',
+    json_schema_extra={
+        "additionalProperties": True,
+        "type": "object",
+        "properties": {
+            "conversation_quality": {
+                "type": "object",
+                "additionalProperties": {"type": "number"}
+            },
+            "participant_analysis": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {"type": "number"}
+                }
+            }
+        }
+    }
 )
 
+# Base class with global config
+class ConfiguredModel(BaseModel):
+    model_config = MODEL_CONFIG
+
+# Define the model configuration
+ExtraValues = Literal['allow']
 # Keep the enhanced model classes from v2
 
-class NLPAnalysis(BaseModel):
-    model_config = MODEL_CONFIG
+class NLPAnalysis(ConfiguredModel):
     """Advanced NLP analysis results"""
     entities: Dict[str, List[str]] = Field(default_factory=dict)
     key_phrases: List[str] = Field(default_factory=list)
@@ -32,8 +53,7 @@ class NLPAnalysis(BaseModel):
     discourse_markers: Dict[str, int] = Field(default_factory=dict)
     reference_chains: List[List[str]] = Field(default_factory=list)
 
-class ConversationMetrics(BaseModel):
-    model_config = MODEL_CONFIG
+class ConversationMetrics(ConfiguredModel):
     """Metrics for conversation quality assessment"""
     coherence: float = Field(default=0.0, ge=0.0, le=1.0)
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -44,8 +64,7 @@ class ConversationMetrics(BaseModel):
     goal_progress: float = Field(default=0.0, ge=0.0, le=1.0)
     strategy_effectiveness: float = Field(default=0.0, ge=0.0, le=1.0)
 
-class ParticipantMetrics(BaseModel):
-    model_config = MODEL_CONFIG
+class ParticipantMetrics(ConfiguredModel):
     """Metrics for individual participant performance"""
     response_quality: float = Field(default=0.0, ge=0.0, le=1.0)
     knowledge_accuracy: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -54,15 +73,13 @@ class ParticipantMetrics(BaseModel):
     strategy_adherence: float = Field(default=0.0, ge=0.0, le=1.0)
     adaptation: float = Field(default=0.0, ge=0.0, le=1.0)
 
-class AssertionEvidence(BaseModel):
-    model_config = MODEL_CONFIG
+class AssertionEvidence(ConfiguredModel):
     """Evidence supporting a grounded assertion"""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     sources: List[Dict[str, str]] = Field(default_factory=list)
     verification_method: str = "search"
 
-class ArbiterResult(BaseModel):
-    model_config = MODEL_CONFIG
+class ArbiterResult(ConfiguredModel):
     """Complete results of conversation arbitration"""
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
@@ -75,33 +92,32 @@ class ArbiterResult(BaseModel):
     conversation_ids: Dict[str, str]
 
 # Add the Gemini model response schema
-class AssessmentSchema(BaseModel):
-    model_config = MODEL_CONFIG
+class AssessmentSchema(ConfiguredModel):
     """Schema for Gemini model response validation"""
     conversation_quality: Dict[str, float] = Field(
         default_factory=dict,
-        description="Quality metrics for the conversation"
+        description="Quality metrics for the conversation",
     )
     participant_analysis: Dict[str, Dict[str, float]] = Field(
         default_factory=dict,
-        description="Analysis metrics for each participant"
+        description="Analysis metrics for each participant",
     )
     assertions: List[str] = Field(
         default_factory=list,
-        description="Key assertions from the conversation"
+        description="Key assertions from the conversation",
     )
     key_insights: List[str] = Field(
         default_factory=list,
-        description="Important insights from the analysis"
+        description="Important insights from the analysis",
     )
     improvement_suggestions: List[str] = Field(
         default_factory=list,
-        description="Suggestions for improvement"
+        description="Suggestions for improvement",
     )
 
 class AssertionGrounder:
     """Verifies and grounds assertions using search and NLP"""
-    model_config = MODEL_CONFIG
+    #model_config = MODEL_CONFIG
     def __init__(self, search_client: Any):
         self.model_config = MODEL_CONFIG
         self.search_client = search_client
@@ -164,7 +180,7 @@ class AssertionGrounder:
 
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
-    model_config=MODEL_CONFIG
+    #model_config=MODEL_CONFIG
     def __init__(self, api_key: str, 
                  model: str = "gemini-exp-1206",
                  search_client: Optional[Any] = None):
@@ -423,7 +439,13 @@ class ConversationArbiter:
                     )]
                 )
             )
-            
+            try:
+                print (response.content)
+            except Exception as e:
+                print (response)
+            except Exception as e:
+                print (e)
+
             try:
                 analysis = response.parsed
             except Exception as parse_error:
@@ -908,7 +930,7 @@ def evaluate_conversations(ai_ai_conversation: List[Dict[str, str]],
     Returns:
         Tuple of (winner, HTML report)
     """
-    model_config = MODEL_CONFIG
+    #model_config = MODEL_CONFIG
     try:
         arbiter = ConversationArbiter(
             api_key=gemini_api_key,

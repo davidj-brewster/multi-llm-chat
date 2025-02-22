@@ -67,7 +67,7 @@ pyasn1==0.6.1
 pyasn1-modules==0.4.1
 pytest==8.0.0
 pytest-cov==4.1.0
-pydantic==2.10.5
+pydantic==2.10.6
 pydantic-core==2.27.2
 pydeck==0.9.1
 pygments==2.19.1

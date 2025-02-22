@@ -10,6 +10,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from collections import Counter, defaultdict
 
+
 @dataclass
 class TopicCluster:
     """A cluster of related messages"""
@@ -73,7 +74,7 @@ class TopicAnalyzer:
             eps=0.4,  # Maximum distance between samples
             min_samples=2,  # Minimum cluster size
             metric='precomputed'  # Use pre-computed similarities
-        ).fit(distancess)  # Convert similarities to distances
+        ).fit(distances)  # Convert similarities to distances
         
         # Extract clusters
         clusters = []

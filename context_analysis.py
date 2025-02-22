@@ -149,7 +149,7 @@ class ContextAnalyzer:
             
             # Normalize by message count (safe since we checked for empty history)
             msg_count = len(history)
-            logger.info("Response patterns: {{k: v/msg_count for k, v in patterns.items()}}")
+            logger.debug("Response patterns: {{k: v/msg_count for k, v in patterns.items()}}")
             return {k: v/msg_count for k, v in patterns.items()}
         except Exception as e:
             logger.error(f"Error analyzing response patterns: {e}")
@@ -349,7 +349,7 @@ class ContextAnalyzer:
                                                          content.lower()))
                 
             # Normalize by message count
-            logger.info("_detect_uncertainty: " + ''.join(contents) + f": {markers}")
+            logger.debug("_detect_uncertainty: " + ''.join(contents) + f": {markers}")
             return {k: v/4 for k, v in markers.items()}
         except Exception as e:
             logger.error(f"Error detecting uncertainty: {e}")
