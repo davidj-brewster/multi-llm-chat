@@ -333,10 +333,10 @@ class ContextAnalyzer:
         }
         
         try:
-            socratic_patterns = r'or did|interested|intrigued|that conclusion|interpret|analysis|reason|doesn\' it|what|why|how|where|when|who|which|whom|think|would you|could it|should it|may|might|can|could|would|should|will|is it|are they|are we|is there|are there|do you|does it|did it|have you|has it|had it|will it|won\'t it|can it|could it|should it|would it|isn\'t it|aren\'t they|isn\'t there|aren\'t there|don\'t you|doesn\'t it|didn\'t it|haven\'t you|hasn\'t it|hadn\'t it|won\'t it|can\'t it|couldn\'t it|shouldn\'t it|wouldn\'t it'
-            uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably|questionably|debatably|supposed to|allegedly|according to some|would have you believe|more to it|can\'t be that simple'
-            confidence_patterns = r'clearly|definitely|certainly|obviously|undoubtedly|even if|regardless|always|very|never|always|impossible|inevitable|are you serious'
-            qualification_patterns = r'maintaining|status-quo|conflicting|suggest|possibly|however|though|except|unless|only if'
+            socratic_patterns = r'or did|interested|intrigued|conclusions|interpret|analysis|reason|suggest|think|believe|perspective|propose|consider|counter|question'
+            uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably|questionably|questionable|debatably|supposed to|allegedly|according to some|would have you believe|more to it|unclear|doubtful|vague|sceptical'
+            confidence_patterns = r'confident|obvious|absolutely|clearly|definitely|certainly|undoubtedly|even if|regardless|always|very|never|always|impossible|inevitable|doubtless|inevitable'
+            qualification_patterns = r'maintaining|status-quo|conflicting|possibly|however|though|except|unless|only if|perhaps|one day|in the future|in the long term'
             
             for content in contents[-3:]:  # Focus on recent messages
                 markers['socratic'] += len(re.findall(socratic_patterns, 

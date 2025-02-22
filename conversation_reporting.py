@@ -8,6 +8,95 @@ from pathlib import Path
 
 from config_integration import DiscussionConfig, ModelConfig, FileConfig, TimeoutConfig
 
+class MessageAnalysis(BaseModel):
+    """Detailed analysis of a single message"""
+    content: str
+    nlp_analysis: NLPAnalysis
+    tokens: int
+    sentences: int
+    avg_sentence_length: float
+    readability_score: float
+    response_type: str  # e.g., "explanation", "question", "challenge", "agreement"
+    discourse_level: str  # e.g., "surface", "analytical", "evaluative", "synthetic"
+
+class ConversationSummary(BaseModel):
+    """Structured summary of conversation context"""
+    key_points: List[str] = Field(default_factory=list)
+    main_topics: Dict[str, float] = Field(default_factory=dict)  # Topic -> importance score
+    argument_chain: List[Dict[str, str]] = Field(default_factory=list)  # Logical flow of arguments
+    unresolved_questions: List[str] = Field(default_factory=list)
+    context_length: int = 0  # Original context length in tokens
+    summary_length: int = 0  # Summarized length in tokens
+
+class AssertionEvidence(BaseModel):
+    """Evidence supporting an assertion"""
+    assertion: str
+    sources: List[Dict[str, str]]  # List of {url: str, excerpt: str}
+    confidence: float
+    verification_method: str
+
+class ConversationMetrics(BaseModel):
+    """Metrics for conversation evaluation"""
+    coherence: float
+    relevance: float
+    depth: float
+    engagement: float
+    reasoning: float
+    knowledge: float
+    goal_progress: float
+    strategy_effectiveness: float
+    grounded_assertions: int = 0
+    unverified_claims: int = 0
+
+class ParticipantMetrics(BaseModel):
+    """Metrics for individual participant evaluation"""
+    response_quality: float
+    knowledge_accuracy: float
+    reasoning_depth: float
+    engagement_level: float
+    strategy_adherence: float
+    adaptation: float
+    factual_accuracy: float
+    citation_quality: float
+    message_analyses: List[MessageAnalysis] = Field(default_factory=list)
+
+class AssessmentSchema(BaseModel):
+    """Schema for conversation assessment results"""
+    model_config = ConfigDict(extra='allow')  # Allow extra fields
+
+    class ParticipantRating(BaseModel):
+        model_config = ConfigDict(extra='allow')
+        coherence: float
+        engagement: float
+        reasoning_depth: float
+        response_relevance: float
+
+    class ConversationQuality(BaseModel):
+        model_config = ConfigDict(extra='allow')
+        flow_coherence: float
+        topic_depth: float
+        knowledge_exchange: float
+        goal_progress: float
+
+    participant_ratings: Dict[str, Dict[str, float]]
+    conversation_quality: Dict[str, float]
+    assertions: List[str]
+    key_insights: List[str] = Field(default_factory=list)
+    improvement_suggestions: List[str] = Field(default_factory=list)
+
+class ArbiterResult(BaseModel):
+    """Complete evaluation result"""
+    winner: str
+    conversation_metrics: Dict[str, ConversationMetrics]
+    participant_metrics: Dict[str, Dict[str, ParticipantMetrics]]
+    key_insights: List[str]
+    improvement_suggestions: List[str]
+    strategy_analysis: Dict[str, float]
+    grounded_assertions: Dict[str, Dict[str, AssertionEvidence]]
+    execution_timestamp: str
+    conversation_ids: Dict[str, str]
+
+
 class ConversationMetrics:
     """Tracks and analyzes conversation quality metrics"""
     def __init__(self):

@@ -67,13 +67,13 @@ class TopicAnalyzer:
         
         # Calculate similarity matrix
         similarities = cosine_similarity(tfidf_matrix)
-        
+        distances = 1 - np.abs(similarities)
         # Cluster messages
         clustering = DBSCAN(
-            eps=0.3,  # Maximum distance between samples
+            eps=0.4,  # Maximum distance between samples
             min_samples=2,  # Minimum cluster size
             metric='precomputed'  # Use pre-computed similarities
-        ).fit(1 - similarities)  # Convert similarities to distances
+        ).fit(distancess)  # Convert similarities to distances
         
         # Extract clusters
         clusters = []
@@ -177,15 +177,62 @@ class MetricsAnalyzer:
         complexity_indicators = {
             "technical_terms": [
                 "algorithm", "implementation", "architecture", "framework",
-                "pattern", "design", "system", "component", "interface"
+                "pattern", "design", "system", "component", "interface", "module",
+                "library", "package", "function", "method", "class", "object",
+                "variable", "constant", "parameter", "argument", "property",
+                "attribute", "operation", "procedure", "process", "service",
+                "resource", "database", "query", "transaction", "connection",
+                "authentication", "authorization", "encryption", "decryption",
+                "compression", "decompression", "serialization", "deserialization",
+                "validation", "verification", "transformation", "conversion",
+                "generation", "parsing", "formatting", "encoding", "decoding",
+                "routing", "mapping", "filtering", "sorting", "searching",
+                "indexing", "caching", "logging", "monitoring", "reporting",
+                "auditing", "debugging", "testing", "benchmarking", "profiling",
+                "optimization", "refactoring", "migration", "integration",
+                "automation", "orchestration", "synchronization", "replication",
+                "scaling", "load balancing", "failover", "recovery", "backup",
+                "restore", "deployment", "installation", "configuration",
+                "customization", "personalization", "localization", "internationalization",
+                "accessibility", "usability", "reliability", "availability",
+                "scalability", "performance", "security", "privacy", "compliance",
+                "regulation", "governance", "management", "administration",
+                "monitoring", "reporting", "analytics", "insights", "predictions",
+                "recommendations", "decisions", "actions", "notifications",
+                "alerts", "reminders"
             ],
             "reasoning_markers": [
                 "because", "therefore", "thus", "consequently",
-                "however", "although", "despite", "while"
+                "however", "although", "despite", "while", "unless",
+                "except", "until", "otherwise", "instead", "meanwhile",
+                "furthermore", "moreover", "nevertheless", "nonetheless",
+                "regardless", "indeed", "certainly", "surely", "absolutely",
+                "definitely", "undoubtedly", "clearly", "obviously",
+                "apparently", "evidently", "presumably", "arguably",
+                "possibly", "potentially", "likely", "probably",
+                "maybe", "perhaps", "possibly", "conceivably",
+                "hypothetically", "theoretically", "ideally",
+                "practically", "realistically", "effectively",
+                "efficiently", "productively", "successfully",
+                "profitably", "beneficially", "advantageously",
+                "favorably", "constructively", "positively",
             ],
             "analysis_terms": [
                 "analyze", "evaluate", "compare", "consider",
-                "examine", "investigate", "assess"
+                "examine", "investigate", "assess", "review",
+                "study", "inspect", "explore", "scrutinize",
+                "interpret", "understand", "comprehend", "grasp",
+                "appreciate", "recognize", "realize", "acknowledge",
+                "identify", "detect", "diagnose", "determine",
+                "decide", "conclude", "infer", "deduce",
+                "predict", "forecast", "anticipate", "expect",
+                "speculate", "hypothesize", "theorize", "postulate",
+                "propose", "suggest", "recommend", "advise",
+                "counsel", "guide", "instruct", "teach",
+                "educate", "inform", "notify", "alert",
+                "remind", "warn", "caution", "prepare",
+                "plan", "design", "develop", "create",
+                "build", "construct", "formulate", "establish"
             ]
         }
         

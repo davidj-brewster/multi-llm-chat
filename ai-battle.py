@@ -24,7 +24,7 @@ from context_analysis import ContextAnalyzer
 from adaptive_instructions import AdaptiveInstructionManager
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
-from arbiter_v2 import evaluate_conversations
+from arbiter_v3 import evaluate_conversations, VisualizationGenerator, ArbiterResult
 from file_handler import ConversationMediaHandler, FileConfig as MediaConfig
 from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
 from shared_resources import MemoryManager
@@ -58,7 +58,7 @@ class ConversationManager:
     """Manages conversations between AI models with memory optimization."""
     
     def __init__(self,
-                 config: Optional[DiscussionConfig] = None,
+                 config: DiscussionConfig   = None,
                  domain: str = "General knowledge",
                  human_delay: float = 20.0,
                  mode: str = None,
@@ -102,8 +102,10 @@ class ConversationManager:
                     client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-sonnet-20241022")
                 elif model_name == "haiku":
                     client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku-20241022")
-                elif model_name == "chatgpt-4o":
+                elif model_name == "gpt-4o":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-2024-08-06")
+                elif model_name == "gpt-4o-mini":
+                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-mini")
                 elif model_name == "o1":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="o1")
                 elif model_name == "gemini":
@@ -342,27 +344,60 @@ def _sanitize_filename_part(prompt: str) -> str:
     return sanitized[:50]
 
 def save_arbiter_report(report: Dict[str, Any]) -> None:
-    """Save arbiter analysis report."""
+    """Save arbiter analysis report with visualization support."""
     try:
         with open("templates/arbiter_report.html") as f:
             template = f.read()
 
+        # Ensure proper report structure
         if isinstance(report, str):
             report = {
                 "content": report,
-                "metrics": {},
-                "flow": {}
+                "metrics": {
+                    "conversation_quality": {},
+                    "participant_analysis": {},
+                },
+                "flow": {},
+                "visualizations": {},
+                "winner": "No clear winner determined",
+                "assertions": [],
+                "key_insights": [],
+                "improvement_suggestions": []
             }
 
+        # Generate visualizations if metrics are available
+        viz_generator = VisualizationGenerator()
+        metrics_chart = ""
+        timeline_chart = ""
+        if report.get("metrics", {}).get("conversation_quality"):
+            metrics_chart = viz_generator.generate_metrics_chart(report["metrics"])
+            timeline_chart = viz_generator.generate_timeline(report.get("flow", {}))
+
+        # Format report content
         report_content = template % {
             'report_content': report.get("content", "No content available"),
             'metrics_data': json.dumps(report.get("metrics", {})),
-            'flow_data': json.dumps(report.get("flow", {}))
+            'flow_data': json.dumps(report.get("flow", {})),
+            'metrics_chart': metrics_chart,
+            'timeline_chart': timeline_chart,
+            'winner': report.get("winner", "No clear winner determined")
         }
-        with open("arbiter_report.html", "w") as f:
+
+        # Save report with timestamp
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"arbiter_report_{timestamp}.html"
+        
+        with open(filename, "w") as f:
             f.write(report_content)
             
-        logger.info("Arbiter report saved successfully")
+        logger.info(f"Arbiter report saved successfully as {filename}")
+        
+        # Create symlink to latest report
+        latest_link = "arbiter_report_latest.html"
+        if os.path.exists(latest_link):
+            os.remove(latest_link)
+        os.symlink(filename, latest_link)
+        
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
@@ -381,7 +416,7 @@ def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 2
+    rounds = 3
     initial_prompt = "Why did the USSR collapse"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -395,8 +430,8 @@ async def main():
     #else:
     #    ai_model = "openai"
     mode = "ai-ai"
-    human_model = "claude"
-    ai_model = "chatgpt-4o"
+    human_model = "haiku"
+    ai_model = "gpt-4o-mini"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
