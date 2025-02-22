@@ -135,6 +135,8 @@ class ConversationManager:
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-abliterated:latest")
                 elif model_name == "ollama-zephyr":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="zephyr:latest")
+                elif model_name == "ollama-r1-deepseek":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="tom_himanen/deepseek-r1-roo-cline-tools:8b")
                 else:
                     logger.error(f"Unknown model: {model_name}")
                     return None
@@ -433,16 +435,16 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 4
-    initial_prompt = "Discuss the most cost effective and efficient ways to migrate an enterprise scale IT operation to the cloud. Use specific examples around GCP products and consider both lift and shift and rearchitect approaches per component of a standard microservice and big-data based IT stack"
+    rounds = 16
+    initial_prompt = "Discuss the lasting effects of the Cold War"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = "claude"
-    human_model = "gpt-4o-mini"
+    human_model = "pico-r1-8"
+    ai_model = "gemini_2_reasoning"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(

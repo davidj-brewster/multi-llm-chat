@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+MAX_TOKENS = 128
 
 @dataclass
 class ModelConfig:
@@ -212,7 +213,7 @@ class GeminiClient(BaseClient):
         if role == "user" or role == "human" or mode == "ai-ai":
             current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
         else:
-            current_instructions = instruction if instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed."
+            current_instructions = instruction if instruction and instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are a helpful AI {self.domain}. Think step by step and show reasoning. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed. Limit your output to {MAX_TOKENS} tokens."
 
         try:
             # Generate final response
@@ -415,18 +416,17 @@ class OpenAIClient(BaseClient):
         except Exception as e:
             logger.error(f"OpenAI generate_response error: {e}")
             raise e
-
+from ollama import Client
 class PicoClient(BaseClient):
-    """Client for local MLX Ollama model interactions via ollama api"""
+    """Client for local Ollama model interactions"""
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx"):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:10434"
-        self.num_ctx = 4096
-        self.num_predict = 1024
+        self.client = Client(host='http://localhost:10434')
         
     def test_connection(self) -> None:
         """Test Ollama connection"""
-        logger.info("Pico connection test not yet implemented")
+        logger.info("Ollama connection test not yet implemented")
         logger.debug(MemoryManager.get_memory_usage())
         
     def generate_response(self,
@@ -434,37 +434,59 @@ class PicoClient(BaseClient):
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
                          model_config: Optional[ModelConfig] = None,
+                         mode: str = None,
                          role: str = None) -> str:
         """Generate a response from your local Ollama model."""
         if role:
             self.role = role
-        if model_config is None:
-            model_config = ModelConfig()
-        
-        # Combine system instruction + conversation history + user prompt
-        shorter_history = history[-6:].copy() if history else []  # Limit history
-        if system_instruction:
-            shorter_history = [{'role': 'system', 'content': system_instruction}]
+        if mode:
+            self.mode = mode
 
-        history.append({"role": "user", "content": self.generate_human_prompt if role == 'user' or role == 'human' else prompt })
+        # Analyze conversation context
+        conversation_analysis = self._analyze_conversation(history[-10:])  # Limit history analysis
+        current_instructions = self._update_instructions(history=history, role=role)
+
+        # Update instructions based on conversation history
+        if role and role is not None and history is not None and len(history) > 0:
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
+        elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
+        elif self.role == "human" or self.role == "user":
+            current_instructions = self.generate_human_prompt() if self.generate_human_prompt() is not None else self.instructions
+        else:
+            current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+
+        # Build context-aware prompt
+        context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" or mode == "ai-ai" else prompt
+
+        # Limit history size
+        history = history[-8:] if history else []
+        history.append({'role': 'user', 'content': context_prompt})
 
         try:
-            from ollama import Client
-            pico_client = Client(host='http://localhost:11434')
-            response = pico_client.chat(
-                model=self.model, 
-                messages=[shorter_history],
+            response = self.client.chat(
+                model=self.model,
+                messages=history,
                 options={
-                    "num_ctx": 5120,
-                    "num_predict": 1024,
-                    "temperature": 0.8,
-                    "num_batch": 128,
+                    "num_ctx": 4096,
+                    "num_predict": 512,
+                    "temperature": 0.65,
+                    "num_batch": 256,
+                    "n_batch": 256,
+                    "n_ubatch": 256,
+                    "top_p": 0.85
                 }
             )
             return response.message.content
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
             raise e
+
+    def __del__(self):
+        """Cleanup when client is destroyed."""
+        if hasattr(self, '_adaptive_manager') and self._adaptive_manager:
+            del self._adaptive_manager
+
 
 class MLXClient(BaseClient):
     """Client for local MLX model interactions"""
@@ -537,11 +559,12 @@ class MLXClient(BaseClient):
             except Exception as inner_e:
                 logger.error(f"MLX generate_response error: {e}, chunk processing error: {inner_e}")
                 return f"Error: {e}"
+
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "phi4:latest"):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
-        self.base_url = "http://localhost:10434"
+        self.base_url = "http://localhost:11434"
         
     def test_connection(self) -> None:
         """Test Ollama connection"""
@@ -588,9 +611,12 @@ class OllamaClient(BaseClient):
                 messages=history,
                 options={
                     "num_ctx": 4096,
-                    "num_predict": 768,
-                    "temperature": 0.6,
+                    "num_predict": 512,
+                    "temperature": 0.65,
                     "num_batch": 256,
+                    "n_batch": 256,
+                    "n_ubatch": 256,
+                    "top_p": 0.85
                 }
             )
             return response.message.content
