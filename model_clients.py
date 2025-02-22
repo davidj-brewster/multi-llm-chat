@@ -84,8 +84,10 @@ class BaseClient:
         """Get initial instructions before conversation history exists"""
         return self._get_mode_aware_instructions(self.domain)
 
-    def _update_instructions(self, history: List[Dict[str, str]], role: str = None) -> str:
+    def _update_instructions(self, history: List[Dict[str, str]], role: str = None,mode: str = "ai-ai") -> str:
         """Update instructions based on conversation context"""
+        if mode == "human-ai" and role == "assistant":
+            return "You are a helpful assistant. Think step by step as needed to guide the user through the task."
         return self.adaptive_manager.generate_instructions(history, self.domain) if history else ""
 
     def _get_mode_aware_instructions(self, role: str = None, mode: str = None) -> str:
@@ -172,7 +174,7 @@ Generate a natural but sophisticated prompt that:
 class GeminiClient(BaseClient):
     """Client for Gemini API interactions"""
     def __init__(self, mode: str, role: str, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
-        api_key = os.getenv("GENAI_API_KEY") or GOOGLE_API_KEY
+        api_key = os.getenv("GOOGLE_API_KEY")
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model)
         self.model_name = self.model
         try:
@@ -282,14 +284,14 @@ class ClaudeClient(BaseClient):
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"Prompt: {prompt}"
+        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"{prompt}"
        
         messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
         messages.append({
-            "role": "assistant" if role == "assistant" else "user",
+            "role": "user",
             "content": (
-                context_prompt
+                context_prompt  if context_prompt else "" + " " + prompt if prompt else ""
             )
         })
 
@@ -345,50 +347,52 @@ class OpenAIClient(BaseClient):
         current_instructions = self._update_instructions(history=history,role=self.role)
 
         # Update instructions based on conversation history
-        if role and role is not None and role in ["human", "user"] or mode == "ai-ai" and history is  None or len(history) == 0:
-            current_instructions = self.generate_human_instructions() if role == "human" or role =="user" else system_instruction if system_instruction else self.instructions
-        elif ((history and len(history) > 0) or (self.mode is None or self.mode == "ai-ai")):
-            current_instructions = self._update_instructions(history,role=role)
+        if role and role is not None and history is not None and len(history) > 0:
+            current_instructions = self._update_instructions(history, role=role) if history else system_instruction if self.instructions else self.instructions
+        elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
+            current_instructions = self.generate_human_system_instructions()
         elif self.role == "human" or self.role == "user":
-            current_instructions = self.generate_human_instructions() if self.generate_human_instructions() is not None else self.instructions
-        else:
-            current_instructions = self.instructions if self.instructions else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-
-        # Format messages for OpenAI API
-        messages = [{
-            'role': 'developer',
-            'content': current_instructions
-        }]
+            current_instructions = self._update_instructions(history, role=role) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
+        else:  # ai in human-ai mode
+            current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if role == "human" or role == "user" or mode == "ai-ai" else prompt
+        context_prompt = self.generate_human_prompt(history) if role == "human" or self.mode == "ai-ai" else f"{prompt}"
+       
+        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
+        
+        messages.append({
+            "role": "user",
+            "content": (
+                context_prompt + " " + prompt
+            )
+        })
 
-        messages = [{
-            'role': 'user',
-            'content': context_prompt
-        }]
 
         if history:
-            # Limit history to last 10 messages
-            recent_history = history[-5:]
+            recent_history = history
             for msg in recent_history:
                 old_role = msg["role"]
                 if old_role in ["user", "assistant", "moderator", "system"]:
                     new_role = 'developer' if old_role in ["system","Moderator"] else "user" if old_role in ["user", "human", "moderator"] else 'assistant'
                     messages.append({'role': new_role, 'content': msg['content']})
 
-        # Add current prompt
-        if self.role == "human" or self.mode == "ai-ai":
-            combined_prompt = self.generate_human_prompt()
-            messages.append({'role': 'user', 'content': combined_prompt})
+        messages.append({
+            'role': 'user',
+            'content': context_prompt + "\n" + prompt
+        })
 
-        if prompt and len(prompt) > 0:
-            messages.append({'role': 'user', 'content': prompt})
+        # Add current prompt
+        # if self.role == "human" or self.mode == "ai-ai":
+        #    messages.append({'role': 'user', 'content': combined_prompt})
+
+        #if prompt and len(prompt) > 0:
+        #    messages.append({'role': 'user', 'content': prompt})
         try:
             if "o1" in self.model:
                 response = self.client.chat.completions.create(
                     model="o1",
-                    messages=[messages],
+                    messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
                     temperature=1.0,
                     max_tokens=13192,
                     reasoning_effort="high",
@@ -398,10 +402,10 @@ class OpenAIClient(BaseClient):
                 return response.choices[0].message.content
             else:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4o",
                     messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
-                    temperature=0.8,
-                    max_tokens=1536,
+                    temperature=0.85,
+                    max_tokens=768,
                     timeout=90,
                     stream=False
                 )

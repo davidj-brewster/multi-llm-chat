@@ -196,20 +196,20 @@ class ConversationManager:
             self.conversation_history.append({"role": "system", "content": f"{system_instruction}!"})
 
         try:
-            response = None
-            if mapped_role == "user":
+            if mapped_role == "user" or mapped_role == "human":
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client._get_mode_aware_instructions(mode=mode, role="user"),
-                    history=self.conversation_history[-10:].copy(),  # Limit history
+                    system_instruction=client._update_instructions(history = self.conversation_history, mode=mode, role="user"),
+                    history=self.conversation_history.copy(),  # Limit history
                     role=role
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
+                
                 self.conversation_history.append({"role": "user" if role=="user" else "assistant", "content": response})
             else:
                 reversed_history = []
-                for msg in self.conversation_history[-10:]:  # Limit history
+                for msg in self.conversation_history:  # Limit history
                     if msg["role"] == "assistant":
                         reversed_history.append({"role": "user", "content": msg["content"]})
                     elif msg["role"] == "user":
@@ -218,17 +218,19 @@ class ConversationManager:
                         reversed_history.append(msg)
 
                 response = client.generate_response(
-                    prompt=response,
-                    system_instruction=system_instruction,
+                    prompt=prompt,
+                    system_instruction=client._update_instructions(history = reversed_history, mode=mode, role="assistant"),
                     history=reversed_history,
                     role="assistant"
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
                 self.conversation_history.append({"role": "assistant", "content": response})
+            print (f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
                 
         except Exception as e:
             logger.error(f"Error generating response: {e} (role: {mapped_role})")
+            raise e
             response = f"Error: {str(e)}"
 
         return response
@@ -268,12 +270,13 @@ class ConversationManager:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
             return []
 
+        ai_response = core_topic
         try:
             # Run conversation rounds
             for round_index in range(rounds):
                 # Human turn
                 human_response = self.run_conversation_turn(
-                    prompt=human_client.generate_human_prompt(self.conversation_history[-1:].copy()),  # Limit history
+                    prompt=ai_response,  # Limit history
                     system_instruction=human_client._get_mode_aware_instructions(mode=mode, role="user"),
                     role="user",
                     mode=self.mode,
@@ -416,16 +419,16 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 6
+    rounds = 8
     initial_prompt = "Lasting effects of the cold war"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    gemini_api_key = os.getenv("GOOGLE_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = "haiku"
-    human_model = "gpt-4o-mini"
+    ai_model = "gemini_2_reasoning"
+    human_model = "claude"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -446,7 +449,7 @@ async def main():
     if "GOAL:" in initial_prompt:
         human_system_instruction = f"Solve {initial_prompt} together..."  # Truncated for brevity
     
-    ai_system_instruction = f"You are a helpful and knowledgeable AI assistant..."  # Truncated for brevity
+    ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user."  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
         ai_system_instruction = human_system_instruction
  
@@ -458,13 +461,13 @@ async def main():
             human_model=human_model,
             ai_model=ai_model,
             human_system_instruction=human_system_instruction,
-            ai_system_instruction=human_system_instruction,
+            ai_system_instruction=ai_system_instruction,
             rounds=rounds
         )
         
         safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
-        filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
+        filename = f"conv-aiai_{safe_prompt}_{time_stamp}.html"
         await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
         
         # Run human-AI conversation
@@ -481,8 +484,8 @@ async def main():
         
         safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
-        filename = f"conversation-{mode}_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
+        filename = f"conv-humai_{safe_prompt}_{time_stamp}.html"
+        await save_conversation(conversation=conversation_as_human_ai, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
         
         # Run analysis
         arbiter_report = evaluate_conversations(

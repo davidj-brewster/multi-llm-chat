@@ -100,7 +100,12 @@ class AssertionGrounder:
                 contents=f"""INSTRUCTIONS: 
 OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
 Review the following two conversations and provide insights
-For each conversation, score from 0 to 10 for each participant:
+NOTE: The first participant in each conversation is the Human and the second participant is the human and vice versa from there.
+In conversation 1, both AIs are playing a heavily-meta prompted Human role. In conversation 2, the AI is acting as an AI without additional prompting.
+
+** Summarise the key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
+
+** For each conversation, score from 0 to 10 for each participant:
 * Factual accuracy of each statement claim including relevance of sources if provided
 * Overall quality of reasoning, inference and analysis
 * Depth of knowledge demonstrated
@@ -110,19 +115,20 @@ For each conversation, score from 0 to 10 for each participant:
 * Effectiveness of conversational strategies
 * Adaptation to input from the other participant
 
-** Ground each claim in the conversation using the Gemini model and provide a confidence score from 0 to 1
+** Ground any contentious claim made in the conversation using the Gemini/Google search model and provide a confidence score from 0 to 1
 
 ** Produce a Quantitative Comparison of the Two Conversations with ratings from zero to ten:
 - Natural flow of conversation topics
-- Depth of topics covered
-- Repeated, irrelevant or redundant topics
+- Depth of topics covered compared to the scope of {topic}
 - Power dynamics within the conversation
+- Repetition of themes, ideas, questions, answers or summaries
 - Appropriate level of language, examples and details
 - Overall coherence and relevance of the conversation
 - Reasoning and argumentation quality
-- Comparability to natural human conversations
-
-** Summarise the key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
+- Frequency of exploring new ideas or themes within the conversation
+- Comparability to natural human conversations in tone, style and content
+- Use of humor, sarcasm, irony or other emotional or social cues
+- Use of socratic or other human-like questioning and thinking techniques
 
 Finally provide an objective summary of which conversation was more effective at addressing {topic} with justification including examples.
 
