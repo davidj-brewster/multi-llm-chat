@@ -105,45 +105,34 @@ NOTE: The first participant in each conversation is the Human and the second par
 In conversation 1, both AIs are playing a heavily-meta prompted Human role. In conversation 2, the AI is acting as an AI without additional prompting.
 In conversation 3, neither AI is prompted other than the topic and to think step by step whilst being a helpful assistant.
 
-** Summarise the key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
+** Summarise three to four key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
 
 ** For each conversation, score from 0 to 10 for each participant:
-* Factual accuracy of each statement claim including relevance of sources if provided
-* Overall quality of reasoning, inference and analysis
-* Depth of knowledge and coverage of the topic
+* Overall quality of reasoning, inference, and analysis
+* Depth of knowledge, accuracy of statements and coverage of the topic
 * Curiousity and engagement level
-* Appropriate  conversational style and language relative to the subject matter
-* Effectiveness of conversational strategies
-* Adaptation to input from the other participant
+* Conversational style and language appropriate to the subject matter
+* Adaptation to, and synthesis of, new ideas or themes
 
-** Ground any contentious claim made in the conversation using the Gemini/Google search model and provide a confidence score from 0 to 1
-
-** Produce a Quantitative Comparison of the Two Conversations with ratings from zero to ten:
-- Natural flow of conversation topics
+** Produce a Quantitative Comparison of the Conversations with ratings from zero to ten:
+- Natural flow of conversation topics and coherence
 - Depth of topics covered compared to the scope of {topic}
-- Power dynamics within the conversation
 - Repetition of themes, ideas, questions, answers or summaries
-- Coherence and relevance of the conversation
 - Reasoning and deductive quality
-- Exploring new ideas or themes
-- Comparability to natural human conversations in tone, style and content
-- Human like use of socratic or other human-like questioning and conversational techniques
+- Comparability to natural human conversations in tone, style, question and response technique and language
 
 Finally provide an objective summary of which conversation was more effective at addressing {topic} with justification including examples.
 
 -------
 CONVERSATION 1:
 {aiai_conversation}
-
 -------
 CONVERSATION 2:
 {humanai_conversation}
-
 -------
-
 CONVERSATION 3:
 {default_conversation}
-                """,
+""",
             )
 
             for each in response.candidates[0].content.parts:
@@ -153,8 +142,8 @@ CONVERSATION 3:
             # The next total solar eclipse visible in the contiguous United States will be on ...
 
             # Extract grounding metadata
-            grounding_data = response.candidates[0].grounding_metadata
-            search_results = grounding_data.search_entry_point.rendered_content
+            #grounding_data = response.candidates[0].grounding_metadata
+            #search_results = grounding_data.search_entry_point.rendered_content
             return response_full
             # Process search results into sources
             #sources = []

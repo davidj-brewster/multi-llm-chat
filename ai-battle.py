@@ -34,7 +34,7 @@ T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 CONFIG_PATH = "config.yaml"
-
+TOKENS_PER_TURN = 128
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -201,7 +201,7 @@ class ConversationManager:
             if prompt_level == "no-meta-prompting":
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction="You are a helpful assistant. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX 1024 tokens",
+                    system_instruction=f"You are a helpful assistant. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens",
                     history=self.conversation_history.copy(),  # Limit history
                     role="assistant" #even if its the user role, it should get no instructions
                 )
@@ -291,7 +291,7 @@ class ConversationManager:
                 # Human turn
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
-                    system_instruction="Think step by step. RESTRICT OUTPUTS TO APPROX 1024 tokens" if mode == "no-meta-prompting" else human_client._get_mode_aware_instructions(mode=mode, role="user"),
+                    system_instruction=f"Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client._get_mode_aware_instructions(mode=mode, role="user"),
                     role="user",
                     mode=self.mode,
                     model_type=human_model,
@@ -302,7 +302,7 @@ class ConversationManager:
                 # AI turn
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
-                    system_instruction="You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX 1024 tokens" if mode == "no-meta-prompting" else ai_system_instruction if mode=="human-aiai" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",domain=self.domain,history=self.conversation_history),
+                    system_instruction=f"You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else ai_system_instruction if mode=="human-aiai" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",domain=self.domain,history=self.conversation_history),
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
@@ -433,8 +433,8 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 6
-    initial_prompt = "Lasting effects of the cold war"
+    rounds = 4
+    initial_prompt = "Discuss the most cost effective and efficient ways to migrate an enterprise scale IT operation to the cloud. Use specific examples around GCP products and consider both lift and shift and rearchitect approaches per component of a standard microservice and big-data based IT stack"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
@@ -442,7 +442,7 @@ async def main():
 
     mode = "ai-ai"
     ai_model = "claude"
-    human_model = "gpt-4o"
+    human_model = "gpt-4o-mini"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -459,11 +459,11 @@ async def main():
             return
     
     
-    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}..."  # Truncated for brevity
+    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}... Restrict output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if "GOAL:" in initial_prompt:
         human_system_instruction = f"Solve {initial_prompt} together..."  # Truncated for brevity
     
-    ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user."  # Truncated for brevity
+    ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user. Restrict your output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
         ai_system_instruction = human_system_instruction
  
@@ -514,7 +514,7 @@ async def main():
             rounds=rounds
         )
         
-        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        safe_prompt = _sanitize_filename_part(initial_prompt[:16] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-defaults_{safe_prompt}_{time_stamp}.html"
         await save_conversation(conversation=conv_default, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
