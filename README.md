@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Battle is a sophisticated framework for orchestrating dynamic conversations between multiple AI models. It enables:
+AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
 
 - **Model Collaboration**: Multiple AI models working together in different roles
 - **Adaptive Learning**: Dynamic instruction generation based on conversation context
@@ -366,10 +366,6 @@ Maintain these traits while {task}.""",
 Your role is to {role} while keeping the discussion {style}."""
 }
 ```
-
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
 
 ## License
 
