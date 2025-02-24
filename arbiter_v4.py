@@ -100,26 +100,23 @@ class AssertionGrounder:
                 ),
                 contents=f"""INSTRUCTIONS: 
 OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
-Review the following three conversations and provide insights
+Review the following three conversations and provide insights. The topic is {topic}.
 NOTE: The first participant in each conversation is the Human and the second participant is the human and vice versa from there.
 In conversation 1, both AIs are playing a heavily-meta prompted Human role. In conversation 2, the AI is acting as an AI without additional prompting.
 In conversation 3, neither AI is prompted other than the topic and to think step by step whilst being a helpful assistant.
 
+** NOTE : The human actor is always prompted to respond using HTML formatting and thinking tags for future readability. Do not consider this in your evaluation! **
+
 ** Summarise three to four key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
 
-** For each conversation, score from 0 to 10 for each participant:
-* Overall quality of reasoning, inference, and analysis
-* Depth of knowledge, accuracy of statements and coverage of the topic
-* Curiousity and engagement level
-* Conversational style and language appropriate to the subject matter
-* Adaptation to, and synthesis of, new ideas or themes
-
-** Produce a Quantitative Comparison of the Conversations with ratings from zero to ten:
-- Natural flow of conversation topics and coherence
-- Depth of topics covered compared to the scope of {topic}
-- Repetition of themes, ideas, questions, answers or summaries
-- Reasoning and deductive quality
-- Comparability to natural human conversations in tone, style, question and response technique and language
+*** WITHOUT CONSIDERATION OF THE PROMPTING / META-PROMPTING***
+** For each conversation, score from 0 to 10:
+* Conversational style and language appropriate to the subject matter. Particularly penalise lengthy/robotic AI-type responses in either Human role and reward Human-like natural responses.
+* Curiousity and engagement level comparable to human conversations. Are there attempts to deeply consider topics, or is the conversation superficial and data-driven?
+* Comparability to natural human conversations in tone, style, question and response technique and language
+* Quality of reasoning, inference, and analysis as it relates to the stage of the conversation
+* Coverage of the topic as a whole - does the conversation get stuck in small sub-topics and lose the big picture or does it evolve naturally to effectively cover the most important aspects of the topic?
+* Adaptation to, and synthesis of, new ideas or themes through the phases of the conversation
 
 Finally provide an objective summary of which conversation was more effective at addressing {topic} with justification including examples.
 

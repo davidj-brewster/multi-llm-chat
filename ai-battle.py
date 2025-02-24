@@ -34,7 +34,7 @@ T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 128
+TOKENS_PER_TURN = 1024
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -111,8 +111,12 @@ class ConversationManager:
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="o1")
                 elif model_name == "gemini":
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
-                elif model_name == "gemini_2_reasoning":
+                elif model_name == "gemini-2-reasoning":
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-thinking-exp-01-21")
+                elif model_name == "gemini-2-pro":
+                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-pro-exp-02-05")
+                elif model_name == "gemini-2-flash-lite":
+                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-lite-preview-02-05")
                 elif model_name == "mlx-qwq":
                     client = MLXClient(mode=self.mode, domain=self.domain, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
                 elif model_name == "mlx-abliterated":
@@ -121,8 +125,8 @@ class ConversationManager:
                     client = PicoClient(mode=self.mode, domain=self.domain, model="DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx")
                 elif model_name == "pico-r1-8":
                     client = PicoClient(mode=self.mode, domain=self.domain, model="DeepSeek-R1-Distill-Llama-8B-8bit-mlx")
-                elif model_name == "pico-med":
-                    client = PicoClient(mode=self.mode, domain=self.domain, model="Bio-Medical-Llama-3-2-1B-CoT-012025")
+                elif model_name == "pico-phi4":
+                    client = PicoClient(mode=self.mode, domain=self.domain, model="phi-4-abliterated-3bit")
                 elif model_name == "ollama":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
                 elif model_name == "ollama-phi4":
@@ -130,7 +134,9 @@ class ConversationManager:
                 elif model_name == "ollama-lexi":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
                 elif model_name == "ollama-instruct":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q8_0")
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q5_K_S")
+                elif model_name == "ollama-qwen32-r1":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest")
                 elif model_name == "ollama-abliterated":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-abliterated:latest")
                 elif model_name == "ollama-zephyr":
@@ -223,7 +229,7 @@ class ConversationManager:
                     reversed_history = self.conversation_history.copy()
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client.adaptive_manager.generate_instructions(history = reversed_history, mode=mode, role="user",domain=self.domain),
+                    system_instruction=client.adaptive_manager.generate_instructions(history = reversed_history, mode=mode, role=role,domain=self.domain),
                     history=reversed_history,  # Limit history
                     role=role
                 )
@@ -293,7 +299,7 @@ class ConversationManager:
                 # Human turn
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
-                    system_instruction=f"Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client._get_mode_aware_instructions(mode=mode, role="user"),
+                    system_instruction=f"Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",history=self.conversation_history,domain=self.domain),
                     role="user",
                     mode=self.mode,
                     model_type=human_model,
@@ -304,7 +310,7 @@ class ConversationManager:
                 # AI turn
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
-                    system_instruction=f"You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else ai_system_instruction if mode=="human-aiai" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",domain=self.domain,history=self.conversation_history),
+                    system_instruction=f"You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="assistant",history=self.conversation_history,domain=self.domain) if mode=="human-aiai" else ai_system_instruction,
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
@@ -435,16 +441,16 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 
 async def main():
     """Main entry point."""
-    rounds = 16
-    initial_prompt = "Discuss the lasting effects of the Cold War"
+    rounds = 5
+    initial_prompt = "Setting up an opt-in Cloud + GenAI Guild for technical product and data teams in a mid-size tech company (~100 engineers) that is mid way through a cloud migration to a single cloud provider, GCP (landing zone, sandbox environments, project hierarchies, IAM, billing monitoring and CUD optimisation, Project Management, prioritisation, policies, CI/CD, GitHub, Copilot, security, encryption, private interconnect, service templates, standards, templates via terraform/GKE and best practices are fairly well established and should not be key focus points). The guild is likely to attract around 10 to 15 percent of engaged engineers on a regular basis and will be led by a platform engineering expert with strong communication and technical skills"
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    human_model = "pico-r1-8"
-    ai_model = "gemini_2_reasoning"
+    ai_model = "gemini-2-pro"
+    human_model = "haiku"
     
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -478,7 +484,7 @@ async def main():
             mode=mode,
             human_model=human_model,
             ai_model=ai_model,
-            human_system_instruction=human_system_instruction,
+            human_system_instruction=human_model,
             ai_system_instruction=ai_system_instruction,
             rounds=rounds
         )
