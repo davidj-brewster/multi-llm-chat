@@ -74,13 +74,14 @@ The framework excels at creating rich, goal-oriented discussions between models 
   - Provide initial prompt
   - Real human moderator intervention support (WIP)
 
-  # Moderator intervention
-  `python
+ - **Moderator intervention**
+
+```
+  python
   await manager.moderator_intervention(
       "Let's focus more on practical applications"
   )
-
-### Role Management
+```
 
 - **Dynamic Role Assignment**
   - Models can be configured as either "human" prompt engineers or AI assistants
@@ -140,14 +141,19 @@ graph TD
 
 ## Performance Insights
 
-Recent performance analysis of the framework's adaptive instruction system revealed significant improvements in conversation quality:
+### Quantitative improvements of Human-Human mode over Human-AI (both AIs on either case)
 
-- **Conversation Depth**: With two LMs collaborating in "human" personas, we see a 45% improvement in critical conversation success and relevance metrics, achieved through dynamic turn-by-turn template selection and instruction modification, and that's compared to a single highly-effectively prompted "Human" LM.
+Performance analysis (via Claude 3.5 using Anthropic API Console Dashboard) of the 's adaptive instruction system measured improvements in conversation quality:
+- **Conversation Depth**: With two LMs collaborating in "human" personas, it measured a 45% improvement in critical conversation success and relevance metrics
+-  achieved through dynamic turn-by-turn template selection and instruction modification
+-  that's compared to a single highly-effectively prompted "Human" LM, where the improvement is already crazy high.
 - **Topic Coherence**: 50% enhancement via real-time coherence assessment
 - **Information Density**: 40% optimization through balanced content delivery
 - **Engagement Quality**: 35% increase in sustained interaction quality
 
-The Bayesian Strategy Selection Framework demonstrated particular effectiveness in:
+### Bayesian Strategy Selection Framework
+
+Rated well against the following criteria:
 - Optimizing response patterns based on prior effectiveness
 - Adapting to conversation state changes in real-time
 - Resolving competing conversational priorities
