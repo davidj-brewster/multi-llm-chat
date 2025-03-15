@@ -1,6 +1,21 @@
 # AI Battle - Multi-Model Conversational Framework
 
+The Human system instruction adaptive meta-prompt generator provided here is an extensive and highly detailed framework designed to simulate an advanced human interlocutor within AI-to-AI conversations. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the “Human” AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
+
 My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
+
+## Highlights 
+
+### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning, 
+
+Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
+through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
+
+### Case Study: The German Reunification Debate
+
+* In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its stance on German reunification by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
+* This demonstrates the power of structured prompting in influencing AI-generated perspectives, and could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models.
+
 ## Overview
 
 AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
