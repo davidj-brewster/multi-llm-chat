@@ -1,5 +1,6 @@
 # AI Battle - Multi-Model Conversational Framework
 
+My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
 ## Overview
 
 AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
