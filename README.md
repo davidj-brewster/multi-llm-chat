@@ -4,6 +4,22 @@ The Human system instruction adaptive meta-prompt generator provided here is an 
 
 My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
 
+## Phi 4 dominates Haiku
+
+I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
+
+"Human" was *Phi 4*, at 14B open source model from Microsoft, that was running on my Mac at Q4 quantisation via `ollama`! "AI" model is *Claude Haiku 3.5*.
+Objectively, and subjectively, the human decisively dominated and guided the conversation into ever deepening and complex aspects on that topic!!
+
+This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search grounding, to validate all factual claims in the conversation):
+
+* Prompt Effectiveness (Human): The human prompter's effectiveness is rated highly due to the clear, focused, and progressively complex questions that drove the conversation.
+* Response Quality (AI): The AI consistently provided high-quality, detailed, and relevant responses.
+* Human-like Personality: The human prompter showed a moderate level of personality through its use of "thinking" and "side-note" asides, while the AI's personality was more limited.
+* Curiosity: The human prompter demonstrated more curiosity by exploring new angles and asking "what if" questions, while the AI was more reactive.
+* Intuition: The human prompter showed a slightly higher level of intuition by anticipating potential challenges and shifting the focus of the conversation.
+* Reasoning: Both the human prompter and the AI model demonstrated strong reasoning skills in their questions and responses.
+
 ## Highlights 
 
 ### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning, 
