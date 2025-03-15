@@ -9,7 +9,7 @@ My draft research paper (on a single AI playing Human, not yet updated for multi
 Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
 through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
 
-### Phi 4 dominates Haiku
+### Phi 4 local LLM dominates Claude Haiku 3.5!!
 
 I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
 
@@ -24,7 +24,7 @@ This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search ground
 * Intuition: The human prompter showed a slightly higher level of intuition by anticipating potential challenges and shifting the focus of the conversation.
 * Reasoning: Both the human prompter and the AI model demonstrated strong reasoning skills in their questions and responses.
 
-### Gemini Flash vs ChatGPT 4o: German Reunification!
+### Gemini Flash vs ChatGPT 4o: German Reunification!!!
 
 * In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its "positive" stance on East/West German reunification, by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
 * This demonstrates the power of structured prompting in influencing AI-generated perspectives.
