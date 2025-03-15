@@ -4,7 +4,12 @@ The Human system instruction adaptive meta-prompt generator provided here is an 
 
 My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
 
-## Phi 4 dominates Haiku
+### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
+
+Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
+through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
+
+### Phi 4 dominates Haiku
 
 I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
 
@@ -13,24 +18,17 @@ Objectively, and subjectively, the human decisively dominated and guided the con
 
 This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search grounding, to validate all factual claims in the conversation):
 
-* Prompt Effectiveness (Human): The human prompter's effectiveness is rated highly due to the clear, focused, and progressively complex questions that drove the conversation.
-* Response Quality (AI): The AI consistently provided high-quality, detailed, and relevant responses.
-* Human-like Personality: The human prompter showed a moderate level of personality through its use of "thinking" and "side-note" asides, while the AI's personality was more limited.
+* *Prompt Effectiveness (Human)*: The human prompter's effectiveness is rated highly due to the clear, focused, and progressively complex questions that drove the conversation.
+* *Personality*: The human prompter showed a moderate level of personality through its use of "thinking" and "side-note" asides, while the AI's personality was more limited.
 * Curiosity: The human prompter demonstrated more curiosity by exploring new angles and asking "what if" questions, while the AI was more reactive.
 * Intuition: The human prompter showed a slightly higher level of intuition by anticipating potential challenges and shifting the focus of the conversation.
 * Reasoning: Both the human prompter and the AI model demonstrated strong reasoning skills in their questions and responses.
 
-## Highlights 
+### Gemini Flash vs ChatGPT 4o: German Reunification!
 
-### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning, 
-
-Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
-through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
-
-### Case Study: The German Reunification Debate
-
-* In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its stance on German reunification by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
-* This demonstrates the power of structured prompting in influencing AI-generated perspectives, and could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models.
+* In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its "positive" stance on East/West German reunification, by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
+* This demonstrates the power of structured prompting in influencing AI-generated perspectives.
+* This could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models!
 
 ## Overview
 
