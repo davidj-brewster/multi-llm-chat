@@ -41,6 +41,80 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
 
 The framework excels at creating rich, goal-oriented discussions between models while maintaining conversation coherence and knowledge depth.
 
+ ## Features
+
+- **Multi-Model API Support**
+  - Claude (Anthropic)
+  - Gemini (Google)
+  - OpenAI (GPT/o1 models)
+  - MLX (Local inference on Apple Silicon)
+  - Ollama integration
+  - llama.cpp integration
+
+- **Role Management**
+  - Models are assigned either "human" or "AI" roles
+  - Dynamic conversation flow control and optimised setups for large context LLMs and unfiltered local models
+  - Coherent and on-point AI-AI conversations through upwards of 20 turns
+  - Code-focused autonomous "pair-programmers mode" 
+
+- **Advanced Prompting**
+  - Sophisticated meta-prompt engineering patterns give the "Human" AI a life-like command of the conversation without robotic or mechanical communication patterns
+  - Dynamic strategy adaptation based on subject matter and "AI" responses
+  - Context-aware responses building collaboration and clarifying uncertain points
+  - Thinking tag support for reasoning visualization
+
+- **Output Management**
+  - Formatted HTML conversation exports
+  - Conversation history tracking
+  - Support for code or goal-focused discussions or theoretical deep dives and discussions
+  - Plays nicely with anything from tiny quantized local models all the way up to o1
+
+- **Human Moderator Controls**
+  - Inject messages (via streamlit UI)
+  - Provide initial prompt
+  - Real human moderator intervention support (WIP)
+
+  # Moderator intervention
+  `python
+  await manager.moderator_intervention(
+      "Let's focus more on practical applications"
+  )
+
+### Role Management
+
+- **Dynamic Role Assignment**
+  - Models can be configured as either "human" prompt engineers or AI assistants
+  - Multiple AI models can participate simultaneously
+  - Streamlit UI for more direct human turn-by-turn guidance and "moderator" interaction
+
+## Advanced Features
+
+- Temperature and parameter control based on model type
+- System instruction management
+- Conversation history tracking, logging and error handling
+- Real-time human moderation
+- Thinking tag visualization
+
+ - **Code Focus Mode**
+  - Code block extraction
+  - Iterative improvement tracking through multiple rounds
+
+### Advanced Prompting
+
+- **Strategy Patterns**
+  - Systematic analysis prompts
+  - Multi-perspective examination
+  - Socratic questioning
+  - Adversarial challenges
+  - abliterated local models can be specifically orchestrated as unfiltered agents
+
+- **Dynamic Adaptation**
+  - Context-aware prompt modification
+  - Response quality monitoring
+  - Strategy switching based on AI responses and human-mimicing behaviours
+  - Thinking tag visualization
+
+
 ```mermaid
 graph TD
     User[User Input] --> CM[Conversation Manager]
