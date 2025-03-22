@@ -1,10 +1,8 @@
 """Base and model-specific client implementations with memory optimizations."""
 import os
-import time
 import logging
 import random
-from typing import List, Dict, Optional, Any, TypeVar, Union
-import base64
+from typing import List, Dict, Optional, Any, TypeVar
 from dataclasses import dataclass
 from google import genai
 from google.genai import types
@@ -15,6 +13,8 @@ import requests
 from adaptive_instructions import AdaptiveInstructionManager
 from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
+import asyncio
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -752,14 +752,23 @@ class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "phi4:latest"):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
-        self.base_url = "http://localhost:11434"
-        
+        self.base_url = "http://localhost:11434"  # Not directly used with ollama library
+        self.client = AsyncClient(host=self.base_url) # Use AsyncClient
+
     def test_connection(self) -> None:
         """Test Ollama connection"""
-        logger.info("Ollama connection test not yet implemented")
-        logger.debug(MemoryManager.get_memory_usage())
-        
-    def generate_response(self,
+        # A more reliable test would be to list the models.  This is asynchronous.
+        async def test():
+            try:
+                await self.client.list()
+                logger.info("Ollama connection test successful")
+            except Exception as e:
+                logger.error(f"Ollama connection test failed: {e}")
+                raise
+        asyncio.run(test())
+
+
+    async def generate_response(self,  # Make this method async
                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
@@ -773,66 +782,56 @@ class OllamaClient(BaseClient):
         if mode:
             self.mode = mode
 
-        # Analyze conversation context
-        conversation_analysis = self._analyze_conversation(history)  # Limit history analysis
-
-        #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and history and history is not None and len(history) > 0:
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
-        #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
-        #    current_instructions = self.generate_human_system_instructions()
-        #elif self.role == "human" or self.role == "user":
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
-        #else:  # ai in human-ai mode
-        #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-
         history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) 
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode)
         else:
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history) if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
+        context_prompt = self.generate_human_prompt(history)  if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
 
-        # Limit history size
-        history = history[-14:] if history and len(history)>0 else []
-        history.append({'role': 'system', 'content': current_instructions})
-        history.append({'role': 'user', 'content': context_prompt})
+        # Prepare messages for Ollama's chat API
+        messages = []
+        if current_instructions:
+             messages.append({"role": "system", "content": current_instructions})
+
+        for msg in history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        messages.append({"role": "user", "content": context_prompt})
+
         # Check if this is a vision-capable model and we have image data
-        is_vision_model = any(vm in self.model.lower() for vm in ["gemma3", "llava", "vision", "llava-phi3"])
-        
-        # Handle file data for Ollama
-        images = None
-        if is_vision_model and file_data and file_data["type"] == "image":
-            # Format for Ollama's vision API
-            images = [file_data["path"]]
-            history.append({'role': 'user', 'content': f"Elaborate on our findings", 'images': images})
-        elif is_vision_model and file_data and file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
-            # For video, use first frame
-            images = [file_data["key_frames"][0]["base64"]]
-            
-            prompt = f"{prompt}"
+        is_vision_model = any(vm in self.model.lower() for vm in ["gemma3", "llava", "vision", "llava-phi3","mistral-medium", "llama2-vision"])
+
+        # Handle file data for Ollama (Corrected Image Handling)
+        if is_vision_model and file_data:
+            if file_data["type"] == "image" and "base64" in file_data:
+                # Add the image directly to the *last* message in the messages list
+                messages[-1]['images'] = [file_data['base64']] #Correct image format
+
+            elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                # --- Key Change: Send *all* sampled frames ---
+                messages[-1]['images'] = [frame["base64"] for frame in file_data["key_frames"]]
+
 
         try:
-            response = chat(
+            # Use the chat() method (Async)
+            response: ChatResponse = await self.client.chat(
                 model=self.model,
-                messages=history,
+                messages=messages,  # Pass the correctly formatted messages
+                stream=False,
                 options={
                     "num_ctx": 32768,
-                    "num_predict": 768,
-                    "temperature": 0.6,
+                    "num_predict": 1024,
+                    "temperature": 0.8,
                     "num_batch": 512,
                     "top_k": 25,
                 },
+
             )
-                
-            return response.message.content
+            return response.message.content  # Access the content correctly
+
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
             raise e
-
-    def __del__(self):
-        """Cleanup when client is destroyed."""
-        if hasattr(self, '_adaptive_manager') and self._adaptive_manager:
-            del self._adaptive_manager
-
