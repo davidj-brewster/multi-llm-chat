@@ -4,7 +4,7 @@ import logging
 from shared_resources import InstructionTemplates, MemoryManager
 
 logger = logging.getLogger(__name__)
-TOKENS_PER_TURN=768
+TOKENS_PER_TURN=1024
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context"""
     

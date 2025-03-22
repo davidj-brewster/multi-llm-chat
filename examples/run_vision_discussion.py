@@ -134,7 +134,6 @@ async def main():
                 initial_prompt=config.goal,
                 human_model=human_model_config.type,
                 ai_model=ai_model_config.type,
-                mode="human-ai",
                 rounds=config.turns
             )
             logger.debug(f"Standard conversation completed with {len(conversation)} messages")

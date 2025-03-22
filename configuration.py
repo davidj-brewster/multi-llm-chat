@@ -4,7 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 from pathlib import Path
-import mimetypes
 import json
 
 logger = logging.getLogger(__name__)
@@ -38,8 +37,8 @@ SUPPORTED_FILE_TYPES = {
 
 @dataclass
 class TimeoutConfig:
-    request: int = 300  # Default 5 minutes
-    retry_count: int = 3
+    request: int = 600  # Default 5 minutes
+    retry_count: int = 1
     notify_on: List[str] = None
 
     def __post_init__(self):
@@ -282,7 +281,7 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
         capabilities["streaming"] = True
     
     # Function calling capability
-    if "gpt-4" in model_type or "claude-3" in model_type:
+    if "gpt-4" in model_type or "claude" in model_type:
         capabilities["function_calling"] = True
     
     return capabilities

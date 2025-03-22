@@ -1,6 +1,6 @@
 discussion:
   # Number of conversation turns
-  turns: 3
+  turns: 8
 
   # Model configurations
   models:
@@ -13,7 +13,7 @@ discussion:
           domain: "Medical Image Analysis"
     
     model2:
-      type: "gemini-pro-vision"
+      type: "gemini-2-pro"
       role: "assistant"
       instructions:
         template: "ai_assistant_instructions"
@@ -28,8 +28,8 @@ discussion:
 
   # Timeout settings
   timeouts:
-    request: 300
-    retry_count: 3
+    request: 600
+    retry_count: 1
     notify_on:
       - timeout
       - retry

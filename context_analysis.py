@@ -1,9 +1,8 @@
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List
 from sklearn.metrics.pairwise import cosine_similarity
 import logging
-from collections import Counter
 import re
 
 from shared_resources import (SpacyModelSingleton, VectorizerSingleton,

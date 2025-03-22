@@ -8,25 +8,15 @@ import time
 import random
 import logging
 import re
-import yaml
-from ollama import AsyncClient, ChatResponse, chat
 from typing import List, Dict, Optional, TypeVar, Any
 from dataclasses import dataclass
 import io
-import requests
 import asyncio
-# Third-party imports
-from openai import OpenAI
-from google import genai
-from google.genai import types
-from anthropic import Anthropic
 # Local imports
-from context_analysis import ContextAnalyzer
-from adaptive_instructions import AdaptiveInstructionManager
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
-from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
-from arbiter_v4 import evaluate_conversations, VisualizationGenerator, ArbiterResult 
-from file_handler import ConversationMediaHandler, FileConfig as MediaConfig
+from configdataclasses import FileConfig, DiscussionConfig
+from arbiter_v4 import evaluate_conversations, VisualizationGenerator 
+from file_handler import ConversationMediaHandler
 from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
 from shared_resources import MemoryManager
 from metrics_analyzer import analyze_conversations

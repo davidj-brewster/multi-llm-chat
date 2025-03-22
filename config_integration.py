@@ -5,7 +5,7 @@ import logging
 import asyncio
 import datetime
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -27,20 +27,20 @@ SUPPORTED_FILE_TYPES = {
         "max_resolution": (8192, 8192)
     },
     "video": {
-        "extensions": [".mp4", ".mov", ".avi", ".webm"],
-        "max_size": 100 * 1024 * 1024,  # 100MB
+        "extensions": [".mp4", ".mov", ".avi", ".webm", ".mkv"],
+        "max_size": 200 * 1024 * 1024,  # 200MB
         "max_resolution": (3840, 2160)  # 4K
     },
     "text": {
         "extensions": [".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml"],
-        "max_size": 10 * 1024 * 1024  # 10MB
+        "max_size": 100 * 1024 * 1024  # 10M0B
     }
 }
 
 @dataclass
 class TimeoutConfig:
-    request: int = 300  # Default 5 minutes
-    retry_count: int = 3
+    request: int = 600  # Default 10 minutes
+    retry_count: int = 1
     notify_on: List[str] = None
 
     def __post_init__(self):

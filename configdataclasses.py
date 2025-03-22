@@ -1,16 +1,10 @@
 """Configuration integration module for AI Battle framework"""
 import os
-import yaml
-import logging
-import asyncio
-import datetime
-from typing import Dict, List, Optional, Union
-from pathlib import Path
-import json
+from typing import Dict, List, Optional
 
 class TimeoutConfig:
-    request: int = 300  # Default 5 minutes
-    retry_count: int = 3
+    request: int = 600  # Default 5 minutes
+    retry_count: int = 1
     notify_on: List[str] = None
 
     def __post_init__(self):

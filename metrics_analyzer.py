@@ -1,14 +1,13 @@
 """Metrics and conversation flow analysis for AI Battle"""
-import json
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 
 @dataclass

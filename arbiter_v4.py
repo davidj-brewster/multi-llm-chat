@@ -7,16 +7,14 @@ import datetime
 import spacy
 from difflib import SequenceMatcher
 from uuid import uuid4
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Literal
-from collections import defaultdict, Counter
-from dataclasses import asdict, dataclass
+from typing import Dict, List, Any
+from collections import Counter
+from dataclasses import dataclass
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
 
 # Third-party imports
 from google import genai
-from google.genai import types
 import plotly.graph_objects as go
 google_search_tool = Tool(
     google_search = GoogleSearch()
@@ -139,28 +137,7 @@ CONVERSATION 3:
             # The next total solar eclipse visible in the contiguous United States will be on ...
 
             # Extract grounding metadata
-            #grounding_data = response.candidates[0].grounding_metadata
-            #search_results = grounding_data.search_entry_point.rendered_content
             return response_full
-            # Process search results into sources
-            #sources = []
-            #if search_results:
-            #    for result in search_results:
-            #        sources.append({
-            #            "url": result.get("link", ""),
-            #            "title": result.get("title", ""),
-            ##            "excerpt": result.get("snippet", ""),
-            #            "domain": self._extract_domain(result.get("link", ""))
-            #        })
-
-            # Calculate confidence from response
-            #confidence = self._calculate_confidence(sources, assertion)
-
-            #return AssertionEvidence(
-            #    confidence=confidence,
-            #    sources=sources[:3],  # Top 3 most relevant sources
-            #    verification_method="gemini_search"
-            #)
 
         except Exception as e:
             logger.error(f"Error grounding assertion with Gemini: {e}")
@@ -346,13 +323,8 @@ class ConversationArbiter:
                                ai_ai_analysis: Dict[str, Any],
                                human_ai_analysis: Dict[str, Any]) -> Any: #Dict[str, Dict[str, AssertionEvidence]]:
         """Ground assertions from both conversations"""
-        #grounded = {
-        #    "ai-ai": {},
-        #    "human-ai": {}
-        #}
         
         grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)  
-        #print (grounded)                    
         return grounded
 
 

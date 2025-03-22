@@ -23,8 +23,8 @@ discussion:
          - Clear, understandable explanations
    
   timeouts:
-    request: 300             # Request timeout in seconds
-    retry_count: 3           # Number of retries
+    request: 1200             # Request timeout in seconds
+    retry_count: 0            # Number of retries
     notify_on:
       - timeout              # Notify on timeout
       - retry                # Notify on retry

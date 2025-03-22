@@ -11,14 +11,12 @@ Key components:
 - ConversationMediaHandler: Main class for media processing
 """
 import os
-import io
 import logging
 import mimetypes
 from PIL import Image
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, Optional, Tuple, Any
 from dataclasses import dataclass
-from google.genai import types
 
 logger = logging.getLogger(__name__)
 
