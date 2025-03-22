@@ -24,7 +24,7 @@ class GeminiVisionClient(GeminiClient):
     """Extended Gemini client with media handling capabilities"""
     
     def __init__(self, mode: str, role: str, api_key: str, domain: str, 
-                 model: str = "models/gemini-1.5-pro-latest"):
+                 model: str = "models/gemini-2-pro"):
         super().__init__(mode=mode, role=role, api_key=api_key, domain=domain, model=model)
         self.uploaded_files: Dict[str, MediaFile] = {}
         

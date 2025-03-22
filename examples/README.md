@@ -1,131 +1,102 @@
-# AI Battle Configuration Examples
+# AI Battle Framework Examples
 
-This directory contains example configurations demonstrating how to use the AI Battle framework with different scenarios and file types.
+This directory contains example configurations and scripts for the AI Battle framework.
 
-## Basic Usage
+## Configuration-Based Discussions
 
-1. Create a YAML configuration file (e.g., `discussion_config.yaml`)
-2. Define your models, file inputs, and discussion parameters
-3. Run the discussion:
+The AI Battle framework now supports configuration-driven setup via YAML files. This allows you to:
 
-```python
-from ai_battle import ConversationManager
-
-# Initialize with config
-manager = ConversationManager.from_config("discussion_config.yaml")
-
-# Run discussion
-result = await manager.run_discussion()
-```
-
-## Configuration Structure
-
-### Models
-```yaml
-models:
-  model1:
-    type: "claude-3-sonnet"    # Model identifier
-    role: "human"              # Role in conversation
-    instructions:
-      template: "human_system_instructions"
-      params:
-        domain: "Your Domain"  # Template parameters
-```
-
-Supported models:
-- Claude: claude-3-sonnet, claude-3-haiku
-- Gemini: gemini-pro, gemini-pro-vision
-- OpenAI: gpt-4-vision, gpt-4
-- Local: ollama-*, mlx-*
-
-### File Inputs
-
-```yaml
-input_file:
-  path: "./path/to/file"
-  type: "image"              # image, video, or text
-  max_resolution: "4K"       # For image/video
-```
-
-Supported file types:
-- Images (jpg, jpeg, png, gif, webp)
-  * Max size: 20MB
-  * Max resolution: 8192x8192
-- Videos (mp4, mov, avi, webm)
-  * Max size: 100MB
-  * Max resolution: 4K (3840x2160)
-- Text (txt, md, py, js, etc.)
-  * Max size: 10MB
-
-### Timeouts
-
-```yaml
-timeouts:
-  request: 300              # Request timeout in seconds
-  retry_count: 3            # Number of retries
-  notify_on:               # Notification events
-    - timeout
-    - retry
-    - error
-```
+1. Define multiple models with specific roles and personas
+2. Include file-based inputs (images, videos, text)
+3. Set conversation parameters like number of turns
+4. Define specific goals for the discussion
 
 ## Example Configurations
 
-1. `discussion_config.yaml` - Medical image analysis with video input
-2. `text_review.yaml` - Code review discussion (see examples/text_review.yaml)
-3. `image_analysis.yaml` - Image analysis with multiple models (see examples/image_analysis.yaml)
+### Vision Discussion
 
-## System Instructions
-
-The framework uses template-based system instructions defined in `docs/system_instructions.md`. You can reference these templates in your configuration:
+The `configs/vision_discussion.yaml` file demonstrates a configuration for a vision-based discussion:
 
 ```yaml
-models:
-  model1:
-    instructions:
-      template: "human_system_instructions"  # Template name
-      params:                               # Template parameters
-        domain: "Your Domain"
-        role: "Expert Reviewer"
+discussion:
+  turns: 3
+  models:
+    model1:
+      type: "claude-3-sonnet"
+      role: "human"
+      persona: "Visual analysis expert..."
+    model2:
+      type: "gemini-pro-vision"
+      role: "assistant"
+      persona: "AI assistant with visual expertise..."
+  input_file:
+    path: "./examples/sample_image.jpg"
+    type: "image"
+    max_resolution: "1024x1024"
+  goal: "Analyze the provided image and discuss its key elements..."
 ```
 
-Available templates:
-- `human_system_instructions` - Human role simulation
-- `ai_assistant_instructions` - AI assistant role
-- `goal_oriented_instructions` - Task-focused discussion
+### Running Examples
 
-## Best Practices
+To run the vision discussion example:
 
-1. **File Handling**
-   - Ensure files are accessible at the specified paths
-   - Use appropriate resolution settings for image/video
-   - Consider file size limits when selecting inputs
+```bash
+python examples/run_vision_discussion.py
+```
 
-2. **Model Selection**
-   - Match model capabilities to task requirements
-   - Use vision-capable models for image/video inputs
-   - Consider local models for faster processing
+Or specify a custom configuration file:
 
-3. **Timeout Configuration**
-   - Adjust timeouts based on input size and complexity
-   - Set appropriate retry counts for reliability
-   - Enable notifications for important events
+```bash
+python examples/run_vision_discussion.py path/to/your/config.yaml
+```
 
-4. **System Instructions**
-   - Use templates to maintain consistent behavior
-   - Customize instructions through parameters
-   - Keep personas focused and relevant to the task
+Or specify a file directly (overriding the one in the config):
 
-## Error Handling
+```bash
+python examples/run_vision_discussion.py path/to/your/config.yaml path/to/your/image.jpg
+```
 
-The configuration system validates:
-- File existence and format
-- Model compatibility
-- Parameter ranges
-- Template validity
+## Supported File Types
 
-Common errors and solutions:
-- `FileNotFoundError`: Check file paths
-- `ValueError`: Review parameter values
-- `TypeError`: Ensure correct data types
-- `ValidationError`: Check configuration structure
+The framework supports the following file types:
+
+1. **Images**: JPG, PNG, GIF, WebP, BMP
+   - Automatically resized to a maximum of 1024x1024 pixels
+   - Supported by vision-capable models (Claude-3, GPT-4o, Gemini Pro Vision)
+
+2. **Videos**: MP4, MOV, AVI, WebM
+   - Key frames are extracted for analysis
+   - Currently best supported by Gemini Pro Vision
+
+3. **Text Files**: TXT, MD, CSV, JSON, YAML, YML
+   - Automatically chunked for large files
+
+4. **Code Files**: PY, JS, HTML, CSS, Java, etc.
+   - Displayed with line numbers
+   - Language detection based on file extension
+
+## Creating Your Own Configurations
+
+To create your own configuration:
+
+1. Create a YAML file following the structure in the examples
+2. Specify at least two models with different roles
+3. Optionally include an input file
+4. Define a clear goal for the discussion
+
+## Model Compatibility
+
+Not all models support all file types. The framework will automatically check model capabilities and adapt accordingly:
+
+- **Vision Support**: Claude-3, GPT-4o, Gemini Pro Vision, and some Ollama models (llava, bakllava, gemma3)
+- **Text/Code**: All models
+- **Video**: Currently best supported by Gemini Pro Vision
+
+## Advanced Usage
+
+For advanced usage, you can:
+
+1. Customize model parameters in the configuration
+2. Define complex personas for more specialized discussions
+3. Combine multiple file types in a single discussion
+4. Implement custom file processors for specialized file types

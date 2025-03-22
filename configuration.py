@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 # Supported model configurations
 SUPPORTED_MODELS = {
-    "claude": ["claude-3-sonnet", "claude-3-haiku"],
-    "gemini": ["gemini-pro", "gemini-pro-vision"],
-    "openai": ["gpt-4-vision", "gpt-4"],
+    "claude": ["claude", "haiku"],
+    "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning"],
+    "openai": ["gpt-4-vision", "gpt-4o"],
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"]      # All MLX models supported
 }
@@ -59,6 +59,13 @@ class FileConfig:
     path: str
     type: str
     max_resolution: Optional[str] = None
+    
+    def __init__(self, path: str, type: str, max_resolution: Optional[str] = None):
+        """Initialize FileConfig with parameters."""
+        self.path = path
+        self.type = type
+        self.max_resolution = max_resolution
+        self.__post_init__()
 
     def __post_init__(self):
         if not os.path.exists(self.path):
@@ -226,21 +233,56 @@ def load_config(path: str) -> DiscussionConfig:
     except (TypeError, ValueError) as e:
         raise ValueError(f"Invalid configuration format: {e}")
 
-def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
+def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str, bool]:
     """Detect model capabilities based on type"""
     capabilities = {
-        "vision": False,
+        "vision": True,
         "streaming": False,
-        "function_calling": False
+        "function_calling": False,
+        "code_understanding": False
     }
     
-    if model_config.type in ["gemini-pro-vision", "gpt-4-vision"]:
-        capabilities["vision"] = True
+    # Extract model type from ModelConfig or use string directly
+    model_type = model_config.type if isinstance(model_config, ModelConfig) else model_config
     
-    if model_config.type.startswith(("claude", "gpt")):
+    # Vision-capable cloud models
+    vision_models = [
+        "claude",
+        "gpt-4o", 
+        "sonnet",
+        "openai",
+        "gemini-2-pro",
+        "gemini-2-reasoning",
+        "gemini-2-flash-lite",
+        "chatgpt-latest",
+        "gemini"
+    ]
+    
+    # Ollama vision-capable models
+    ollama_vision_models = [
+        "gemma3", "llava", "bakllava", "moondream", "llava-phi3", "gpt", "chatgpt"
+    ]
+    
+    # Check if it's an Ollama model with vision support
+    if "ollama" in model_type.lower():
+        for vision_model in ollama_vision_models:
+            if vision_model in model_type.lower():
+                capabilities["vision"] = True
+                break
+    else:
+        # Check cloud model vision capabilities
+        for prefix in vision_models:
+            if model_type.startswith(prefix):
+                capabilities["vision"] = True
+                break
+    
+    # Streaming capability
+    if model_type.startswith(("claude", "gpt", "chatgpt", "gemini", "gemma")):
+        capabilities["vision"] = True
         capabilities["streaming"] = True
     
-    if model_config.type in ["gpt-4", "claude-3-sonnet"]:
+    # Function calling capability
+    if "gpt-4" in model_type or "claude-3" in model_type:
         capabilities["function_calling"] = True
     
     return capabilities

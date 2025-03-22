@@ -52,6 +52,7 @@ class FileMetadata:
         duration (Optional[float]): Duration in seconds for video files
         text_content (Optional[str]): Extracted text content for text files
         thumbnail_path (Optional[str]): Path to generated thumbnail if applicable
+        processed_video (Optional[Dict]): Information about processed video (fps, resolution, frames)
     """
     path: str
     type: str
@@ -61,6 +62,7 @@ class FileMetadata:
     duration: Optional[float] = None
     text_content: Optional[str] = None
     thumbnail_path: Optional[str] = None
+    processed_video: Optional[Dict] = None
 
 class FileConfig:
     """
@@ -74,7 +76,7 @@ class FileConfig:
     SUPPORTED_FILE_TYPES = {
         "image": {
             "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
-            "max_size": 20 * 1024 * 1024,  # 20MB
+            "max_size": 10 * 1024 * 1024,  # 10MB
             "max_resolution": (8192, 8192),
             "supported_models": {
                 "gemini": ["gemini-pro-vision"],
@@ -91,9 +93,19 @@ class FileConfig:
             }
         },
         "text": {
-            "extensions": [".txt", ".md", ".py", ".js", ".html", ".csv", ".json", ".yaml", ".yml"],
+            "extensions": [".txt", ".md", ".csv", ".json", ".yaml", ".yml"],
             "max_size": 20 * 1024 * 1024  # 20MB
-        }
+        },
+        "code": {
+            "extensions": [".py", ".js", ".html", ".css", ".java", ".cpp", ".c", ".h", ".cs", ".php", ".rb", ".go", ".rs", ".ts", ".swift"],
+            "max_size": 5 * 1024 * 1024,  # 5MB
+            "supported_models": {
+                "gemini": ["gemini-pro", "gemini-pro-vision"],
+                "claude": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus"],
+                "openai": ["gpt-4", "gpt-4o"],
+                "ollama": ["llava", "gemma3", "phi4"]
+            }
+        },
     }
 
     @classmethod
@@ -166,6 +178,7 @@ class ConversationMediaHandler:
     
     def __init__(self, output_dir: str = "processed_files"):
         self.output_dir = Path(output_dir)
+        self.max_image_resolution = (1024, 1024)  # Default max resolution for images
         self.output_dir.mkdir(exist_ok=True)
         logger.info(f"Initialized ConversationMediaHandler with output directory: {output_dir}")
 
@@ -214,6 +227,8 @@ class ConversationMediaHandler:
             # Process specific file types
             if file_type == "image":
                 self._process_image(file_path, metadata)
+            elif file_type == "code":
+                self._process_code(file_path, metadata)
             elif file_type == "video":
                 self._process_video(file_path, metadata)
             elif file_type == "text":
@@ -400,21 +415,53 @@ class ConversationMediaHandler:
             # Check dimensions
             if img.size[0] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][0] or \
                img.size[1] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][1]:
+                logger.info(f"Image dimensions {img.size} exceed maximum resolution " +
+                           f"{FileConfig.SUPPORTED_FILE_TYPES['image']['max_resolution']}")
+                logger.warning(f"Image dimensions {img.size} exceed maximum, will be resized")
+            
                 raise MediaValidationError(f"Image dimensions too large: {img.size}")
                 
             metadata.dimensions = img.size
             
             # Create thumbnail
-            thumb_size = (512, 512)
-            img.thumbnail(thumb_size)
+            logger.info(f"Creating thumbnail for image {file_path} with original size {img.size}")
+            
+            # Calculate thumbnail size maintaining aspect ratio with longest side = 512px
+            max_dimension = 1024
+            width, height = img.size
+            if width > height:
+                thumb_size = (max_dimension, int(height * max_dimension / width))
+            else:
+                thumb_size = (int(width * max_dimension / height), max_dimension)
+                
+            logger.info(f"Calculated thumbnail size: {thumb_size} (maintaining aspect ratio)")
+            thumb_img = img.copy()
+            thumb_img.thumbnail(thumb_size)
+            
+            # Save thumbnail to file
             thumb_path = self.output_dir / f"thumb_{file_path.name}"
-            img.save(thumb_path)
+            thumb_img.save(thumb_path)
             metadata.thumbnail_path = str(thumb_path)
-            logger.debug(f"Created thumbnail for {file_path}: {thumb_path}")
+            logger.info(f"Created thumbnail for {file_path}: {thumb_path} with size {thumb_img.size}")
+            
+            # Resize image if larger than max resolution
+            if img.size[0] > self.max_image_resolution[0] or img.size[1] > self.max_image_resolution[1]:
+                logger.info(f"Resizing image {file_path} from {img.size} to fit within {self.max_image_resolution}")
+                # Calculate new dimensions while maintaining aspect ratio
+                ratio = min(self.max_image_resolution[0] / img.size[0], self.max_image_resolution[1] / img.size[1])
+                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                resized_img = img.resize(new_size, Image.LANCZOS)
+                logger.info(f"Resized image from {metadata.dimensions} to {new_size}")
+                metadata.dimensions = new_size
+                resized_path = self.output_dir / f"resized_{file_path.name}"
+                logger.info(f"Saving resized image to {resized_path}")
+                resized_img.save(resized_path)
             
     def _process_video(self, file_path: Path, metadata: FileMetadata) -> None:
         """
         Process video files.
+        
+        Processes the video at a lower framerate and resolution for model consumption.
         
         Extracts video properties, creates thumbnail from first frame,
         and updates metadata.
@@ -422,6 +469,9 @@ class ConversationMediaHandler:
         Args:
             file_path: Path to video file
             metadata: FileMetadata to update
+            
+        Returns:
+            None: Updates metadata in place
             
         Note: Requires OpenCV (cv2) package for video processing
         """
@@ -432,20 +482,99 @@ class ConversationMediaHandler:
             # Get video properties
             width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            original_fps = video.get(cv2.CAP_PROP_FPS)
             duration = video.get(cv2.CAP_PROP_FRAME_COUNT) / video.get(cv2.CAP_PROP_FPS)
             
             metadata.dimensions = (width, height)
             metadata.duration = duration
             
-            # Create thumbnail from first frame
-            success, frame = video.read()
-            if success:
-                thumb_path = self.output_dir / f"thumb_{file_path.name}.jpg"
-                cv2.imwrite(str(thumb_path), frame)
-                metadata.thumbnail_path = str(thumb_path)
-                logger.debug(f"Created thumbnail for video {file_path}: {thumb_path}")
+            # Process video at lower framerate and resolution
+            target_fps = 2  # Configurable
+            max_dimension = 1280  # Configurable - longest side will be this size
+            
+            logger.info(f"Processing video {file_path} with original dimensions {width}x{height}, fps: {original_fps}")
+            logger.info(f"Target processing parameters: max dimension {max_dimension}px, fps: {target_fps}")
+            
+            # Calculate frame interval based on target FPS
+            frame_interval = int(original_fps / target_fps)
+            if frame_interval < 1:
+                logger.info(f"Original fps {original_fps} is less than target fps {target_fps}, using every frame")
+                logger.info(f"Using frame interval of {frame_interval} (every {frame_interval}th frame)")
+                frame_interval = 1
                 
-            video.release()
+            # Create directory for processed frames
+            frames_dir = self.output_dir / f"frames_{file_path.stem}"
+            frames_dir.mkdir(exist_ok=True)
+            
+            # Extract frames at target FPS and resolution
+            frame_count = 0
+            frame_paths = []
+            
+            while True:
+                # Set position to next frame
+                video.set(cv2.CAP_PROP_POS_FRAMES, frame_count * frame_interval)
+                
+                success, frame = video.read()
+                if not success:
+                    break
+                    
+                # Calculate new dimensions maintaining aspect ratio with longest side = max_dimension
+                aspect_ratio = width / height
+                if width > height:  # Landscape
+                    new_size = (max_dimension, int(height * max_dimension / width))
+                else:  # Portrait
+                    new_size = (int(width * max_dimension / height), max_dimension)
+                    
+                logger.info(f"Resizing frame {frame_count} from {width}x{height} to {new_size} (maintaining aspect ratio)")
+                frame = cv2.resize(frame, new_size)
+                
+                # Save frame
+                frame_path = frames_dir / f"frame_{frame_count:04d}.jpg"
+                cv2.imwrite(str(frame_path), frame)
+                frame_paths.append(str(frame_path))
+                logger.info(f"Saved frame {frame_count} to {frame_path}")
+                frame_count += 1
+                # Create thumbnail from first frame
+                video.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to first frame
+                success, frame = video.read()
+                if success:
+                    # Resize thumbnail maintaining aspect ratio
+                    thumb_frame = cv2.resize(frame, new_size)
+                    logger.info(f"Creating thumbnail for video {file_path} with size {new_size}")
+                    thumb_path = self.output_dir / f"thumb_{file_path.name}.jpg"
+                    cv2.imwrite(str(thumb_path), thumb_frame)
+                    metadata.thumbnail_path = str(thumb_path)
+                    logger.debug(f"Created thumbnail for video {file_path}: {thumb_path}")
+
+                # Process video at lower resolution and save
+                processed_video_path = self.output_dir / f"processed_{file_path.name}"
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for MP4
+                out = cv2.VideoWriter(str(processed_video_path), fourcc, target_fps, new_size)
+
+                video.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to first frame
+                frame_count = 0
+
+                while True:
+                    success, frame = video.read()
+                    if not success:
+                        break
+
+                    # Resize frame maintaining aspect ratio
+                    resized_frame = cv2.resize(frame, new_size)
+                    out.write(resized_frame)
+                    frame_count += 1
+
+                out.release()
+                video.release()
+
+                # Store processed video information
+                metadata.processed_video = {
+                    "fps": target_fps,
+                    "resolution": new_size,
+                    "processed_video_path": str(processed_video_path),
+                    "frame_count": frame_count
+                }
+                logger.info(f"Processed video saved to {processed_video_path} with {frame_count} frames at {target_fps} fps and resolution {new_size}")
             
         except ImportError:
             logger.warning("OpenCV not available for video processing")
@@ -469,3 +598,33 @@ class ConversationMediaHandler:
                 metadata.text_content = content
         except UnicodeDecodeError:
             raise MediaValidationError(f"Could not decode text file {file_path} as UTF-8")
+            
+    def _process_code(self, file_path: Path, metadata: FileMetadata) -> None:
+        """
+        Process code files with syntax highlighting and line numbers.
+        
+        Args:
+            file_path: Path to code file
+            metadata: FileMetadata to update
+            
+        Raises:
+            MediaValidationError: If code file cannot be decoded
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Get file extension for language detection
+            ext = file_path.suffix.lower()
+            language = ext[1:] if ext else "text"  # Remove the dot
+            
+            # Format with line numbers
+            lines = content.split('\n')
+            formatted_content = "\n".join([f"{i+1} | {line}" for i, line in enumerate(lines)])
+            
+            # Update metadata
+            metadata.text_content = formatted_content
+            metadata.dimensions = (len(lines), max(len(line) for line in lines) if lines else 0)
+            metadata.mime_type = f"text/x-{language}"
+        except UnicodeDecodeError:
+            raise MediaValidationError(f"Could not decode code file {file_path} as UTF-8")

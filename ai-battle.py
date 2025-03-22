@@ -2,6 +2,7 @@
 import json
 import os
 import datetime
+import base64
 import sys
 import time
 import random
@@ -24,7 +25,7 @@ from context_analysis import ContextAnalyzer
 from adaptive_instructions import AdaptiveInstructionManager
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import TimeoutConfig, FileConfig, ModelConfig, DiscussionConfig
-from arbiter_v4 import evaluate_conversations, VisualizationGenerator, ArbiterResult
+from arbiter_v4 import evaluate_conversations, VisualizationGenerator, ArbiterResult 
 from file_handler import ConversationMediaHandler, FileConfig as MediaConfig
 from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
 from shared_resources import MemoryManager
@@ -34,7 +35,7 @@ T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 1024
+TOKENS_PER_TURN = 1280
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 class ModelConfig:
     """Configuration for AI model parameters"""
     temperature: float = 0.8
-    max_tokens: int = 1024
+    max_tokens: int = 1280
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
 
@@ -92,7 +93,7 @@ class ConversationManager:
     def media_handler(self):
         """Lazy initialization of media handler."""
         if self._media_handler is None:
-            self._media_handler = ConversationMediaHandler(self.domain)
+            self._media_handler = ConversationMediaHandler(output_dir="processed_files")
         return self._media_handler
 
     def _get_client(self, model_name: str) -> Optional[BaseClient]:
@@ -100,11 +101,11 @@ class ConversationManager:
         if model_name not in self._initialized_clients:
             try:
                 if model_name == "claude":
-                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-sonnet-20241022")
+                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-7-sonnet-latest")
                 elif model_name == "haiku":
-                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku-20241022")
+                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku")
                 elif model_name == "gpt-4o":
-                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-2024-08-06")
+                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="chatgpt-latest")
                 elif model_name == "gpt-4o-mini":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-mini")
                 elif model_name == "o1":
@@ -137,6 +138,14 @@ class ConversationManager:
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q5_K_S")
                 elif model_name == "ollama-qwen32-r1":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest")
+                elif model_name == "ollama-gemma3-4b":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:4b-it-q8_0")
+                elif model_name == "ollama-gemma3-12b":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:12b-it-q4_K_M")
+                elif model_name == "ollama-gemma3-27b":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:27b-it-fp16")
+                elif model_name == "ollama-llama3.2-11b":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2-vision:11b-instruct-q4_K_M")
                 elif model_name == "ollama-abliterated":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-abliterated:latest")
                 elif model_name == "ollama-zephyr":
@@ -196,7 +205,8 @@ class ConversationManager:
                             model_type: str,
                             client: BaseClient,
                             mode: str,
-                            role: str,
+                            role: str, 
+                            file_data: Dict[str, Any] = None,
                             system_instruction: str=None) -> str:
         """Single conversation turn with specified model and role."""
         self.mode = mode
@@ -211,7 +221,8 @@ class ConversationManager:
                     prompt=prompt,
                     system_instruction=f"You are a helpful assistant. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens",
                     history=self.conversation_history.copy(),  # Limit history
-                    role="assistant" #even if its the user role, it should get no instructions
+                    role="assistant", #even if its the user role, it should get no instructions
+                    file_data=file_data
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
@@ -231,7 +242,8 @@ class ConversationManager:
                     prompt=prompt,
                     system_instruction=client.adaptive_manager.generate_instructions(history = reversed_history, mode=mode, role=role,domain=self.domain),
                     history=reversed_history,  # Limit history
-                    role=role
+                    role=role,
+                    file_data=file_data
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
@@ -244,6 +256,7 @@ class ConversationManager:
                     system_instruction=client.adaptive_manager.generate_instructions(history = self.conversation_history, mode=mode, role="assistant",domain=self.domain),
                     history=self.conversation_history.copy(),
                     role="assistant",
+                    file_data=file_data
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
@@ -256,6 +269,79 @@ class ConversationManager:
             response = f"Error: {str(e)}"
 
         return response
+
+    def run_conversation_with_file(self,
+                                  initial_prompt: str,
+                                  human_model: str,
+                                  ai_model: str,
+                                  mode: str,
+                                  file_config: FileConfig,
+                                  human_system_instruction: str = None,
+                                  ai_system_instruction: str = None,
+                                  rounds: int = 1) -> List[Dict[str, str]]:
+        """Run conversation with file input."""
+        # Clear history and set up initial state
+        self.conversation_history = []
+        self.initial_prompt = initial_prompt
+        self.domain = initial_prompt
+        self.mode = mode
+        
+        # Process file if provided
+        file_data = None
+        if file_config:
+            try:
+                # Process file
+                file_metadata = self.media_handler.process_file(file_config.path)
+                
+                # Create file data dictionary
+                file_data = {
+                    "type": file_metadata.type,
+                    "path": file_config.path,
+                    "mime_type": file_metadata.mime_type,
+                    "dimensions": file_metadata.dimensions
+                }
+                
+                # Add type-specific data
+                if file_metadata.type == "image":
+                    with open(file_config.path, 'rb') as f:
+                        file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                        file_data["type"] = "image"
+                        file_data["mime_type"] = file_metadata.mime_type
+                        file_data["path"] = file_config.path
+                elif file_metadata.type in ["text", "code"]:
+                    file_data["text_content"] = file_metadata.text_content
+                elif file_metadata.type == "video":
+                    # For video, we need to extract frames
+                    file_data["duration"] = file_metadata.duration
+                    file_data["key_frames"] = []
+                    if file_metadata.thumbnail_path:
+                        with open(file_metadata.thumbnail_path, 'rb') as f:
+                            file_data["key_frames"].append({
+                                "timestamp": 0,
+                                "base64": base64.b64encode(f.read()).decode('utf-8')
+                            })
+                
+                # Add file context to prompt
+                file_context = f"Analyzing {file_metadata.type} file: {file_config.path}"
+                if file_metadata.dimensions:
+                    file_context += f" ({file_metadata.dimensions[0]}x{file_metadata.dimensions[1]})"
+                initial_prompt = f"{file_context}\n\n{initial_prompt}"
+                
+            except Exception as e:
+                logger.error(f"Error processing file: {e}")
+                return []
+        
+        # Extract core topic from initial prompt
+        core_topic = initial_prompt.strip()
+        if "Topic:" in initial_prompt:
+            core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+        elif "GOAL" in initial_prompt:
+            core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
+        
+        self.conversation_history.append({"role": "user", "content": f"{core_topic}"})
+        
+        # Continue with standard conversation flow, but pass file_data to the first turn
+        return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, file_data, human_system_instruction, ai_system_instruction, rounds)
 
     def run_conversation(self,
                         initial_prompt: str,
@@ -291,6 +377,47 @@ class ConversationManager:
         if not human_client or not ai_client:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
             return []
+            
+        return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, None, human_system_instruction, ai_system_instruction, rounds)
+
+    def _run_conversation_with_file_data(self,
+                                       core_topic: str,
+                                       human_model: str,
+                                       ai_model: str,
+                                       mode: str,
+                                       file_data: Dict[str, Any] = None,
+                                       human_system_instruction: str = None,
+                                       ai_system_instruction: str = None,
+                                       rounds: int = 5) -> List[Dict[str, str]]:
+        """Internal method to run conversation with optional file data."""
+        logger.info(f"Starting conversation with topic: {core_topic}")
+        self.mode="human-ai"
+        # Get client instances
+        human_client = self._get_client(human_model)
+        ai_client = self._get_client(ai_model)
+        
+        if not human_client or not ai_client:
+            logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
+            return []
+            
+        # Check if models support vision if file is image/video
+        if file_data and file_data["type"] in ["image", "video"]:
+            human_capabilities = detect_model_capabilities(human_model)
+            ai_capabilities = detect_model_capabilities(ai_model)
+            
+            if not human_capabilities.get("vision", False) or not ai_capabilities.get("vision", False):
+                logger.warning("One or both models do not support vision capabilities")
+                # We'll continue but log a warning
+                
+                # If AI model doesn't support vision, we'll convert image to text description
+                if not ai_capabilities.get("vision", False) and file_data["type"] == "image":
+                    # Add a note that this is an image description
+                    dimensions = file_data.get("dimensions", (0, 0))
+                    file_data = {
+                        "type": "text",
+                        "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
+                        "path": file_data.get("path", "")
+                    }
 
         ai_response = core_topic
         try:
@@ -299,10 +426,11 @@ class ConversationManager:
                 # Human turn
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
-                    system_instruction=f"Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",history=self.conversation_history,domain=self.domain),
+                    system_instruction=f"{core_topic}. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",history=self.conversation_history,domain=self.domain),
                     role="user",
                     mode=self.mode,
-                    model_type=human_model,
+                    model_type=human_model, 
+                    file_data=file_data,  # Only pass file data on first turn
                     client=human_client
                 )
                 #print(f"\n\n\nHUMAN: ({human_model.upper()}): {human_response}\n\n")
@@ -310,10 +438,11 @@ class ConversationManager:
                 # AI turn
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
-                    system_instruction=f"You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="assistant",history=self.conversation_history,domain=self.domain) if mode=="human-aiai" else ai_system_instruction,
+                    system_instruction=f"{core_topic}. You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="assistant",history=self.conversation_history,domain=self.domain) if mode=="human-aiai" else ai_system_instruction,
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
+                    file_data=file_data,
                     client=ai_client
                 )
                 logger.debug(f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
@@ -328,10 +457,38 @@ class ConversationManager:
             self.cleanup_unused_clients()
             MemoryManager.cleanup_all()
 
+    @classmethod
+    def from_config(cls, config_path: str) -> 'ConversationManager':
+        """Create ConversationManager instance from configuration file."""
+        config = load_config(config_path)
+        
+        # Initialize manager with config
+        manager = cls(
+            config=config,
+            domain=config.goal,
+            mode="human-ai"  # Default mode
+        )
+        
+        # Set up models based on configuration
+        for model_id, model_config in config.models.items():
+            # Detect model capabilities
+            capabilities = detect_model_capabilities(model_config.type)
+            
+            # Initialize appropriate client
+            client = manager._get_client(model_config.type)
+            if client:
+                # Store client in model map with configured role
+                client.role = model_config.role
+                manager.model_map[model_id] = client
+                manager._initialized_clients.add(model_id)
+        
+        return manager
+
 async def save_conversation(conversation: List[Dict[str, str]], 
                      filename: str,
                      human_model: str,
-                     ai_model: str,
+                     ai_model: str, 
+                     file_data: Dict[str, Any] = None,
                      mode: str = None) -> None:
     """Save conversation to HTML file."""
     try:
@@ -339,6 +496,23 @@ async def save_conversation(conversation: List[Dict[str, str]],
             template = f.read()
             
         conversation_html = ""
+        
+        # Add file content if present
+        if file_data:
+            if file_data["type"] == "image" and "base64" in file_data:
+                # Add image to the conversation
+                mime_type = file_data.get("mime_type", "image/jpeg")
+                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Image")}</h3>'
+                conversation_html += f'<img src="data:{mime_type};base64,{file_data["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
+            elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                # Add first frame of video
+                frame = file_data["key_frames"][0]
+                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Video")} (First Frame)</h3>'
+                conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
+            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                # Add text content
+                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
+        
         for msg in conversation:
             role = msg["role"]
             content = msg.get("content", "")
@@ -351,6 +525,15 @@ async def save_conversation(conversation: List[Dict[str, str]],
                 conversation_html += f'<div class="human-message"><strong>Human ({human_model}):</strong> {content}</div>\n'
             elif role == "assistant":
                 conversation_html += f'<div class="ai-message"><strong>AI ({ai_model}):</strong> {content}</div>\n'
+                
+            # Check if message contains file content (for multimodal messages)
+            if isinstance(msg.get("content"), list):
+                for item in msg["content"]:
+                    if isinstance(item, dict) and item.get("type") == "image":
+                        # Extract image data
+                        image_data = item.get("image_url", {}).get("url", "")
+                        if image_data.startswith("data:"):
+                            conversation_html += f'<div class="message-image"><img src="{image_data}" alt="Image in message" style="max-width: 100%; max-height: 300px;"/></div>\n'
 
         with open(filename, "w") as f:
             f.write(template % {'conversation': conversation_html})
@@ -442,7 +625,9 @@ async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
 async def main():
     """Main entry point."""
     rounds = 5
-    initial_prompt = "Setting up an opt-in Cloud + GenAI Guild for technical product and data teams in a mid-size tech company (~100 engineers) that is mid way through a cloud migration to a single cloud provider, GCP (landing zone, sandbox environments, project hierarchies, IAM, billing monitoring and CUD optimisation, Project Management, prioritisation, policies, CI/CD, GitHub, Copilot, security, encryption, private interconnect, service templates, standards, templates via terraform/GKE and best practices are fairly well established and should not be key focus points). The guild is likely to attract around 10 to 15 percent of engaged engineers on a regular basis and will be led by a platform engineering expert with strong communication and technical skills"
+    initial_prompt = """"
+    GOAL: Write a short story about a detective solving a mystery.
+"""
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")

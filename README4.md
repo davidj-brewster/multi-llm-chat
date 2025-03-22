@@ -21,7 +21,7 @@ This document outlines the plan for extending the AI Battle framework to support
      turns: 3  # Number of back-and-forth exchanges
      models:
        model1:
-         type: "claude-3-sonnet"  # Model identifier
+         type: "claude-3YS-sonnet"  # Model identifier
          role: "human"            # Role in conversation
          persona: |               # Persona-based system_ nstructions
            You are a neurological radiologist with the following characteristics:
@@ -147,6 +147,7 @@ This document outlines the plan for extending the AI Battle framework to support
 ### Model Capabilities
 - Vision support detection
 - Content type compatibility
+- Local Ollama model vision support
 - Token limit management
 - Cost optimization
 
@@ -272,3 +273,322 @@ This implementation plan ensures systematic development while maintaining the fr
 - [ ] YAML Configuration Parser
 - [ ] Configuration Validation
 - [ ] Other tasks in progress...
+
+## Implementation Summary
+
+The following sections have been implemented according to the plan:
+
+### 1. Configuration System Implementation
+
+- Enhanced `configuration.py` with a comprehensive model capability detection function that supports:
+  - Cloud models (Claude, GPT-4o, Gemini)
+  - Local Ollama vision models (llava, bakllava, gemma3, etc.)
+
+- Updated `configdataclasses.py` to support the YAML configuration structure with:
+  - TimeoutConfig, FileConfig, ModelConfig, and DiscussionConfig classes
+  - Validation logic for each configuration component
+
+- Added `from_config` factory method to ConversationManager for configuration-driven setup
+
+### 2. File Processing Implementation
+
+- Enhanced `file_handler.py` to support various file types:
+  - Images with automatic resizing to 1024x1024 max resolution
+  - Videos with key frame extraction
+  - Text files with chunking for large content
+  - Code files with syntax highlighting and line numbers
+
+- Added file type detection and validation logic
+- Implemented media processing with proper error handling
+
+### 3. Model Client Enhancements
+
+- Updated all model client classes in `model_clients.py` to support vision capabilities:
+  - Added file data parameter to generate_response methods
+  - Implemented model-specific file content formatting for each API
+  - Added support for Ollama vision models
+
+- Created adapter methods in BaseClient for consistent file handling across different model types
+- Added lightweight file references to avoid duplicating large file data in conversation history
+
+### 4. Conversation Flow Updates
+
+- Added `run_conversation_with_file` method to ConversationManager in `ai-battle.py`
+- Updated `run_conversation_turn` to handle file data
+- Implemented capability checking to ensure models support the provided file type
+- Added graceful degradation for non-vision models
+
+### 5. Documentation and Examples
+
+- Created comprehensive documentation in `docs/configuration.md`
+- Added example configuration in `examples/configs/vision_discussion.yaml`
+- Created example script in `examples/run_vision_discussion.py`
+- Updated README in `examples/README.md` with usage instructions
+
+## Testing Instructions
+
+To test the implementation:
+
+1. Create a sample image file at `examples/sample_image.jpg`
+2. Run the example script:
+   ```bash
+   python examples/run_vision_discussion.py
+   ```
+3. Check the generated HTML file for the conversation results
+
+## Key Implementation Decisions
+
+1. **Image Resizing**: All images are automatically resized to a maximum of 1024x1024 pixels to ensure compatibility with model APIs and reduce bandwidth usage.
+
+2. **Ollama Vision Support**: Added specific detection for Ollama vision models (llava, bakllava, gemma3, etc.) to enable local vision capabilities.
+
+3. **File Reference System**: Implemented a lightweight file reference system to avoid duplicating large file data in conversation history.
+
+4. **Graceful Degradation**: Added fallback mechanisms for when vision-capable models are not available, converting images to text descriptions.
+
+5. **Code File Support**: Added special handling for code files with syntax highlighting and line numbers to improve code analysis capabilities.
+
+## Future Enhancements
+
+1. **Multiple File Support**: Extend the framework to support multiple files in a single conversation.
+
+2. **Advanced Video Processing**: Improve video processing with more sophisticated frame extraction and analysis.
+
+3. **Custom File Processors**: Add support for custom file processors to handle specialized file types.
+
+4. **Interactive File Exploration**: Enable interactive exploration of files during conversations.
+
+5. **File Content Vectorization**: Implement file content vectorization for more sophisticated analysis and retrieval.
+
+## Status Update
+
+- [x] Configuration System Implementation
+- [x] File Processing Implementation
+- [x] Model Client Enhancements
+- [x] Conversation Flow Updates
+- [x] Documentation and Examples
+- [ ] Testing and Validation
+- [ ] Performance Optimization
+- [ ] Additional Features
+
+## Implementation Details
+
+This section provides detailed implementation guidance for the configuration system and file-based vision support.
+
+> **IMPORTANT**: As implementation progresses, do NOT remove the original plan from this file. This document should be appended to with current progress, not arbitrarily modified or deleted. The original plan serves as a reference point and should be preserved throughout development.
+
+### Configuration System Implementation
+
+#### 1. Enhanced Configuration Data Classes
+
+Update `configdataclasses.py` to fully support the YAML configuration structure:
+
+```python
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Union, Any
+
+@dataclass
+class TimeoutConfig:
+    request: int = 300
+    retry_count: int = 3
+    notify_on: List[str] = field(default_factory=lambda: ["timeout", "retry", "error"])
+
+@dataclass
+class FileConfig:
+    path: str
+    type: str  # "image", "video", or "text"
+    max_resolution: Optional[str] = None
+
+@dataclass
+class ModelConfig:
+    type: str  # Model identifier (e.g., "claude-3-sonnet", "gemini-pro")
+    role: str  # Role in conversation (e.g., "human", "assistant")
+    persona: str  # Persona-based system instructions
+    
+@dataclass
+class DiscussionConfig:
+    turns: int = 3
+    models: Dict[str, ModelConfig] = field(default_factory=dict)
+    timeouts: Optional[TimeoutConfig] = None
+    input_file: Optional[FileConfig] = None
+    goal: Optional[str] = None
+```
+
+#### 2. Configuration Parser Implementation
+
+Create a robust configuration parser in `configuration.py`:
+
+```python
+import yaml
+from typing import Dict, Any, Optional
+from configdataclasses import DiscussionConfig, ModelConfig, TimeoutConfig, FileConfig
+
+def load_config(config_path: str) -> DiscussionConfig:
+    """Load and parse YAML configuration file."""
+    with open(config_path, 'r') as f:
+        config_data = yaml.safe_load(f)
+    
+    return parse_config(config_data)
+
+def parse_config(config_data: Dict[str, Any]) -> DiscussionConfig:
+    """Parse configuration dictionary into DiscussionConfig object."""
+    discussion_data = config_data.get('discussion', {})
+    
+    # Parse models
+    models = {}
+    for model_id, model_data in discussion_data.get('models', {}).items():
+        models[model_id] = ModelConfig(
+            type=model_data.get('type'),
+            role=model_data.get('role'),
+            persona=model_data.get('persona', '')
+        )
+    
+    # Parse timeouts
+    timeouts = None
+    if 'timeouts' in discussion_data:
+        timeouts_data = discussion_data['timeouts']
+        timeouts = TimeoutConfig(
+            request=timeouts_data.get('request', 300),
+            retry_count=timeouts_data.get('retry_count', 3),
+            notify_on=timeouts_data.get('notify_on', ["timeout", "retry", "error"])
+        )
+    
+    # Parse input file
+    input_file = None
+    if 'input_file' in discussion_data:
+        file_data = discussion_data['input_file']
+        input_file = FileConfig(
+            path=file_data.get('path'),
+            type=file_data.get('type'),
+            max_resolution=file_data.get('max_resolution')
+        )
+    
+    return DiscussionConfig(
+        turns=discussion_data.get('turns', 3),
+        models=models,
+        timeouts=timeouts,
+        input_file=input_file,
+        goal=discussion_data.get('goal')
+    )
+```
+
+#### 3. Model Capability Detection
+
+Implement a comprehensive capability detection function that includes Ollama models:
+
+```python
+def detect_model_capabilities(model_type: str) -> Dict[str, bool]:
+    """Detect capabilities of specified model."""
+    capabilities = {
+        "vision": False,
+        "streaming": False,
+        "function_calling": False
+    }
+    
+    # Vision-capable models
+    vision_models = [
+        "claude-3-sonnet", "claude-3-opus", "claude-3-haiku",
+        "gpt-4-vision", "gpt-4o", 
+        "gemini-pro-vision", "gemini-1.5-pro"
+    ]
+    
+    # Ollama vision-capable models
+    ollama_vision_models = [
+        "gemma3", "llava", "bakllava", "moondream", "llava-phi3"
+    ]
+    
+    # Check if it's an Ollama model with vision support
+    if "ollama" in model_type.lower():
+        for vision_model in ollama_vision_models:
+            if vision_model in model_type.lower():
+                capabilities["vision"] = True
+                break
+    else:
+        # Check cloud model vision capabilities
+        for prefix in vision_models:
+            if model_type.startswith(prefix):
+                capabilities["vision"] = True
+                break
+    
+    return capabilities
+```
+
+### File Processing Implementation
+
+#### 1. Ollama-Specific Vision Support
+
+Update the OllamaClient class in `model_clients.py` to handle vision capabilities:
+
+```python
+def generate_response(self,
+                     prompt: str,
+                     system_instruction: str = None,
+                     history: List[Dict[str, str]] = None,
+                     role: str = None,
+                     mode: str = None,
+                     file_data: Dict[str, Any] = None,
+                     model_config: Optional[ModelConfig] = None) -> str:
+    """Generate a response from Ollama model with vision support."""
+    # ... existing code ...
+    
+    # Check if this is a vision-capable model and we have image data
+    is_vision_model = any(vm in self.model.lower() for vm in ["gemma3", "llava", "bakllava", "moondream", "llava-phi3"])
+    
+    if is_vision_model and file_data and file_data["type"] in ["image", "video"]:
+        # For Ollama vision models, we need to format the request differently
+        if file_data["type"] == "image":
+            # Format for image input
+            response = self.client.chat(
+                model=self.model,
+                messages=history,
+                images=[file_data["base64"]],
+                options={
+                    "num_ctx": 4096,
+                    "temperature": 0.7,
+                }
+            )
+        elif file_data["type"] == "video":
+            # For video, use key frames
+            key_frames = [frame["base64"] for frame in file_data["key_frames"]]
+            # Use first frame or a selection of frames depending on model capabilities
+            response = self.client.chat(
+                model=self.model,
+                messages=history,
+                images=[key_frames[0]],  # Most Ollama models only support one image at a time
+                options={
+                    "num_ctx": 4096,
+                    "temperature": 0.7,
+                }
+            )
+    else:
+        # Standard text-only response
+        # ... existing code ...
+    
+    return response.message.content
+```
+
+### Implementation Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ConversationManager
+    participant ConfigParser
+    participant FileHandler
+    participant ModelClient
+    
+    User->>ConversationManager: Initialize with config
+    ConversationManager->>ConfigParser: Load and parse YAML
+    ConfigParser-->>ConversationManager: Return DiscussionConfig
+    
+    User->>ConversationManager: Run discussion with file
+    ConversationManager->>FileHandler: Process file
+    FileHandler-->>ConversationManager: Return processed file data
+    
+    ConversationManager->>ModelClient: Check vision capabilities
+    ModelClient-->>ConversationManager: Confirm support
+    
+    ConversationManager->>ModelClient: Generate response with file
+    ModelClient-->>ConversationManager: Return model response
+    ConversationManager-->>User: Return discussion results
+```

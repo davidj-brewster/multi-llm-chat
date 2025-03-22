@@ -1,162 +1,168 @@
 # Configuration System Documentation
 
-## Overview
+The AI Battle framework now supports a comprehensive configuration system that allows you to define complex discussions with multiple models and file inputs using YAML configuration files.
 
-The configuration system uses YAML to define discussion parameters, model settings, and file inputs. This document outlines the schema, validation rules, and implementation details.
+## Configuration File Structure
 
-## Schema
+A complete configuration file has the following structure:
 
 ```yaml
 discussion:
-  # Number of back-and-forth exchanges
-  turns: 3  
-  
-  # Model configurations
+  turns: 3  # Number of back-and-forth exchanges
   models:
     model1:
       type: "claude-3-sonnet"  # Model identifier
-      role: "human"            # Role in conversation (human/assistant)
+      role: "human"            # Role in conversation
       persona: |               # Persona-based system instructions
-        You are a neurological radiologist with the following characteristics:
-        - 15 years of clinical experience
-        - Specialization in advanced imaging techniques
-        - Research focus on early detection patterns
-        - Known for innovative diagnostic approaches
-        [Additional persona details integrated into role prompt]
-    
+        You are an expert with the following characteristics:
+         - Specific expertise details
+         - Behavioral traits
+         - Knowledge areas
     model2:
       type: "gemini-pro"
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:
-        - Deep expertise in medical imaging analysis
-        - Collaborative approach to diagnosis
-        - Evidence-based reasoning methodology
-        [Additional persona details integrated into role prompt]
-  
-  # Timeout settings
+         - Expertise areas
+         - Interaction style
+         - Reasoning approach
+   
   timeouts:
     request: 300             # Request timeout in seconds
     retry_count: 3           # Number of retries
     notify_on:
-      - timeout             # Notify on timeout
-      - retry              # Notify on retry
-      - error              # Notify on error
+      - timeout              # Notify on timeout
+      - retry                # Notify on retry
+      - error                # Notify on error
   
-  # Input file configuration
   input_file:
-    path: "./scan.mp4"      # Path to input file
-    type: "video"           # image, video, or text
-    max_resolution: "4K"    # Maximum resolution to maintain
+    path: "./path/to/file"   # Path to input file
+    type: "image"            # image, video, text, or code
+    max_resolution: "1024x1024"  # For images/videos
     
-  # Discussion objective
   goal: |
-    Analyze the provided brain scan video sequence and discuss potential abnormalities,
-    focusing on regions of concern and possible diagnostic implications.
+    Detailed description of the discussion objective.
+    This can be multi-line and include specific instructions.
 ```
 
-## Validation Rules
+## Configuration Components
 
-### Required Fields
-- `discussion.turns` (integer, > 0)
-- `discussion.models` (object with at least 2 models)
-- `discussion.goal` (string, non-empty)
+### Models
 
-### Model Configuration
-- `type`: Must be one of the supported models:
-  - Claude: claude-3-sonnet, claude-3-haiku
-  - Gemini: gemini-pro, gemini-pro-vision
-  - OpenAI: gpt-4-vision, gpt-4
-  - Local: ollama-*, mlx-*
-- `role`: Must be either "human" or "assistant"
-- `persona`: Optional, but if provided must be non-empty string
+The `models` section defines the participants in the conversation:
 
-### File Configuration
-- Supported types:
-  - Images: jpg, jpeg, png, gif, webp
-  - Videos: mp4, mov, avi, webm
-  - Text: txt, md, py, js, etc.
-- Resolution settings:
-  - Images: up to 8192x8192
-  - Videos: up to 4K (3840x2160)
-- File size limits:
-  - Images: 20MB
-  - Videos: 100MB
-  - Text: 10MB
+- **type**: The model identifier (e.g., "claude-3-sonnet", "gemini-pro", "gpt-4o")
+- **role**: Either "human" or "assistant"
+- **persona**: Detailed instructions that define the model's behavior, expertise, and interaction style
 
-### Timeout Configuration
-- `request`: 30-600 seconds
-- `retry_count`: 0-5 attempts
-- `notify_on`: Array of event types
+You must define at least two models, typically one with the "human" role and one with the "assistant" role.
 
-## Implementation Details
+### Timeouts
 
-### Configuration Loading
-```python
-def load_config(path: str) -> Dict:
-    """Load and validate YAML configuration file"""
-    with open(path) as f:
-        config = yaml.safe_load(f)
-    validate_config(config)
-    return config
-```
+The `timeouts` section controls request handling:
 
-### Validation Pipeline
-1. Schema validation
-2. Model capability checking
-3. File validation
-4. Timeout configuration validation
+- **request**: Maximum time in seconds to wait for a model response
+- **retry_count**: Number of times to retry a failed request
+- **notify_on**: Events that trigger notifications (timeout, retry, error)
 
-### Error Handling
-- Configuration errors include:
-  - Schema validation failures
-  - Unsupported model types
-  - Invalid file types/sizes
-  - Invalid timeout settings
+### Input File
 
-### Model Capability Detection
-- Vision support for image/video
-- Text processing capabilities
-- Token limits
-- API restrictions
+The `input_file` section defines a file to include in the discussion:
 
-## Usage Example
+- **path**: Path to the file (relative to the project root)
+- **type**: File type ("image", "video", "text", or "code")
+- **max_resolution**: For images and videos, the maximum resolution to maintain
+
+### Goal
+
+The `goal` field defines the objective of the discussion. This should be a clear, detailed description of what you want the models to discuss or accomplish.
+
+## Supported Model Types
+
+The framework supports various model types:
+
+### Cloud Models
+
+- **Claude**: "claude-3-sonnet", "claude-3-opus", "claude-3-haiku", "claude-3-5-sonnet"
+- **OpenAI**: "gpt-4", "gpt-4o", "gpt-4-vision"
+- **Gemini**: "gemini-pro", "gemini-pro-vision", "gemini-2.0-pro"
+
+### Local Models
+
+- **Ollama**: Various models including vision-capable ones like "llava", "bakllava", "gemma3"
+- **MLX**: Local models running through MLX
+
+## Vision Capabilities
+
+Not all models support vision. The framework automatically detects vision capabilities based on the model type:
+
+- **Vision-capable cloud models**: Claude-3 series, GPT-4o, GPT-4-vision, Gemini Pro Vision
+- **Vision-capable Ollama models**: llava, bakllava, moondream, llava-phi3, gemma3
+
+When using a file input with a model that doesn't support vision, the framework will attempt to convert the file content to a text representation.
+
+## File Type Support
+
+The framework supports various file types:
+
+### Images
+- Extensions: .jpg, .jpeg, .png, .gif, .webp
+- Automatically resized to a maximum resolution (default: 1024x1024)
+- Converted to base64 for API transmission
+
+### Videos
+- Extensions: .mp4, .mov, .avi, .webm
+- Key frames extracted for analysis
+- First frame used for models that only support single images
+
+### Text Files
+- Extensions: .txt, .md, .csv, .json, .yaml, .yml
+- Automatically chunked for large files
+- Included directly in the conversation context
+
+### Code Files
+- Extensions: .py, .js, .html, .css, .java, etc.
+- Displayed with line numbers
+- Language detection based on file extension
+
+## Using the Configuration System
+
+### Loading a Configuration
 
 ```python
 from ai_battle import ConversationManager
 
 # Initialize with config
-manager = ConversationManager.from_config("discussion_config.yaml")
+manager = ConversationManager.from_config("path/to/config.yaml")
 
 # Run discussion
 result = await manager.run_discussion()
 ```
 
-## Integration Points
+### Programmatic Configuration
 
-### BaseClient Extensions
-- File content handling
-- Vision capabilities
-- Timeout management
+You can also create configuration objects programmatically:
 
-### ConversationManager Updates
-- Configuration parsing
-- File context management
-- Enhanced error handling
+```python
+from configdataclasses import DiscussionConfig, ModelConfig, FileConfig, TimeoutConfig
 
-## Status
+config = DiscussionConfig(
+    turns=3,
+    models={
+        "model1": ModelConfig(type="claude-3-sonnet", role="human", persona="..."),
+        "model2": ModelConfig(type="gemini-pro", role="assistant", persona="...")
+    },
+    input_file=FileConfig(path="./image.jpg", type="image"),
+    goal="Analyze this image and discuss its key elements."
+)
 
-Phase 1 Implementation Progress:
-- [x] Configuration schema defined
-- [x] Validation rules documented
-- [ ] YAML parser implementation
-- [ ] Model capability detection
-- [ ] File handling setup
-- [ ] Timeout management
-- [ ] Integration with existing system
+manager = ConversationManager(config=config)
+```
 
-Next Steps:
-1. Implement YAML configuration parser
-2. Add validation functions
-3. Extend BaseClient for file handling
-4. Update ConversationManager
+## Best Practices
+
+1. **Clear Goals**: Define specific, clear goals for the discussion
+2. **Complementary Personas**: Create personas that complement each other for richer discussions
+3. **Appropriate Models**: Choose models with capabilities that match your file type
+4. **File Optimization**: Optimize large files before including them in discussions
+5. **Testing**: Test your configuration with smaller discussions before running longer ones

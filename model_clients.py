@@ -4,15 +4,17 @@ import time
 import logging
 import random
 from typing import List, Dict, Optional, Any, TypeVar, Union
+import base64
 from dataclasses import dataclass
 from google import genai
 from google.genai import types
 from openai import OpenAI
 from anthropic import Anthropic
 from ollama import AsyncClient, ChatResponse, chat
-
+import requests
 from adaptive_instructions import AdaptiveInstructionManager
 from shared_resources import MemoryManager
+from configuration import detect_model_capabilities
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +40,47 @@ class BaseClient:
         self.role = role
         self.model = model
         #self._adaptive_manager = None  # Lazy initialization
+        self.capabilities = detect_model_capabilities(model)
         self.instructions = None
         self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
+
+    def _prepare_file_content(self, file_data: Dict[str, Any]) -> Any:
+        """Prepare file content for model API."""
+        if not file_data:
+            return None
+        
+        if file_data["type"] == "image":
+            return {
+                "type": "image",
+                "data": file_data.get("base64", ""),
+                "mime_type": file_data.get("mime_type", "image/jpeg"),
+                "width": file_data.get("dimensions", (0, 0))[0],
+                "height": file_data.get("dimensions", (0, 0))[1]
+            }
+        elif file_data["type"] == "video":
+            # For video, we'll use key frames
+            return {
+                "type": "video",
+                "frames": file_data.get("key_frames", []),
+                "duration": file_data.get("duration", 0),
+                "mime_type": file_data.get("mime_type", "video/mp4")
+            }
+        elif file_data["type"] in ["text", "code"]:
+            return {
+                "type": file_data["type"],
+                "content": file_data.get("text_content", ""),
+                "language": file_data.get("mime_type", "").split("/")[-1] if file_data["type"] == "code" else None
+            }
+        else:
+            return None
+
+    def _create_file_reference(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a lightweight reference to file data for history."""
+        return {
+            "type": file_data["type"],
+            "path": file_data.get("path", ""),
+            "metadata": {k: v for k, v in file_data.items() if k not in ["base64", "text_content", "key_frames"]}
+        }
 
     def __str__(self):
         return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
@@ -175,8 +216,9 @@ class GeminiClient(BaseClient):
     """Client for Gemini API interactions"""
     def __init__(self, mode: str, role: str, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
         api_key = os.getenv("GOOGLE_API_KEY")
-        super().__init__(mode=mode, api_key=api_key, domain=domain, model=model)
+        super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         self.model_name = self.model
+        self.role = "human" if role in ["user", "human"] else "model"
         try:
             self.client = genai.Client(api_key=self.api_key)
         except Exception as e:
@@ -188,48 +230,88 @@ class GeminiClient(BaseClient):
 
     def _setup_generation_config(self):
         self.generation_config = types.GenerateContentConfig(
-            temperature=0.8,
-            maxOutputTokens=1024,
+            temperature=0.7,
+            maxOutputTokens=1536,
             candidateCount=1,
             responseMimeType="text/plain",
             safety_settings=[]
         )
-
     def generate_response(self,
                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
                          role: str = None,
+                         file_data: Dict[str, Any] = None,
                          mode: str = None,
                          model_config: Optional[ModelConfig] = None) -> str:
         """Generate response using Gemini API with assertion verification"""
         if model_config is None:
             model_config = ModelConfig()
-        if role and not self.role:
+            
+        # Update mode and role if provided
+        if mode:
+            self.mode = mode
+        if role:
+            self.role = "human" if role in ["user", "human"] else "model"
+                         
+        if model_config is None:
+            model_config = ModelConfig()
+        if role == "user":
+            role = "human"
+        else:
+            role = "model"
+        if role: #and not self.role:
             self.role = role
-
+        
         history = history if history else []
         # Update instructions based on conversation history
         if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode)
+            current_instructions = self.adaptive_manager.generate_instructions(history, role="human",domain=self.domain,mode=self.mode)
         else:
             current_instructions = system_instruction if system_instruction and system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are a helpful AI {self.domain}. Think step by step and show reasoning. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed. Limit your output to {MAX_TOKENS} tokens."
+
+        # Prepare content for Gemini API
+        contents = []
+        
+        # Add file content if provided
+        if file_data:  # All Gemini models support vision according to detect_model_capabilities
+            if file_data["type"] == "image" and "base64" in file_data:
+                # Format image for Gemini
+                contents.append({
+                    "role": "human",
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": file_data.get("mime_type"),
+                                "data": file_data["base64"]
+                            }
+                        }
+                    ]
+                })
+            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                # Add text content
+                contents.append({
+                    "role": "model", "parts": [{"text": file_data["text_content"]}]
+                })
+        
+        # Add prompt text
+        contents.append({"role": "human", "parts": [{"text": prompt}]})
 
         try:
             # Generate final response
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=prompt,
+                contents=contents if contents else prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=current_instructions,
-                    temperature=0.85,
+                    temperature=0.7,
                     max_output_tokens=1280,
                     candidateCount=1,
                     safety_settings=[
                         types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
                         types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_ONLY_HIGH"),
                         types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_ONLY_HIGH"),
-                        types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_ONLY_HIGH"),
+                        types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
                         types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_ONLY_HIGH"),
                     ]
                 )
@@ -242,7 +324,7 @@ class GeminiClient(BaseClient):
 
 class ClaudeClient(BaseClient):
     """Client for Claude API interactions"""
-    def __init__(self, role: str, api_key: str, mode: str, domain: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, role: str, api_key: str, mode: str, domain: str, model: str = "claude-3-7-sonnet-20241022"):
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         try:
             api_key = anthropic_api_key or api_key
@@ -261,6 +343,7 @@ class ClaudeClient(BaseClient):
                          history: List[Dict[str, str]] = None,
                          role: str = None,
                          mode: str = None,
+                         file_data: Dict[str, Any] = None,
                          model_config: Optional[ModelConfig] = None) -> str:
         """Generate human-like response using Claude API with conversation awareness"""
         if model_config is None:
@@ -294,22 +377,57 @@ class ClaudeClient(BaseClient):
        
         messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
-        messages.append({
-            "role": "user",
-            "content": (
-                context_prompt  if context_prompt else "" + "\n" + prompt if prompt else ""
-            )
-        })
+        # Handle file data for Claude
+        if file_data:  # All Claude models support vision according to detect_model_capabilities
+            if file_data['type'] == "image" and "base64" in file_data:
+                # Format for Claude's multimodal API
+                #logger.info(file_data)
+                message_content = [
+                    {
+                        "type": "image", 
+                        "source": { 
+                            "type": "base64", 
+                            "media_type": file_data["mime_type"], 
+                            "data": file_data["base64"] 
+                        } 
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+                messages.append({
+                    "role": "user",
+                    "content": message_content
+                })
+            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                # Add text content with prompt
+                messages.append({
+                    "role": "user",
+                    "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
+                })
+            else:
+                # Standard prompt
+                messages.append({
+                    "role": "user",
+                    "content": context_prompt if context_prompt else "" + "\n" + prompt if prompt else ""
+                })
+        else:
+            # Standard prompt without file data
+            messages.append({
+                "role": "user",
+                "content": context_prompt if context_prompt else "" + "\n" + prompt if prompt else ""
+            })
 
         try:
             response = self.client.messages.create(
                 model=self.model,
                 system=current_instructions,
                 messages=messages,
-                max_tokens=1536,
-                temperature=0.85  # Higher temperature for human-like responses
+                max_tokens=1024,
+                temperature=0.8  # Higher temperature for human-like responses
             )
-            #logger.debug(f"Claude (Human) response generated successfully")
+            # logger.debug(f"Claude (Human) response generated successfully")
             logger.debug(f"response: {str(response.content)}")
             return response.content if response else ""
         except Exception as e:
@@ -318,8 +436,7 @@ class ClaudeClient(BaseClient):
 
 class OpenAIClient(BaseClient):
     """Client for OpenAI API interactions"""
-    def __init__(self, api_key: str = None, mode: str = "ai-ai", domain: str = "General Knowledge", 
-                 role: str = None, model: str = "chatgpt-4o-latest"):
+    def __init__(self, api_key: str = None, mode: str = "ai-ai", domain: str = "General Knowledge", role: str = None, model: str = "chatgpt-4o-latest"):
         api_key = os.environ.get("OPENAI_API_KEY")
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
@@ -340,6 +457,7 @@ class OpenAIClient(BaseClient):
                          history: List[Dict[str, str]],
                          role: str = None,
                          mode: str = None,
+                         file_data: Dict[str, Any] = None,
                          model_config: Optional[ModelConfig] = None) -> str:
         """Generate response using OpenAI API"""
         if role:
@@ -349,7 +467,7 @@ class OpenAIClient(BaseClient):
 
         history = history if history else [{"role": "user", "content": prompt}]
         # Analyze conversation context
-        conversation_analysis = self._analyze_conversation(history[-6:])  # Limit history analysis
+        conversation_analysis = self._analyze_conversation(history[-10:])  # Limit history analysis
         #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and history and history is not None and len(history) > 0:
         #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
         #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
@@ -365,28 +483,47 @@ class OpenAIClient(BaseClient):
         else:
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
        
-        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
+        # Format messages for OpenAI API
+        formatted_messages = []
         
-        messages.append({
-            "role": "user",
-            "content": (
-                context_prompt + " " + prompt
-            )
+        # Add system message
+        formatted_messages.append({
+            "role": "system",
+            "content": current_instructions
         })
 
-
+        # Add history messages
         if history:
-            recent_history = history
-            for msg in recent_history:
+            for msg in history:
                 old_role = msg["role"]
                 if old_role in ["user", "assistant", "moderator", "system"]:
                     new_role = 'developer' if old_role in ["system","Moderator"] else "user" if old_role in ["user", "human", "moderator"] else 'assistant'
-                    messages.append({'role': new_role, 'content': msg['content']})
+                    formatted_messages.append({'role': new_role, 'content': msg['content']})
 
-        messages.append({
-            'role': 'user',
-            'content': context_prompt + "\n" + prompt
-        })
+        # Handle file data for OpenAI
+        if file_data and ("gpt-4-vision" in self.model or "gpt-4o" in self.model):
+            if file_data["type"] == "image" and "base64" in file_data:
+                # Format for OpenAI's vision API
+                formatted_messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                })
+            else:
+                # Standard prompt with text content if available
+                content = f"{file_data.get('text_content', '')}\n\n{prompt}" if file_data and file_data.get("text_content") else prompt
+                formatted_messages.append({"role": "user", "content": content})
+        else:
+            # Standard prompt without file data
+            formatted_messages.append({"role": "user", "content": prompt})
 
         # Add current prompt
         # if self.role == "human" or self.mode == "ai-ai":
@@ -398,7 +535,7 @@ class OpenAIClient(BaseClient):
             if "o1" in self.model:
                 response = self.client.chat.completions.create(
                     model="o1",
-                    messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
+                    messages=formatted_messages,
                     temperature=1.0,
                     max_tokens=13192,
                     reasoning_effort="high",
@@ -409,7 +546,7 @@ class OpenAIClient(BaseClient):
             else:
                 response = self.client.chat.completions.create(
                     model="gpt-4o",
-                    messages=[msg for msg in history if msg["role"] in ["user", "assistant","system"]],
+                    messages=formatted_messages,
                     temperature=0.85,
                     max_tokens=1536,
                     timeout=90,
@@ -437,6 +574,7 @@ class PicoClient(BaseClient):
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
                          model_config: Optional[ModelConfig] = None,
+                         file_data: Dict[str, Any] = None,
                          mode: str = None,
                          role: str = None) -> str:
         """Generate a response from your local Ollama model."""
@@ -466,8 +604,20 @@ class PicoClient(BaseClient):
         context_prompt = self.generate_human_prompt(history)  if role == "human" or self.mode == "ai-ai" else f"{prompt}"
        
         # Limit history size
-        history = history[-8:] if history else []
+        history = history[-10:] if history else []
         history.append({'role': 'user', 'content': context_prompt})
+        
+        # Check if this is a vision-capable model and we have image data
+        is_vision_model = any(vm in self.model.lower() for vm in ["gemma3", "llava", "bakllava", "moondream", "llava-phi3"])
+        
+        # Handle file data for Ollama
+        images = None
+        if is_vision_model and file_data and file_data["type"] == "image" and "base64" in file_data:
+            # Format for Ollama's vision API
+            images = file_data["base64"]
+        elif is_vision_model and file_data and file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+            images = [file_data["path"]]
+            prompt = f"{prompt}"
 
         try:
             response = self.client.chat(
@@ -476,12 +626,13 @@ class PicoClient(BaseClient):
                 options={
                     "num_ctx": 4096,
                     "num_predict": 512,
-                    "temperature": 0.65,
+                    "temperature": 0.6,
                     "num_batch": 256,
                     "n_batch": 256,
                     "n_ubatch": 256,
                     "top_p": 0.85
-                }
+                },
+                images=images if images else None
             )
             return response.message.content
         except Exception as e:
@@ -521,6 +672,7 @@ class MLXClient(BaseClient):
                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
+                         file_data: Dict[str, Any] = None,
                          role: str = None,
                          model_config: Optional[ModelConfig] = None) -> str:
         """Generate response using MLX through OpenAI-compatible endpoint"""
@@ -540,7 +692,7 @@ class MLXClient(BaseClient):
         #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         history = history if history else []
-        if role == "user" or role == "human" or mode == "ai-ai":
+        if role == "user" or role == "human" or self.mode == "ai-ai":
             current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
         else:
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
@@ -559,7 +711,20 @@ class MLXClient(BaseClient):
                     messages.append({"role": msg["role"], "content": msg["content"]})
                 
         messages.append({"role": "user", "content": str(prompt)})
-        
+
+        # MLX doesn't support vision directly, but we can include text content
+        if file_data and file_data["type"] in ["text", "code"] and "text_content" in file_data:
+            # Add text content to the last message
+            last_msg = messages[-1]
+            file_content = file_data["text_content"]
+            file_path = file_data.get("path", "file")
+            
+            # Update the last message with file content
+            last_msg["content"] = f"[File: {file_path}]\n\n{file_content}\n\n{last_msg['content']}"
+            
+            # Replace the last message
+            messages[-1] = last_msg
+
         try:
             response = requests.post(
                 f"{self.base_url}/v1/chat/completions",
@@ -598,6 +763,7 @@ class OllamaClient(BaseClient):
                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
+                         file_data: Dict[str, Any] = None,
                          model_config: Optional[ModelConfig] = None,
                          mode: str = None,
                          role: str = None) -> str:
@@ -627,26 +793,39 @@ class OllamaClient(BaseClient):
 
         # Build context-aware prompt
         context_prompt = self.generate_human_prompt(history) if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
-       
 
         # Limit history size
-        history = history[-5:] if history and len(history)>0 else []
+        history = history[-14:] if history and len(history)>0 else []
         history.append({'role': 'system', 'content': current_instructions})
         history.append({'role': 'user', 'content': context_prompt})
+        # Check if this is a vision-capable model and we have image data
+        is_vision_model = any(vm in self.model.lower() for vm in ["gemma3", "llava", "vision", "llava-phi3"])
+        
+        # Handle file data for Ollama
+        images = None
+        if is_vision_model and file_data and file_data["type"] == "image":
+            # Format for Ollama's vision API
+            images = [file_data["path"]]
+            history.append({'role': 'user', 'content': f"Elaborate on our findings", 'images': images})
+        elif is_vision_model and file_data and file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+            # For video, use first frame
+            images = [file_data["key_frames"][0]["base64"]]
+            
+            prompt = f"{prompt}"
 
         try:
             response = chat(
                 model=self.model,
                 messages=history,
                 options={
-                    "num_ctx": 6132,
+                    "num_ctx": 32768,
                     "num_predict": 768,
-                    "temperature": 0.75,
-                    "num_batch": 256,
-                    "top_k": 30,
-                    "repeat_penalty": 0.9,
-                }
+                    "temperature": 0.6,
+                    "num_batch": 512,
+                    "top_k": 25,
+                },
             )
+                
             return response.message.content
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")

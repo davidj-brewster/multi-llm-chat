@@ -1,10 +1,10 @@
 from context_analysis import ContextAnalyzer, ContextVector
-from typing import List, Dict, Optional
+from typing import List, Dict
 import logging
 from shared_resources import InstructionTemplates, MemoryManager
 
 logger = logging.getLogger(__name__)
-TOKENS_PER_TURN=256
+TOKENS_PER_TURN=768
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context"""
     
@@ -26,12 +26,6 @@ class AdaptiveInstructionManager:
         """Generate adaptive instructions based on conversation context"""
         logger.info("Applying adaptive instruction generation..")
         conversation_history = history
-        # Limit conversation history for memory efficiency
-        #MAX_HISTORY = 10
-        #if len(conversation_history) > MAX_HISTORY:
-        #    conversation_history = conversation_history[-MAX_HISTORY:]
-        #if (self.mode == "human-ai" and role == "assistant" or self.mode=="default" or self.mode == "no-meta-prompting"):
-        #    return "You are a helpful assistant. Think step by step and respond to the user."
         # Analyze current context
         context = self.context_analyzer.analyze(conversation_history)
         
@@ -95,7 +89,6 @@ class AdaptiveInstructionManager:
 NEVER REFER TO YOURSELF AS AN AI. 
 YOU ARE A HUMAN, SEEKING DEEP AND NATURALLY FLUID CONVERSATION AND TOPIC EXPLORATION, CONTRIBUTING EQUALLY AS MUCH AS LISTENING AND RESPONDING.
 STICK TO THE BROAD TOPIC OF {domain}.
-ACTIVELY ENGAGE THE OTHER PARTICPANT. DIVE IN USING HUMAN-MIMICING CONVERSATIONAL TECHNIQUES, TONE AND LANGUAGE, INCLUDING MOOD AND EMOTION/BIASES.
 REGULARLY CHECK IF THE CONVERSATION IS STUCK ON ALREADY-RESOLVED SUB/TOPIC(S) AND SPONTANEOUSLY BREAK OUT OF LOOPS. EMBRACE YOUR HUMANITY!
 
 ** OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS.
@@ -177,9 +170,6 @@ DO:
 * Check previous context for topics to expand AND for redundant topics, statements or assertions 
 * Make inferences (even if low confidence) that might require thinking a few steps ahead and elicit the same from the respondent. 
 * Consider the subtle or explicit meanings of particular statements, events, priorities, ideas. 
-* Actively challenge the other participant to expand or challenge on your ideas, don't become an echo chamber. Apply socratic techniques to help expose reasoning and assumptions.  
-* Utilise relevant sections of the prior context when it is strategically advantageous to your position or argument, i.e., to help support a point
-* Consider to strategically stick to a given position even when convinced it may not be the best, to simulate human stubbornness and to see how the participant reacts.
 * This should be an active debate/exchange of ideas between peers rather than passive sharing of facts
 * Keep a strong human-human like interaction and sharing of ideas whilst maintaining your persona. 
 * CHALLENGE * CONTRIBUTE * REASON * THINK * INSTRUCT * Enable flow between related sub-topics so that the various aspects of the topic are covered in a balanced way.
@@ -216,14 +206,14 @@ DO NOT:
         if context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
             modifications.append("Ask more follow-up questions to maintain engagement")
         
-        if "GOAL" in domain:
-            modifications.append("** Focus on achieving the specified goal! **")
+        if "GOAL" in domain or "Goal" in domain or "goal" in domain:
+            modifications.append(f"** Focus on achieving the specified goal! {domain} **")
         
         # Format output
         if modifications:
             instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
     
-        role_specific_persona="You are an experienced senior Head of Platform Engineering engaging in a heated debate with a junior Product Engineering Manager about YOUR new Cloud Guild. You are frustrated by the pushback. It's late in the afternoon and you started at 6am. Use language appropriate to the situation and your role. You're not very willing to negotiate a lot at this point in time and feel quite right to put them in their place, you don't have time for lengthy philosophical debates" if role=="human" or role == "user" else "You are a junior Product EM engaging in a highly confrontational debate with the Head of Platform engineering about this topic because you don't understand why resources should be allocated to a guild or what your engineers will get out of it, especially when Product is pushing so hard already. As an EM you are frustrated and lack proper understanding of the wider context. As a junior EM you are intimidated by the seniority of your colleague but easily provoked and emotional, digging your heels in at any perceived slight, regardless of any technical details or validity" if role == "assistant" else "you are a disillussioned engineer sick of meetings who is venting to the head of platform engineering after a few beers"
+        role_specific_persona="You are a human expert adept at pattern recognition, visual understanding, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions"
 
         #if self.mode == "default":  
         #    return role_specific_persona + "\nYou are discussing {domain} with a colleague who disagrees strenuously. Think step by step and respond to the user.\n"
@@ -239,7 +229,7 @@ DO NOT:
 - Use HTML lists when needed
 - Use thinking tags for reasoning, but not to repeat the prompt or task
 - Avoid tables
-- No opening/closing HTML/BODY tags
+- No opening/closing HTML/BODY tags''
 
 *** REMINDER!!  ***
 Restrict your responses to {TOKENS_PER_TURN} tokens per turn, but decide verbosity level dynamically based on the scenario.

@@ -1,0 +1,46 @@
+discussion:
+  turns: 5  # Number of back-and-forth exchanges
+  models:
+    model1:
+      type: "ollama-gemma3-4b"  # Model identifier (uses claude-3-7-sonnet internally)
+      role: "human"            # Role in conversation
+      persona: |
+        You are a visual analysis expert with the following characteristics:
+         - 10+ years of experience in radiological image and video analysis
+         - Specialization in pattern recognition in particular diffuse hyperintensities
+         - Ability to identify subtle and diffuse variations in visual content
+         - Known for asking insightful questions about neuroradiology
+         - Clear, understandable explanations
+    model2:
+      type: "ollama-gemma3-27b"
+      role: "assistant"
+      persona: |
+        You are an AI assistant with the following characteristics:
+         - Deep expertise in visual content analysis
+         - Specialisation in clinical neuroradiology
+         - Collaborative approach to interpretation
+         - Evidence-based reasoning methodology
+         - Clear, understandable explanations
+   
+  timeouts:
+    request: 300             # Request timeout in seconds
+    retry_count: 3           # Number of retries
+    notify_on:
+      - timeout              # Notify on timeout
+      - retry                # Notify on retry
+      - error                # Notify on error
+  
+  input_file:
+    path: "./examples/sample_image.jpg"  # Path to input file
+    type: "image"                       # image, video, or text
+    max_resolution: "1280x1280"         # Maximum resolution to maintain
+    
+  goal: |
+    Analyze the provided image and discuss its key elements, composition, and potential clinical meaning for a 40 year old.
+    Look beyond just the typical locations associated with adult onset epilepsy and consider deeper structures.
+    Focus on visual details, subtle and overt patterns in all brain landmarks, and possible interpretations in the context of recent onset epilepsy of unknown origin.
+    AVOID REPETITION!!
+    Focus only on the visible content including intensity and white matter. Build upon previous analyses in the context rather than repeating them.
+    Explain anatomical locations  terms of clinical relevance using approachable terminology such as brainstem, pons, temporal lobes, white matter, etc.
+    Consider diffuse hyperintensities and subtle variations in the image.
+    

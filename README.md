@@ -38,6 +38,8 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
 - **Adaptive Learning**: Dynamic instruction generation based on conversation context
 - **Deep Analysis**: Multi-dimensional context analysis and conversation assessment
 - **Flexible Deployment**: Support for both cloud and local model execution
+- **Configuration System**: YAML-based configuration for easy setup and customization
+- **File-Based Discussions**: Support for images, videos, text, and code files in conversations
 
 The framework excels at creating rich, goal-oriented discussions between models while maintaining conversation coherence and knowledge depth.
 
@@ -137,6 +139,11 @@ graph TD
         Models --> Cloud[Cloud Models]
         Models --> Local[Local Models]
     end
+    
+    subgraph "New Features"
+        Config[Configuration System] --> CM
+        Files[File Processing] --> CM
+    end
 ```
 
 ## Performance Insights
@@ -202,10 +209,13 @@ curl https://ollama.ai/install.sh | sh
 
 # Pull required models
 ollama pull phi4:latest
+ollama pull llava:latest  # Vision-capable model
 ollama pull llama3.1-8b-lexi:latest
 ```
 
 ### Basic Usage
+
+#### Standard Conversation
 
 ```python
 from ai_battle import ConversationManager
@@ -216,11 +226,38 @@ manager = ConversationManager(
     mode="human-ai"
 )
 
-# Run conversation
+# Run standard conversation
 conversation = await manager.run_conversation(
     initial_prompt="Explain quantum entanglement",
     human_model="claude",
     ai_model="gemini"
+)
+```
+
+#### Using Configuration File
+
+```python
+from ai_battle import ConversationManager
+
+# Initialize from configuration file
+manager = ConversationManager.from_config("examples/configs/vision_discussion.yaml")
+
+# Run discussion based on configuration
+result = await manager.run_discussion()
+```
+
+#### File-Based Conversation
+
+```python
+from ai_battle import ConversationManager
+from configdataclasses import FileConfig
+
+# Run file-based conversation
+conversation = await manager.run_conversation_with_file(
+    initial_prompt="Analyze this image and explain what you see",
+    human_model="claude",
+    ai_model="gemini-pro-vision",
+    file_config=FileConfig(path="./image.jpg", type="image")
 )
 ```
 
@@ -242,6 +279,19 @@ conversation = await manager.run_conversation(
   - Task-oriented conversations
   - Progress tracking
   - Outcome evaluation
+
+- **File-Based Discussions**
+  - Image analysis and interpretation
+  - Video frame processing
+  - Text file analysis
+  - Code review and explanation
+
+- **Configuration-Driven Setup**
+  - YAML configuration files
+  - Model role and persona definition
+  - File input specification
+  - Timeout and retry handling
+  - Goal-oriented discussions
 
 ### 2. Context Analysis
 
@@ -291,6 +341,7 @@ The framework includes sophisticated monitoring capabilities:
 - [Model Integration Guide](docs/models.md)
 - [Context Analysis System](docs/context.md)
 - [Adaptive Instructions](docs/instructions.md)
+- [Configuration System](docs/configuration.md)
 
 ## Configuration
 
@@ -315,6 +366,31 @@ config = ModelConfig(
 )
 ```
 
+### YAML Configuration
+
+Create a YAML configuration file:
+
+```yaml
+discussion:
+  turns: 3
+  models:
+    model1:
+      type: "claude-3-sonnet"
+      role: "human"
+      persona: "Expert role definition..."
+    model2:
+      type: "gemini-pro-vision"
+      role: "assistant"
+      persona: "Assistant role definition..."
+  input_file:
+    path: "./examples/sample_image.jpg"
+    type: "image"
+    max_resolution: "1024x1024"
+  goal: "Analyze the provided image and discuss its key elements..."
+```
+
+See [Configuration Documentation](docs/configuration.md) for more details.
+
 ## Advanced Usage
 
 ### Custom Model Integration
@@ -336,6 +412,28 @@ class CustomModelClient(BaseClient):
         pass
 ```
 
+### File-Based Discussions
+
+```python
+from ai_battle import ConversationManager
+from configdataclasses import FileConfig
+
+# Initialize manager
+manager = ConversationManager(
+    domain="Image Analysis",
+    mode="ai-ai"
+)
+
+# Run file-based conversation
+conversation = await manager.run_conversation_with_file(
+    initial_prompt="Analyze this image in detail",
+    human_model="claude-3-sonnet",
+    ai_model="gemini-pro-vision",
+    mode="ai-ai",
+    file_config=FileConfig(path="./image.jpg", type="image")
+)
+```
+
 ### Conversation Analysis
 
 ```python
@@ -352,6 +450,11 @@ print(f"Knowledge Depth: {context.knowledge_depth:.2f}")
 ## Development Roadmap
 
 1. **Analytics Framework**
+   - ✅ Configuration system
+   - ✅ File-based discussions
+   - ✅ Vision model support
+   - ✅ Local model vision capabilities
+   - ⏳ Additional features:
    - Model performance metrics
    - Conversation quality analysis
    - Comparative analytics
