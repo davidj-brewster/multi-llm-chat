@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T')
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 256
+MAX_TOKENS = 1024
 TOKENS_PER_TURN = MAX_TOKENS
 @dataclass
 class ModelConfig:
     """Configuration for AI model parameters"""
     temperature: float = 0.8
-    max_tokens: int = 2048
+    max_tokens: int = 1024
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
 
@@ -468,14 +468,6 @@ class OpenAIClient(BaseClient):
         history = history if history else [{"role": "user", "content": prompt}]
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history[-10:])  # Limit history analysis
-        #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and history and history is not None and len(history) > 0:
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
-        #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
-        #    current_instructions = self.generate_human_system_instructions()
-        #elif self.role == "human" or self.role == "user":
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
-        #else:  # ai in human-ai mode
-        #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
@@ -501,7 +493,7 @@ class OpenAIClient(BaseClient):
                     formatted_messages.append({'role': new_role, 'content': msg['content']})
 
         # Handle file data for OpenAI
-        if file_data and ("gpt-4-vision" in self.model or "gpt-4o" in self.model):
+        if file_data and ("gpt-4o" in self.model or "o1" in self.model):
             if file_data["type"] == "image" and "base64" in file_data:
                 # Format for OpenAI's vision API
                 formatted_messages.append({
@@ -585,14 +577,6 @@ class PicoClient(BaseClient):
 
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history[-10:])  # Limit history analysis
-        #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and history and history is not None and len(history) > 0:
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
-        #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
-        #    current_instructions = self.generate_human_system_instructions()
-        #elif self.role == "human" or self.role == "user":
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
-        #else:  # ai in human-ai mode
-        #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         history = history if history else []
         if role == "user" or role == "human" or mode == "ai-ai":
@@ -605,6 +589,8 @@ class PicoClient(BaseClient):
        
         # Limit history size
         history = history[-10:] if history else []
+        history.append({'role': 'developer', 'content': current_instructions})
+
         history.append({'role': 'user', 'content': context_prompt})
         
         # Check if this is a vision-capable model and we have image data
@@ -614,25 +600,26 @@ class PicoClient(BaseClient):
         images = None
         if is_vision_model and file_data and file_data["type"] == "image" and "base64" in file_data:
             # Format for Ollama's vision API
-            images = file_data["base64"]
+            images = file_data["path"]
+            history.append({'role': 'user', 'content': images})
         elif is_vision_model and file_data and file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
             images = [file_data["path"]]
             prompt = f"{prompt}"
-
+            history.append({'role': 'user', 'content': images})
+            
         try:
             response = self.client.chat(
                 model=self.model,
                 messages=history,
                 options={
-                    "num_ctx": 4096,
+                    "num_ctx": 16384,
                     "num_predict": 512,
-                    "temperature": 0.6,
+                    "temperature": 0.7,
                     "num_batch": 256,
                     "n_batch": 256,
                     "n_ubatch": 256,
-                    "top_p": 0.85
+                    "top_p": 0.9
                 },
-                images=images if images else None
             )
             return response.message.content
         except Exception as e:
@@ -682,14 +669,6 @@ class MLXClient(BaseClient):
         # Format messages for OpenAI chat completions API
         messages = []
         current_instructions = ""
-        #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and history and history is not None and len(history) > 0:
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
-        #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
-        #    current_instructions = self.generate_human_system_instructions()
-        #elif self.role == "human" or self.role == "user":
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
-        #else:  # ai in human-ai mode
-        #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
 
         history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
@@ -822,10 +801,10 @@ class OllamaClient(BaseClient):
                 messages=messages,  # Pass the correctly formatted messages
                 stream=False,
                 options={
-                    "num_ctx": 32768,
+                    "num_ctx": 16384,
                     "num_predict": 1024,
-                    "temperature": 0.8,
-                    "num_batch": 512,
+                    "temperature": 0.95,
+                    "num_batch": 256,
                     "top_k": 25,
                 },
 
