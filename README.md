@@ -12,6 +12,7 @@ through iterative engagement mechanisms. In practice, that means: Model size is 
 ### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
 
 This dialogue is particularly entertaining because I based the "Human" prompt on the responses from ChatGPT, Claude.ai and Gemini about my own conversational style with them. This results in a very, very task-oriented, slightly sardonic, irritable and conversely highly engaged "Human" who completely dominated the MRI review with the "AI", despite Gemma 3 27B being clearly the more capable model from a technical point of view.
+On a technical level the meta-prompting of both AIs clearly advances this conversation extremely significantly, well beyond what I thought would be possible of such small self-hosted models, very impressive..
 
 https://raw.githack.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/main/examples/vision_discussion_3D%20Rotational%20T2%20Flair%20movie.html
 
