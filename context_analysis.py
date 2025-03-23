@@ -61,12 +61,12 @@ class ContextVector:
 
 class ContextAnalyzer:
     """Analyzes conversation context across multiple dimensions"""
-    
+
     def __init__(self, mode: str = "l"):
         self.vectorizer = VectorizerSingleton.get_instance()
         self.nlp = SpacyModelSingleton.get_instance()
         self.mode = mode
-        
+
         # Log memory usage after initialization
         if logger.isEnabledFor(logging.DEBUG):
             logger.warning("spaCy not available, falling back to basic analysis")
@@ -86,15 +86,15 @@ class ContextAnalyzer:
             'precision': r'precisely|specifically|explicitly|definitively',
             'integration': r'integrate|combine|synthesize|unify|merge'
         }
-        
+
     def analyze(self, conversation_history: List[Dict[str, str]]) -> ContextVector:
         """Analyze conversation context across multiple dimensions"""
-        
+
         try:
             # Validate input
             if not isinstance(conversation_history, list):
                 raise ValueError(f"Expected list for conversation_history, got {type(conversation_history)}")
-            
+
             # Extract content from messages
             try:
                 contents = [msg['content'] for msg in conversation_history]
@@ -107,7 +107,7 @@ class ContextAnalyzer:
                         contents.append(msg.get('content', ''))
                     except (AttributeError, TypeError):
                         contents.append('')
-                
+
             # Create context vector with error handling for each component
             return ContextVector(
                 semantic_coherence=self._analyze_semantic_coherence(contents),
@@ -128,31 +128,31 @@ class ContextAnalyzer:
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             # Return a default context vector with zeros
             return ContextVector()
-            
-        
+
+
     def _analyze_semantic_coherence(self, contents: List[str]) -> float:
         """Measure how well responses relate to previous context"""
         if len(contents) < 3:
             return 1.0
-            
+
         # Create TF-IDF matrix
         try:
             try:
                 # Ensure contents are strings
                 valid_contents = [str(content) for content in contents[-5:]]
-                
+
                 # Check if we have enough content to analyze
                 if not valid_contents or all(not content.strip() for content in valid_contents):
                     logger.warning("No valid content for semantic coherence analysis")
                     return 0.0
-                
+
                 tfidf_matrix = self.vectorizer.fit_transform(valid_contents)  # Only analyze recent messages
-                
+
                 # Calculate average cosine similarity between consecutive responses
                 similarities = []
                 for i in range(len(valid_contents)-1):
                     similarity = cosine_similarity(
-                        tfidf_matrix[i:i+1], 
+                        tfidf_matrix[i:i+1],
                         tfidf_matrix[i+1:i+2]
                     )[0][0]
                     similarities.append(similarity)
@@ -164,7 +164,7 @@ class ContextAnalyzer:
             logger.error(f"Error calculating semantic coherence: {e}")
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise SemanticAnalysisError(f"Error calculating semantic coherence: {e}")
-            
+
     def _analyze_topic_drift(self, contents: List[str]) -> Dict[str, float]:
         """Track evolution of topics over conversation"""
         topics = {}
@@ -192,7 +192,7 @@ class ContextAnalyzer:
                 except (AttributeError, TypeError) as e:
                     logger.error(f"Error in basic text processing: {e}")
                     raise TopicAnalysisError(f"Error in basic text processing: {e}")
-            
+
             # Normalize counts to frequencies
             try:
                 total = sum(topics.values()) or 1  # Avoid division by zero
@@ -204,7 +204,7 @@ class ContextAnalyzer:
             logger.error(f"Error analyzing topic drift: {e}")
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise TopicAnalysisError(f"Error analyzing topic drift: {e}")
-            
+
     def _analyze_response_patterns(self, history: List[Dict[str, str]]) -> Dict[str, float]:
         """Analyze patterns in response styles"""
         patterns = {
@@ -213,10 +213,10 @@ class ContextAnalyzer:
             'challenge_frequency': 0.0,
             'agreement_frequency': 0.0
         }
-        
+
         if not history:
             return patterns
-            
+
         try:
             try:
                 for msg in history:
@@ -236,7 +236,7 @@ class ContextAnalyzer:
                     except (AttributeError, TypeError) as e:
                         logger.warning(f"Skipping invalid message in response pattern analysis: {e}")
                         continue
-                
+
                 # Normalize by message count (safe since we checked for empty history)
                 try:
                     msg_count = len(history)
@@ -252,7 +252,7 @@ class ContextAnalyzer:
             logger.error(f"Error analyzing response patterns: {e}")
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise PatternAnalysisError(f"Error analyzing response patterns: {e}")
-            
+
     def _calculate_engagement_metrics(self, history: List[Dict[str, str]]) -> Dict[str, float]:
         """Calculate metrics for interaction quality"""
         metrics = {
@@ -260,10 +260,10 @@ class ContextAnalyzer:
             'turn_taking_balance': 0.0,
             'response_time_consistency': 0.0
         }
-        
+
         if not history:
             return metrics
-            
+
         try:
             try:
                 # Average response length
@@ -275,15 +275,15 @@ class ContextAnalyzer:
                     except (AttributeError, TypeError) as e:
                         logger.warning(f"Skipping invalid message in engagement metrics: {e}")
                         continue
-                
+
                 metrics['avg_response_length'] = float(np.mean(lengths)) if lengths else 0.0
-                
+
                 # Turn-taking balance (ratio of human:AI responses)
                 try:
                     roles = [msg.get('role', '') for msg in history]
                     human_turns = sum(1 for role in roles if role == 'user')
                     ai_turns = sum(1 for role in roles if role == 'assistant')
-                    
+
                     # Calculate balance ensuring no division by zero
                     if ai_turns > 0:
                         metrics['turn_taking_balance'] = human_turns / ai_turns
@@ -294,7 +294,7 @@ class ContextAnalyzer:
                 except (AttributeError, TypeError) as e:
                     logger.error(f"Error calculating turn-taking balance: {e}")
                     metrics['turn_taking_balance'] = 0.0
-                
+
                 return metrics
             except (KeyError, AttributeError, TypeError) as e:
                 logger.error(f"Error processing messages for engagement metrics: {e}")
@@ -303,7 +303,7 @@ class ContextAnalyzer:
             logger.error(f"Error calculating engagement metrics: {e}")
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise EngagementAnalysisError(f"Error calculating engagement metrics: {e}")
-            
+
     def _estimate_cognitive_load(self, contents: List[str]) -> float:
         """Estimate complexity of current discussion"""
         try:
@@ -313,11 +313,11 @@ class ContextAnalyzer:
                     try:
                         # Use spaCy for sophisticated analysis
                         doc = self.nlp(str(content))
-                        
+
                         # Average sentence length
                         sent_lengths = [len([token for token in sent]) for sent in doc.sents]
                         avg_sent_length = np.mean(sent_lengths) if sent_lengths else 0
-                        
+
                         # Vocabulary complexity (ratio of unique words)
                         tokens = [token.text.lower() for token in doc if not token.is_punct]
                         vocabulary_complexity = len(set(tokens)) / len(tokens) if tokens else 0
@@ -333,17 +333,17 @@ class ContextAnalyzer:
                         # Estimate sentences by punctuation
                         sentences = [s.strip() for s in re.split(r'[.!?]+', content_str) if s.strip()]
                         words = content_str.lower().split()
-                        
+
                         # Average sentence length
                         avg_sent_length = np.mean([len(s.split()) for s in sentences]) if sentences else 0
-                        
+
                         # Vocabulary complexity
                         vocabulary_complexity = len(set(words)) / len(words) if words else 0
                     except (AttributeError, TypeError, ZeroDivisionError) as e:
                         logger.error(f"Error in basic cognitive load analysis: {e}")
                         avg_sent_length = 0
                         vocabulary_complexity = 0
-                
+
                 # Additional complexity indicators (works with or without spaCy)
                 try:
                     technical_indicators = len(re.findall(
@@ -353,7 +353,7 @@ class ContextAnalyzer:
                 except (AttributeError, TypeError) as e:
                     logger.error(f"Error in technical indicators analysis: {e}")
                     technical_indicators = 0
-                
+
                 # Combine metrics
                 try:
                     message_complexity = (
@@ -365,13 +365,13 @@ class ContextAnalyzer:
                 except (TypeError, ValueError) as e:
                     logger.error(f"Error combining complexity metrics: {e}")
                     # Skip this message
-            
+
             return min(1.0, total_complexity / (3 * 2))  # Normalize to [0,1]
         except Exception as e:
             logger.error(f"Error estimating cognitive load: {e}")
             logger.debug(f"Stack trace for cognitive load error: {traceback.format_exc()}")
             return 0.0  # Return default value for this metric as it's not critical
-            
+
     def _assess_knowledge_depth(self, contents: List[str]) -> float:
         """Assess depth of domain understanding shown"""
         try:
@@ -406,7 +406,7 @@ class ContextAnalyzer:
                     except (AttributeError, TypeError, IndexError, ZeroDivisionError) as e:
                         logger.error(f"Error in basic knowledge depth analysis: {e}")
                         term_density = 0
-                
+
                 # Common analysis regardless of spaCy availability
                 try:
                     content_str = str(content).lower()
@@ -415,13 +415,13 @@ class ContextAnalyzer:
                         r'because|therefore|explains|means that|in other words',
                         content_str
                     ))
-                    
+
                     # Reference to concepts
                     concept_references = len(re.findall(
                         r'concept|principle|theory|idea|approach|technique',
                         content_str
                     ))
-                    
+
                     # Interconnection markers
                     interconnections = len(re.findall(
                         r'related to|connected with|linked to|associated with|depends on',
@@ -432,7 +432,7 @@ class ContextAnalyzer:
                     explanations = 0
                     concept_references = 0
                     interconnections = 0
-                
+
                 # Combine metrics
                 try:
                     message_depth = (
@@ -445,19 +445,19 @@ class ContextAnalyzer:
                 except (TypeError, ValueError) as e:
                     logger.error(f"Error combining knowledge depth metrics: {e}")
                     # Skip this message
-            
+
             return min(1.0, depth_score / 3)  # Normalize to [0,1]
         except Exception as e:
             logger.error(f"Error assessing knowledge depth: {e}")
             logger.debug(f"Stack trace for knowledge depth error: {traceback.format_exc()}")
             return 0.0  # Return default value for this metric as it's not critical
-            
+
     def _analyze_reasoning_patterns(self, contents: List[str]) -> Dict[str, float]:
         """Analyze types of reasoning used"""
         pattern_counts = {pattern: 0.0 for pattern in self.reasoning_patterns}
         if self.mode == "ai-ai":
             pattern_counts.update({pattern: 0.0 for pattern in self.ai_ai_patterns})
-        
+
         try:
             try:
                 for content in contents:
@@ -478,7 +478,7 @@ class ContextAnalyzer:
                             except (re.error, TypeError) as e:
                                 logger.error(f"Error in AI-AI regex pattern '{pattern}': {e}")
                                 continue
-                        
+
                 # Normalize counts
                 total = sum(pattern_counts.values()) or 1  # Avoid division by zero
                 normalized = {k: v/total for k, v in pattern_counts.items()}
@@ -489,7 +489,7 @@ class ContextAnalyzer:
         except Exception as e:
             logger.error(f"Error analyzing reasoning patterns: {e}", exc_info=True)
             return pattern_counts
-            
+
     def _detect_uncertainty(self, contents: List[str]) -> Dict[str, float]:
         """Detect markers of uncertainty or confidence"""
         markers = {
@@ -498,18 +498,18 @@ class ContextAnalyzer:
             'confidence': 0.0,
             'qualification': 0.0
         }
-        
+
         try:
             socratic_patterns = r'or did|interested|intrigued|conclusions|interpret|analysis|reason|suggest|think|believe|perspective|propose|consider|counter|question'
             uncertainty_patterns = r'maybe|might|could|unsure|potentially|theoretically|probably|questionably|questionable|debatably|supposed to|allegedly|according to some|would have you believe|more to it|unclear|doubtful|vague|sceptical'
             confidence_patterns = r'confident|obvious|absolutely|clearly|definitely|certainly|undoubtedly|even if|regardless|always|very|never|always|impossible|inevitable|doubtless|inevitable'
             qualification_patterns = r'maintaining|status-quo|conflicting|possibly|however|though|except|unless|only if|perhaps|one day|in the future|in the long term'
-            
+
             for content in contents[-3:]:  # Focus on recent messages
                 try:
                     # Ensure content is a string
                     content_str = str(content or "").lower()
-                    
+
                     markers['socratic'] += len(re.findall(socratic_patterns, content_str))
                     markers['uncertainty'] += len(re.findall(uncertainty_patterns, content_str))
                     markers['confidence'] += len(re.findall(confidence_patterns, content_str))
@@ -520,7 +520,7 @@ class ContextAnalyzer:
                 except re.error as e:
                     logger.error(f"Regex error in uncertainty detection: {e}")
                     continue
-                
+
             # Normalize by message count
             logger.debug("_detect_uncertainty: " + ''.join(contents) + f": {markers}")
             return {k: v/4 for k, v in markers.items()}

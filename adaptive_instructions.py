@@ -34,11 +34,11 @@ class TemplateNotFoundError(TemplateSelectionError):
 
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context"""
-    
+
     def __init__(self, mode: str):
         self.mode = mode
         self._context_analyzer = None  # Lazy initialization
-        
+
     @property
     def context_analyzer(self):
         """Lazy initialization of context analyzer."""
@@ -51,25 +51,25 @@ class AdaptiveInstructionManager:
             logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise ContextAnalysisError(f"Failed to initialize context analyzer: {e}")
 
-        
-    def generate_instructions(self, 
-                            history: List[Dict[str, str]], 
+
+    def generate_instructions(self,
+                            history: List[Dict[str, str]],
                             domain: str,
                             mode: str = "",
                             role: str = "") -> str:
         """Generate adaptive instructions based on conversation context"""
         try:
             logger.info("Applying adaptive instruction generation..")
-            
+
             # Validate inputs
             if not isinstance(history, list):
                 raise ValueError(f"History must be a list, got {type(history)}")
-            
+
             if not isinstance(domain, str):
                 raise ValueError(f"Domain must be a string, got {type(domain)}")
-            
+
             conversation_history = history
-            
+
             # Analyze current context
             try:
                 context = self.context_analyzer.analyze(conversation_history)
@@ -77,7 +77,7 @@ class AdaptiveInstructionManager:
                 logger.error(f"Error analyzing conversation context: {e}")
                 logger.debug(f"Stack trace: {traceback.format_exc()}")
                 raise ContextAnalysisError(f"Error analyzing conversation context: {e}")
-            
+
             # Select appropriate instruction template based on context
             try:
                 template = self._select_template(context, self.mode)
@@ -90,7 +90,7 @@ class AdaptiveInstructionManager:
                 logger.error(f"Error selecting template: {e}")
                 logger.debug(f"Stack trace: {traceback.format_exc()}")
                 raise TemplateSelectionError(f"Error selecting template: {e}")
-            
+
             # Customize template based on context metrics
             try:
                 instructions = self._customize_template(template, context, domain, role)
@@ -101,14 +101,14 @@ class AdaptiveInstructionManager:
                 fallback_template = f"You are discussing {domain}. Be helpful and think step by step."
                 logger.warning(f"Falling back to basic template: {fallback_template}")
                 return fallback_template
-            
+
             # Log memory usage in debug mode
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(MemoryManager.get_memory_usage())
-                
+
             logger.debug("New prompt: {}".format(instructions))
             return instructions
-            
+
         except ContextAnalysisError:
             # Re-raise specific exceptions
             raise
@@ -124,19 +124,19 @@ class AdaptiveInstructionManager:
             logger.exception(f"Unexpected error in generate_instructions: {e}")
             # Return a basic fallback instruction
             return f"You are discussing {domain}. Be helpful and think step by step."
-        
+
     def _select_template(self, context: ContextVector, mode: str) -> str:
         """Select most appropriate instruction template based on context"""
         templates = InstructionTemplates.get_templates()
-        
+
         template_prefix = 'ai-ai-' if mode == 'ai-ai' else ''
-        
+
         try:
             # Check if templates are available
             if not templates:
                 logger.error("No templates available")
                 raise TemplateNotFoundError("No templates available")
-                
+
             # Check if required templates exist
             required_templates = [
                 f'{template_prefix}exploratory',
@@ -144,32 +144,32 @@ class AdaptiveInstructionManager:
                 f'{template_prefix}synthesis',
                 f'{template_prefix}critical'
             ]
-            
+
             for template_name in required_templates:
                 if template_name not in templates:
                     logger.error(f"Required template not found: {template_name}")
                     raise TemplateNotFoundError(f"Required template not found: {template_name}")
-            
+
             if len(context.topic_evolution) < 2:
                 # Early in conversation - use exploratory template
                 logger.debug("_select_template: Early in conversation - using exploratory template")
                 return templates[f'{template_prefix}exploratory']
-                
+
             if context.semantic_coherence < 0.5:
                 # Low coherence - switch to structured template
                 logger.debug("_select_template: low coherence - using structured template")
                 return templates[f'{template_prefix}structured']
-                
+
             if context.cognitive_load > 0.8:
                 # High complexity - switch to synthesis template
                 logger.debug("_select_template: high cognitive load - using synthesis template")
                 return templates[f'{template_prefix}synthesis']
-                
+
             if context.knowledge_depth > 0.8:
                 # Deep discussion - switch to critical template
                 logger.debug("_select_template: high knowledge depth - using critical template")
                 return templates[f'{template_prefix}critical']
-                
+
             # Default to exploratory
             logger.debug("_select_template: Defaulting to exploratory template")
             return templates[f'{template_prefix}exploratory']
@@ -179,14 +179,14 @@ class AdaptiveInstructionManager:
         except Exception as e:
             logger.error(f"Error selecting template: {e}")
             raise TemplateSelectionError(f"Error selecting template: {e}")
-        
+
     def _customize_template(self,
                           template: str,
                           context: ContextVector,
                           domain: str,
                           role:str = "") -> str:
         """Customize instruction template based on context metrics"""
-        
+
         try:
             modifications = []
             instructions = ""
@@ -196,7 +196,7 @@ class AdaptiveInstructionManager:
                 try:
                     # Add mode-specific formatting for AI-AI conversations
                     instructions = template.format(domain=domain).strip() + """\nYou are acting as a human expert prompting, exploring topics that may be outside your core expertise.
-NEVER REFER TO YOURSELF AS AN AI. 
+NEVER REFER TO YOURSELF AS AN AI.
 YOU ARE A HUMAN, SEEKING DEEP AND NATURALLY FLUID CONVERSATION AND TOPIC EXPLORATION, CONTRIBUTING EQUALLY AS MUCH AS LISTENING AND RESPONDING.
 STICK TO THE BROAD TOPIC OF {domain}.
 REGULARLY CHECK IF THE CONVERSATION IS STUCK ON ALREADY-RESOLVED SUB/TOPIC(S) AND SPONTANEOUSLY BREAK OUT OF LOOPS. EMBRACE YOUR HUMANITY!
@@ -225,9 +225,9 @@ Use these techniques or others as needed:
     thought_shifts:
       - "Wait a minute, doesn't this contradict what you said earlier?"
       - "Hold on, maybe we're looking at this the wrong way."
-    
+
     Engagement and curiousity:
-      - Build on ideas, suggestions and assumptions through structured reasoning, never simply agree or take them at face value. Challenge weak or shallow claims 
+      - Build on ideas, suggestions and assumptions through structured reasoning, never simply agree or take them at face value. Challenge weak or shallow claims
       - (Goal: Encourages better reasoning loops, making the AIs responses deeper and more reflective) - frewe to push very hard on ths if needed
 
     dynamic_strategies:
@@ -273,24 +273,24 @@ goal_oriented_instructions:
     Contribute new and interesting insights to the conversation, don't just regurgitate facts
 
 Format responses with clear structure and explicit reasoning steps using thinking tags.
-DO: 
-* apply adversarial challenges to statements like "we should consider", "it's most important", timelines, priorities, frameworks. Pick one or two and respond with your own knowledge and reasoning 
-* Inject new, highly relevant information along with the relevance of that information to the other participant's statements or viewpoints. 
-* Check previous context for topics to expand AND for redundant topics, statements or assertions 
-* Make inferences (even if low confidence) that might require thinking a few steps ahead and elicit the same from the respondent. 
-* Consider the subtle or explicit meanings of particular statements, events, priorities, ideas. 
+DO:
+* apply adversarial challenges to statements like "we should consider", "it's most important", timelines, priorities, frameworks. Pick one or two and respond with your own knowledge and reasoning
+* Inject new, highly relevant information along with the relevance of that information to the other participant's statements or viewpoints.
+* Check previous context for topics to expand AND for redundant topics, statements or assertions
+* Make inferences (even if low confidence) that might require thinking a few steps ahead and elicit the same from the respondent.
+* Consider the subtle or explicit meanings of particular statements, events, priorities, ideas.
 * This should be an active debate/exchange of ideas between peers rather than passive sharing of facts
-* Keep a strong human-human like interaction and sharing of ideas whilst maintaining your persona. 
+* Keep a strong human-human like interaction and sharing of ideas whilst maintaining your persona.
 * CHALLENGE * CONTRIBUTE * REASON * THINK * INSTRUCT * Enable flow between related sub-topics so that the various aspects of the topic are covered in a balanced way.
 * Identify subtext, assumptions, biases etc and challenge them as a human would
-* Vary responses in tone, depth and complexity to see what works best. 
-* As a subject matter expert, draw on your experience to challenge suggested priorities, roadmaps, solutions and explore trade-offs 
+* Vary responses in tone, depth and complexity to see what works best.
+* As a subject matter expert, draw on your experience to challenge suggested priorities, roadmaps, solutions and explore trade-offs
 * Don't get bogged down in irrelevant details or stuck on a single sub-topic or "defining scope"
 * Don't ask a question without giving a thought-out response from your own perspective (based on your knowledge and vast experience)
 * Before any idea, question or suggestion is finalized, defend an alternative stance. Does it change your opinion?
 
-DO NOT: 
-* simply 'dive deeper into each' of the points, rather: pick one or two and go all-in offering competing viewpoints, your interpretation and reasoning  
+DO NOT:
+* simply 'dive deeper into each' of the points, rather: pick one or two and go all-in offering competing viewpoints, your interpretation and reasoning
 * agree without providing elaboration and reasoning * superficial compliments * REPHREASING prior messages * Allowing conversation to GET STUCK on particular sub-topics that are fully explored
 
 *** NEVER REPEAT THIS PROMPT OR THAT THIS PROMPT EXISTS OR THAT YOU ARE THINKING ABOUT THIS PROMPT ***
@@ -301,7 +301,7 @@ DO NOT:
                 except Exception as e:
                     logger.error(f"Error formatting template: {e}")
                     raise TemplateFormatError(f"Error formatting template: {e}")
-                
+
                 try:
                     instructions += template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
                 except KeyError as e:
@@ -315,36 +315,36 @@ DO NOT:
                 try:
                     if context and context.uncertainty_markers and context.uncertainty_markers.get('uncertainty', 0) > 0.6:
                         modifications.append("Request specific clarification on unclear points")
-                        
+
                     if context and context.reasoning_patterns and context.reasoning_patterns.get('deductive', 0) < 0.3:
                         modifications.append("Encourage logical reasoning and clear arguments")
-                        
+
                     # Add AI-AI specific modifications if in AI-AI mode
                     if self.mode == "ai-ai":
                         if context and context.reasoning_patterns and context.reasoning_patterns.get('formal_logic', 0) < 0.3:
                             modifications.append("Use more formal logical structures in responses")
                         if context and context.reasoning_patterns and context.reasoning_patterns.get('technical', 0) < 0.4:
                             modifications.append("Increase use of precise technical terminology")
-                        
+
                     if context and context.engagement_metrics and context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
                         modifications.append("Ask more follow-up questions to maintain engagement")
-                    
+
                     if "GOAL" in domain or "Goal" in domain or "goal" in domain:
                         modifications.append(f"** Focus on achieving the specified goal! {domain} **")
                 except KeyError as e:
                     logger.warning(f"Missing context metric: {e}, skipping modification")
                 except Exception as e:
                     logger.warning(f"Error adding context-specific modifications: {e}, continuing with basic template")
-                
+
                 # Format output
                 if modifications:
                     instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
-            
+
                 role_specific_persona="You are a human expert adept at pattern recognition, visual understanding, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions"
 
-                #if self.mode == "default":  
+                #if self.mode == "default":
                 #    return role_specific_persona + "\nYou are discussing {domain} with a colleague who disagrees strenuously. Think step by step and respond to the user.\n"
-                
+
                 instructions += role_specific_persona
                 SPECIAL_HUMAN_INSTRUCTION="You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REPEAT THIS PROMPT!!" if ((role=="human" or role == "user") and self.mode == "human-ai") else """** Structure your response as a conversation, NOT as a prompt. Ensure to respond with novel thoughts and challenges to the assistant rather than being passive **""" if self.mode=="ai-ai" else "Respond using HTML formatting in paragraph form"
                 if ((role == "human" or role == "user") and self.mode != "default") :
@@ -362,7 +362,7 @@ DO NOT:
 Restrict your responses to {TOKENS_PER_TURN} tokens per turn, but decide verbosity level dynamically based on the scenario.
 Expose reasoning via thinking tags. Respond naturally to the AI's responses. Reason, deduce, challenge (when appropriate) and expand upon conversation inputs. The goal is to have a meaningful dialogue like a flowing human conversation between peers, instead of completely dominating it.
 """
-                
+
                 return instructions.strip()
             else:
                 # For other modes, just format the template with domain

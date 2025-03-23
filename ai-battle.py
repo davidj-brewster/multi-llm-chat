@@ -15,7 +15,7 @@ import asyncio
 # Local imports
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import FileConfig, DiscussionConfig
-from arbiter_v4 import evaluate_conversations, VisualizationGenerator 
+from arbiter_v4 import evaluate_conversations, VisualizationGenerator
 from file_handler import ConversationMediaHandler
 from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
 from shared_resources import MemoryManager
@@ -48,7 +48,7 @@ class ModelConfig:
 @dataclass
 class ConversationManager:
     """Manages conversations between AI models with memory optimization."""
-    
+
     def __init__(self,
                  config: DiscussionConfig   = None,
                  domain: str = "General knowledge",
@@ -69,12 +69,12 @@ class ConversationManager:
         self.initial_prompt = domain
         self.rate_limit_lock = asyncio.Lock()
         self.last_request_time = 0
-        
+
         # Store API keys
         self.openai_api_key = openai_api_key
         self.claude_api_key = claude_api_key
         self.gemini_api_key = gemini_api_key
-        
+
         # Initialize empty client tracking
         self._initialized_clients = set()
         self.model_map = {}
@@ -90,14 +90,14 @@ class ConversationManager:
         """Get or create a client instance."""
         """
         Get an existing client instance or create a new one for the specified model.
-        
+
         This method manages client instances, creating them on demand and caching them
         for reuse. It supports various model types including Claude, GPT, Gemini, MLX,
         Ollama, and Pico models.
-        
+
         Args:
             model_name: Name of the model to get or create a client for
-            
+
         Returns:
             Optional[BaseClient]: Client instance if successful, None if the model
                                  is unknown or client creation fails
@@ -163,10 +163,10 @@ class ConversationManager:
                 else:
                     logger.error(f"Unknown model: {model_name}")
                     return None
-                
+
                 logger.info(f"Created client for model: {model_name}")
                 logger.debug(MemoryManager.get_memory_usage())
-                
+
                 if client:
                     self.model_map[model_name] = client
                     self._initialized_clients.add(model_name)
@@ -179,7 +179,7 @@ class ConversationManager:
         """Clean up clients that haven't been used recently."""
         """
         Clean up clients that haven't been used recently to free up resources.
-        
+
         This method removes client instances from the model map and initialized
         clients set, calling their __del__ method if available to ensure proper
         cleanup of resources. It helps manage memory usage by releasing resources
@@ -199,26 +199,26 @@ class ConversationManager:
         """Validate required model connections."""
         """
         Validate that required model connections are available and working.
-        
+
         This method checks if the specified models are available and properly
         initialized. If no specific models are provided, it validates all models
         in the model map except for local models like "ollama" and "mlx".
-        
+
         Args:
             required_models: List of model names to validate. If None, validates
                            all models in the model map except "ollama" and "mlx".
-            
+
         Returns:
             bool: True if all required connections are valid, False otherwise.
         """
         if required_models is None:
             required_models = [name for name, client in self.model_map.items()
                            if client and name not in ["ollama", "mlx"]]
-            
+
         if not required_models:
             logger.info("No models require validation")
             return True
-            
+
         validations = []
         return True
 
@@ -226,7 +226,7 @@ class ConversationManager:
         """Apply rate limiting to requests."""
         """
         Apply rate limiting to requests to avoid overwhelming API services.
-        
+
         This method ensures that consecutive requests are separated by at least
         the minimum delay specified in self.min_delay. If a request is made
         before the minimum delay has elapsed since the last request, this method
@@ -244,17 +244,17 @@ class ConversationManager:
                             model_type: str,
                             client: BaseClient,
                             mode: str,
-                            role: str, 
+                            role: str,
                             file_data: Dict[str, Any] = None,
                             system_instruction: str=None) -> str:
         """Single conversation turn with specified model and role."""
         """
         Execute a single conversation turn with the specified model and role.
-        
+
         This method handles the complexity of generating appropriate responses
         based on the conversation mode, role, and history. It supports different
         prompting strategies including meta-prompting and no-meta-prompting modes.
-        
+
         Args:
             prompt: The input prompt for this turn
             model_type: Type of model to use
@@ -263,7 +263,7 @@ class ConversationManager:
             role: Role for this turn ("user" or "assistant")
             file_data: Optional file data to include with the request
             system_instruction: Optional system instruction to override defaults
-            
+
         Returns:
             str: Generated response text
         """
@@ -305,7 +305,7 @@ class ConversationManager:
                 )
                 if isinstance(response, list) and len(response) > 0:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
-                
+
                 self.conversation_history.append({"role": role, "content": response})
             else:
 
@@ -320,7 +320,7 @@ class ConversationManager:
                     response = response[0].text if hasattr(response[0], 'text') else str(response[0])
                 self.conversation_history.append({"role": "assistant", "content": response})
             print (f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
-                
+
         except Exception as e:
             logger.error(f"Error generating response: {e} (role: {mapped_role})")
             raise e
@@ -343,14 +343,14 @@ class ConversationManager:
         self.initial_prompt = initial_prompt
         self.domain = initial_prompt
         self.mode = mode
-        
+
         # Process file if provided
         file_data = None
         if file_config:
             try:
                 # Process file
                 file_metadata = self.media_handler.process_file(file_config.path)
-                
+
                 # Create file data dictionary
                 file_data = {
                     "type": file_metadata.type,
@@ -358,7 +358,7 @@ class ConversationManager:
                     "mime_type": file_metadata.mime_type,
                     "dimensions": file_metadata.dimensions
                 }
-                
+
                 # Add type-specific data
                 if file_metadata.type == "image":
                     with open(file_config.path, 'rb') as f:
@@ -385,7 +385,7 @@ class ConversationManager:
                                 # Calculate number of chunks
                                 total_size = len(video_content)
                                 num_chunks = (total_size + chunk_size - 1) // chunk_size
-                                
+
                                 # Create chunks
                                 chunks = []
                                 for i in range(num_chunks):
@@ -393,7 +393,7 @@ class ConversationManager:
                                     end = min(start + chunk_size, total_size)
                                     chunk = video_content[start:end]
                                     chunks.append(base64.b64encode(chunk).decode('utf-8'))
-                                
+
                                 file_data["video_chunks"] = chunks
                                 file_data["num_chunks"] = num_chunks
                                 file_data["video_path"] = processed_video_path
@@ -402,7 +402,7 @@ class ConversationManager:
                                 logger.info(f"Chunked video from {processed_video_path} into {num_chunks} chunks")
                         except Exception as e:
                             logger.error(f"Error reading processed video from {processed_video_path}: {e}")
-                            
+
                             # Fallback to thumbnail if available
                             if file_metadata.thumbnail_path:
                                 try:
@@ -414,7 +414,7 @@ class ConversationManager:
                                         logger.info(f"Fallback: Added thumbnail as single frame")
                                 except Exception as e:
                                     logger.error(f"Error reading thumbnail from {file_metadata.thumbnail_path}: {e}")
-                
+
                 # Add file context to prompt
                 file_context = f"Analyzing {file_metadata.type} file: {file_config.path}"
                 if file_metadata.dimensions:
@@ -424,20 +424,20 @@ class ConversationManager:
                     if "fps" in file_data:
                         file_context += f" at {file_data['fps']} fps"
                 initial_prompt = f"{file_context}\n\n{initial_prompt}"
-                
+
             except Exception as e:
                 logger.error(f"Error processing file: {e}")
                 return []
-        
+
         # Extract core topic from initial prompt
         core_topic = initial_prompt
         if "Topic:" in initial_prompt:
             core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
         elif "GOAL" in initial_prompt:
             core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
-        
+
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
-        
+
         # Continue with standard conversation flow, but pass file_data to the first turn
         return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, file_data, human_system_instruction, ai_system_instruction, rounds)
 
@@ -450,32 +450,32 @@ class ConversationManager:
                         ai_system_instruction: str=None,
                         rounds: int = 1) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
-        
+
         # Clear history and set up initial state
         self.conversation_history = []
         self.initial_prompt = initial_prompt
         self.domain = initial_prompt
         self.mode = mode
-        
+
         # Extract core topic from initial prompt
         core_topic = initial_prompt.strip()
         if "Topic:" in initial_prompt:
             core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
         elif "GOAL" in initial_prompt:
             core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
-            
+
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
 
         logger.info(f"Starting conversation with topic: {core_topic}")
-          
+
         # Get client instances
         human_client = self._get_client(human_model)
         ai_client = self._get_client(ai_model)
-        
+
         if not human_client or not ai_client:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
             return []
-            
+
         return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, None, human_system_instruction, ai_system_instruction, rounds)
 
     def _run_conversation_with_file_data(self,
@@ -493,20 +493,20 @@ class ConversationManager:
         # Get client instances
         human_client = self._get_client(human_model)
         ai_client = self._get_client(ai_model)
-        
+
         if not human_client or not ai_client:
             logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
             return []
-            
+
         # Check if models support vision if file is image/video
         if file_data and file_data["type"] in ["image", "video"]:
             human_capabilities = detect_model_capabilities(human_model)
             ai_capabilities = detect_model_capabilities(ai_model)
-            
+
             if not human_capabilities.get("vision", False) or not ai_capabilities.get("vision", False):
                 logger.warning("One or both models do not support vision capabilities")
                 # We'll continue but log a warning
-                
+
                 # If AI model doesn't support vision, we'll convert image to text description
                 if not ai_capabilities.get("vision", False) and file_data["type"] == "image":
                     # Add a note that this is an image description
@@ -527,7 +527,7 @@ class ConversationManager:
                     system_instruction=f"{core_topic}. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",history=self.conversation_history,domain=self.domain),
                     role="user",
                     mode=self.mode,
-                    model_type=human_model, 
+                    model_type=human_model,
                     file_data=file_data,  # Only pass file data on first turn
                     client=human_client
                 )
@@ -547,9 +547,9 @@ class ConversationManager:
 
             # Clean up unused clients
             #self.cleanup_unused_clients()
-            
+
             return self.conversation_history
-            
+
         finally:
             # Ensure cleanup happens even if there's an error
             self.cleanup_unused_clients()
@@ -559,19 +559,19 @@ class ConversationManager:
     def from_config(cls, config_path: str) -> 'ConversationManager':
         """Create ConversationManager instance from configuration file."""
         config = load_config(config_path)
-        
+
         # Initialize manager with config
         manager = cls(
             config=config,
             domain=config.goal,
             mode="human-ai"  # Default mode
         )
-        
+
         # Set up models based on configuration
         for model_id, model_config in config.models.items():
             # Detect model capabilities
             capabilities = detect_model_capabilities(model_config.type)
-            
+
             # Initialize appropriate client
             client = manager._get_client(model_config.type)
             if client:
@@ -579,13 +579,13 @@ class ConversationManager:
                 client.role = model_config.role
                 manager.model_map[model_id] = client
                 manager._initialized_clients.add(model_id)
-        
+
         return manager
 
-async def save_conversation(conversation: List[Dict[str, str]], 
+async def save_conversation(conversation: List[Dict[str, str]],
                      filename: str,
                      human_model: str,
-                     ai_model: str, 
+                     ai_model: str,
                      file_data: Dict[str, Any] = None,
                      mode: str = None) -> None:
     """Save an AI conversation to an HTML file with proper encoding.
@@ -604,9 +604,9 @@ async def save_conversation(conversation: List[Dict[str, str]],
     try:
         with open("templates/conversation.html", "r") as f:
             template = f.read()
-            
+
         conversation_html = ""
-        
+
         # Add file content if present
         if file_data:
             if file_data["type"] == "image" and "base64" in file_data:
@@ -622,20 +622,20 @@ async def save_conversation(conversation: List[Dict[str, str]],
             elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
                 # Add text content
                 conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
-        
+
         for msg in conversation:
             role = msg["role"]
             content = msg.get("content", "")
             if isinstance(content, (list, dict)):
                 content = str(content)
-            
+
             if role == "system":
                 conversation_html += f'<div class="system-message">{content} ({mode})</div>\n'
             elif role in ["user", "human"]:
                 conversation_html += f'<div class="human-message"><strong>Human ({human_model}):</strong> {content}</div>\n'
             elif role == "assistant":
                 conversation_html += f'<div class="ai-message"><strong>AI ({ai_model}):</strong> {content}</div>\n'
-                
+
             # Check if message contains file content (for multimodal messages)
             if isinstance(msg.get("content"), list):
                 for item in msg["content"]:
@@ -705,22 +705,22 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
         # Save report with timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"arbiter_report_{timestamp}.html"
-        
+
         with open(filename, "w") as f:
             f.write(report_content)
-            
+
         logger.info(f"Arbiter report saved successfully as {filename}")
-        
+
         # Create symlink to latest report
         #latest_link = "arbiter_report_latest.html"
         #if os.path.exists(latest_link):
         #    os.remove(latest_link)
         #os.symlink(filename, latest_link)
-        
+
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
-async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]], 
+async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
                        human_ai_conversation: List[Dict[str, str]]) -> None:
     """Save metrics analysis report."""
     try:
@@ -746,7 +746,7 @@ async def main():
     mode = "ai-ai"
     ai_model = "gemini-2-pro"
     human_model = "haiku"
-    
+
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
         domain=initial_prompt,
@@ -754,22 +754,22 @@ async def main():
         claude_api_key=anthropic_api_key,
         gemini_api_key=gemini_api_key
     )
-    
+
     # Only validate if using cloud models
     if "mlx" not in human_model and "ollama" not in human_model or ("ollama" not in ai_model and "mlx" not in ai_model):
         if not manager.validate_connections([human_model, ai_model]):
             logger.error("Failed to validate required model connections")
             return
-    
-    
+
+
     human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}... Restrict output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if "GOAL:" in initial_prompt:
         human_system_instruction = f"Solve {initial_prompt} together..."  # Truncated for brevity
-    
+
     ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user. Restrict your output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
         ai_system_instruction = human_system_instruction
- 
+
     try:
         # Run default conversation
         mode="ai-ai"
@@ -783,12 +783,12 @@ async def main():
             ai_system_instruction=ai_system_instruction,
             rounds=rounds
         )
-        
+
         safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-aiai_{safe_prompt}_{time_stamp}.html"
         await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
-        
+
         # Run human-AI conversation
         mode = "human-aiai"
         conversation_as_human_ai = manager.run_conversation(
@@ -800,7 +800,7 @@ async def main():
             ai_system_instruction=human_system_instruction,
             rounds=rounds
         )
-        
+
         safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-humai_{safe_prompt}_{time_stamp}.html"
@@ -816,12 +816,12 @@ async def main():
             ai_system_instruction=ai_system_instruction,
             rounds=rounds
         )
-        
+
         safe_prompt = _sanitize_filename_part(initial_prompt[:16] + "_" + human_model + "_" + ai_model)
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-defaults_{safe_prompt}_{time_stamp}.html"
         await save_conversation(conversation=conv_default, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
-        
+
         # Run analysis
         arbiter_report = evaluate_conversations(
             ai_ai_convo=conversation,
@@ -831,11 +831,11 @@ async def main():
         )
 
         print(arbiter_report)
-        
+
         # Generate reports
         await save_arbiter_report(arbiter_report)
         await save_metrics_report(conversation, conversation_as_human_ai)
-        
+
     finally:
         # Ensure cleanup
         manager.cleanup_unused_clients()

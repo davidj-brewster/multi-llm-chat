@@ -58,7 +58,7 @@ def create_directories() -> None:
     print("Creating directories...")
     for directory in set(FILE_MAPPING.values()):
         os.makedirs(directory, exist_ok=True)
-    
+
     for directory in INIT_DIRS:
         init_file = os.path.join(directory, '__init__.py')
         if not os.path.exists(init_file):
@@ -74,17 +74,17 @@ def move_files() -> None:
         if not os.path.exists(source_file):
             print(f"Warning: {source_file} not found, skipping.")
             continue
-        
+
         # Get the destination filename (possibly renamed)
         dest_filename = RENAME_FILES.get(source_file, source_file)
         dest_filename = os.path.basename(dest_filename)
         dest_path = os.path.join(dest_dir, dest_filename)
-        
+
         # Create a backup of the original file
         backup_path = f"{source_file}.bak"
         shutil.copy2(source_file, backup_path)
         print(f"Created backup: {backup_path}")
-        
+
         # Copy the file to the destination
         shutil.copy2(source_file, dest_path)
         print(f"Moved {source_file} to {dest_path}")
@@ -98,7 +98,7 @@ def update_imports() -> None:
             for file in files:
                 if not file.endswith('.py'):
                     continue
-                
+
                 file_path = os.path.join(root, file)
                 update_file_imports(file_path)
 
@@ -107,11 +107,11 @@ def update_file_imports(file_path: str) -> None:
     """Update imports in a single file."""
     with open(file_path, 'r') as f:
         content = f.read()
-    
+
     original_content = content
     for pattern, replacement in IMPORT_PATTERNS:
         content = re.sub(pattern, replacement, content)
-    
+
     if content != original_content:
         with open(file_path, 'w') as f:
             f.write(content)
@@ -121,16 +121,16 @@ def update_file_imports(file_path: str) -> None:
 def main() -> None:
     """Main function."""
     print("Starting migration...")
-    
+
     # Create directories
     create_directories()
-    
+
     # Move files
     move_files()
-    
+
     # Update imports
     update_imports()
-    
+
     print("Migration complete.")
     print("Note: The original files have been backed up with .bak extension.")
     print("You can delete them after verifying that everything works correctly.")
