@@ -9,6 +9,12 @@ My draft research paper (on a single AI playing Human, not yet updated for multi
 Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
 through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
 
+### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
+
+This dialogue is particularly entertaining because I based the "Human" prompt on the responses from ChatGPT, Claude.ai and Gemini about my own conversational style with them. This results in a very, very task-oriented, slightly sardonic, irritable and conversely highly engaged "Human" who completely dominated the MRI review with the "AI", despite Gemma 3 27B being clearly the more capable model from a technical point of view.
+
+https://raw.githack.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/main/examples/vision_discussion_3D%20Rotational%20T2%20Flair%20movie.html
+
 ### Phi 4 local LLM dominates Claude Haiku 3.5!!
 
 I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
