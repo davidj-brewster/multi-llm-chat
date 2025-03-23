@@ -22,11 +22,11 @@ discussion:
   turns: 3
   models:
     model1:
-      type: "claude-3-sonnet"
+      type: "claude-3.7-sonnet"
       role: "human"
       persona: "Visual analysis expert..."
     model2:
-      type: "gemini-pro-vision"
+      type: "gemini-2-flash-exp"
       role: "assistant"
       persona: "AI assistant with visual expertise..."
   input_file:
@@ -88,9 +88,9 @@ To create your own configuration:
 
 Not all models support all file types. The framework will automatically check model capabilities and adapt accordingly:
 
-- **Vision Support**: Claude-3, GPT-4o, Gemini Pro Vision, and some Ollama models (llava, bakllava, gemma3)
+- **Vision Support**: Claude-3.5+, GPT-4o, o1, Gemini 2*, and some Ollama models (llava, bakllava, llama2-vision, gemma3 especially)
 - **Text/Code**: All models
-- **Video**: Currently best supported by Gemini Pro Vision
+- **Video**: Currently best supported by Gemini 2 Flash Exp
 
 ## Advanced Usage
 
