@@ -243,7 +243,7 @@ class ContextAnalyzer:
                     logger.debug("Response patterns: {{k: v/msg_count for k, v in patterns.items()}}")
                     return {k: v/msg_count for k, v in patterns.items()}
                 except ZeroDivisionError:
-                    logger.error("Division by zero in response pattern normalization")
+                    logger.error("Division by zero in response pattern normalization (empty history)")
                     return patterns
             except (KeyError, AttributeError, TypeError) as e:
                 logger.error(f"Error processing messages for response patterns: {e}")
@@ -369,7 +369,7 @@ class ContextAnalyzer:
             return min(1.0, total_complexity / (3 * 2))  # Normalize to [0,1]
         except Exception as e:
             logger.error(f"Error estimating cognitive load: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
+            logger.debug(f"Stack trace for cognitive load error: {traceback.format_exc()}")
             return 0.0  # Return default value for this metric as it's not critical
             
     def _assess_knowledge_depth(self, contents: List[str]) -> float:
@@ -449,7 +449,7 @@ class ContextAnalyzer:
             return min(1.0, depth_score / 3)  # Normalize to [0,1]
         except Exception as e:
             logger.error(f"Error assessing knowledge depth: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
+            logger.debug(f"Stack trace for knowledge depth error: {traceback.format_exc()}")
             return 0.0  # Return default value for this metric as it's not critical
             
     def _analyze_reasoning_patterns(self, contents: List[str]) -> Dict[str, float]:
@@ -461,7 +461,7 @@ class ContextAnalyzer:
         try:
             try:
                 for content in contents:
-                    content_str = str(content).lower()
+                    content_str = str(content or "").lower()
                     for pattern, regex in self.reasoning_patterns.items():
                         try:
                             matches = len(re.findall(regex, content_str))
@@ -482,11 +482,12 @@ class ContextAnalyzer:
                 # Normalize counts
                 total = sum(pattern_counts.values()) or 1  # Avoid division by zero
                 normalized = {k: v/total for k, v in pattern_counts.items()}
-                
-                # For AI-AI mode, boost the weight of formal patterns
-                if self.mode == "ai-ai":
+                return normalized  # Return the normalized counts
+            except Exception as e:
+                logger.info(f"Error processing reasoning patterns: {e}")
+                return pattern_counts
         except Exception as e:
-            logger.error(f"Error analyzing reasoning patterns: {e}")
+            logger.error(f"Error analyzing reasoning patterns: {e}", exc_info=True)
             return pattern_counts
             
     def _detect_uncertainty(self, contents: List[str]) -> Dict[str, float]:
@@ -505,14 +506,20 @@ class ContextAnalyzer:
             qualification_patterns = r'maintaining|status-quo|conflicting|possibly|however|though|except|unless|only if|perhaps|one day|in the future|in the long term'
             
             for content in contents[-3:]:  # Focus on recent messages
-                markers['socratic'] += len(re.findall(socratic_patterns, 
-                                                       content.lower()))
-                markers['uncertainty'] += len(re.findall(uncertainty_patterns, 
-                                                       content.lower()))
-                markers['confidence'] += len(re.findall(confidence_patterns, 
-                                                      content.lower()))
-                markers['qualification'] += len(re.findall(qualification_patterns,
-                                                         content.lower()))
+                try:
+                    # Ensure content is a string
+                    content_str = str(content or "").lower()
+                    
+                    markers['socratic'] += len(re.findall(socratic_patterns, content_str))
+                    markers['uncertainty'] += len(re.findall(uncertainty_patterns, content_str))
+                    markers['confidence'] += len(re.findall(confidence_patterns, content_str))
+                    markers['qualification'] += len(re.findall(qualification_patterns, content_str))
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"Error processing content for uncertainty detection: {e}")
+                    continue
+                except re.error as e:
+                    logger.error(f"Regex error in uncertainty detection: {e}")
+                    continue
                 
             # Normalize by message count
             logger.debug("_detect_uncertainty: " + ''.join(contents) + f": {markers}")

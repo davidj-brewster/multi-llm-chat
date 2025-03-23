@@ -1,6 +1,6 @@
 # AI Battle - Multi-Model Conversational Framework
 
-The Human system instruction adaptive meta-prompt generator provided here is an extensive and highly detailed framework designed to simulate an advanced human interlocutor within AI-to-AI conversations. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the “Human” AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
+The Human system instruction adaptive meta-prompt generator provided here is an extensive and highly detailed framework designed to simulate an advanced human interlocutor within AI-to-AI conversations. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the "Human" AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
 
 My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
 
@@ -47,10 +47,10 @@ The framework excels at creating rich, goal-oriented discussions between models 
 
 - **Multi-Model API Support**
   - Claude (Anthropic)
-  - Gemini (Google)
+  - Gemini (Google) - Video + Image input
   - OpenAI (GPT/o1 models)
   - MLX (Local inference on Apple Silicon)
-  - Ollama integration
+  - Ollama/Pico integration - Video + Image input (e.g., llama2-vision, gemma3)
   - llama.cpp integration
 
 - **Role Management**
@@ -282,7 +282,7 @@ conversation = await manager.run_conversation_with_file(
 
 - **File-Based Discussions**
   - Image analysis and interpretation
-  - Video frame processing
+  - Video analysis with full content processing
   - Text file analysis
   - Code review and explanation
 
@@ -334,6 +334,56 @@ The framework includes sophisticated monitoring capabilities:
 - Detecting patterns that trigger intervention
 - Dynamic instruction modification
 - Context-aware guidance injection
+
+## Video Analysis Capabilities
+
+The framework now supports comprehensive video analysis with both cloud-based and local models:
+
+### Features
+
+- **Full Video Processing**: Send entire videos to models, not just individual frames
+- **Format Conversion**: Automatic conversion from .mov to .mp4 format for better compatibility
+- **Chunked Processing**: Videos are processed in manageable chunks to handle API size limitations
+- **Resolution Optimization**: Videos are resized to a maximum dimension while maintaining aspect ratio
+- **Framerate Adjustment**: Videos are processed at an optimized framerate for efficiency
+- **Sequential Analysis**: Each chunk is analyzed sequentially, with insights combined from all chunks
+- **Conversation Context**: Models maintain context about the video between conversation turns
+
+### Supported Models
+
+- **Gemini Models**: Full video support with gemini-2.0-flash-exp and gemini-2.0-pro models
+- **Local Ollama Models**: Video support for vision-capable models like llava and gemma3
+
+### Example Configuration
+
+```yaml
+discussion:
+  input_file:
+    path: "./examples/sample_video.mp4"
+    type: "video"
+    max_resolution: "1280x1280"
+  established_facts:
+    video_processing_information:
+      - "The ENTIRE VIDEO CONTENT is sent to models, not just individual frames"
+      - "Videos are processed in chunks to handle size limitations"
+      - "The processed video is resized to a maximum dimension of 1280 pixels"
+      - "The video is processed at a reduced framerate (2 fps) for efficiency"
+```
+
+### Example Usage
+
+```python
+from ai_battle import ConversationManager
+from configdataclasses import FileConfig
+
+# Run video-based conversation
+conversation = await manager.run_conversation_with_file(
+    initial_prompt="Analyze this MRI scan video and describe what you see",
+    human_model="gemini-2.0-flash-exp",
+    ai_model="ollama-llava",
+    file_config=FileConfig(path="./mri_scan.mp4", type="video")
+)
+```
 
 ## Detailed Documentation
 
@@ -454,6 +504,7 @@ print(f"Knowledge Depth: {context.knowledge_depth:.2f}")
    - ✅ File-based discussions
    - ✅ Vision model support
    - ✅ Local model vision capabilities
+   - ✅ Full video analysis with cloud and local models
    - ⏳ Additional features:
    - Model performance metrics
    - Conversation quality analysis
@@ -499,87 +550,12 @@ adaptive_prompts = {
 3. **Topic Drift Detection** (topic_similarity < 0.5)
 ```python
 adaptive_prompts = {
-    "redirect": "Returning to our core discussion of {main_topic}...",
-    "integrate": "How does this new direction ({current_topic}) relate to {original_goal}?",
-    "synthesize": "Can we synthesize these different perspectives on {topic}?"
-}
-```
-
-4. **Depth Enhancement** (depth_score < 0.6)
-```python
-adaptive_prompts = {
-    "deepen": "Let's explore the underlying mechanisms of {concept}.",
-    "analyze": "What are the key factors that influence {phenomenon}?",
-    "examine": "Could you break down the components of {system}?"
-}
-```
-
-### Trigger Conditions
-
-The system employs Bayesian inference to determine when to activate specific prompts:
-
-```python
-class AdaptivePromptTrigger:
-    def __init__(self):
-        self.thresholds = {
-            "coherence": 0.7,
-            "uncertainty": 0.6,
-            "topic_drift": 0.5,
-            "depth": 0.6
-        }
-        
-    def should_trigger(self, metrics: Dict[str, float]) -> bool:
-        return any(
-            metrics[key] < threshold 
-            for key, threshold in self.thresholds.items()
-        )
-```
-
-### Response Pattern Adaptation
-
-The framework adjusts its prompting strategy based on observed response patterns:
-
-1. **Technical Depth Pattern**
-```python
-if response.technical_depth > threshold:
-    prompt_style = "explanatory"
-    include_examples = True
-```
-
-2. **Engagement Pattern**
-```python
-if response.engagement_level < threshold:
-    prompt_style = "socratic"
-    include_challenges = True
-```
-
-3. **Reasoning Pattern**
-```python
-if response.reasoning_depth < threshold:
-    prompt_style = "analytical"
-    request_justification = True
-```
-
-### Dynamic Instruction Templates
-
-The system uses templates that adapt to conversation context:
-
-```python
-instruction_templates = {
-    "expert": """You are an expert in {domain} with the following characteristics:
-- Deep technical knowledge in {specialization}
-- {years} years of experience
-- Focus on {methodology}
-Maintain these traits while {task}.""",
-
-    "collaborative": """Engage in a collaborative discussion about {topic}.
-- Build on previous points
-- Acknowledge uncertainties
-- Propose new perspectives
-Your role is to {role} while keeping the discussion {style}."""
+    "redirect": "Let's return to our discussion of {original_topic}.",
+    "connect": "How does {current_topic} relate to our original focus on {original_topic}?",
+    "integrate": "Can we integrate these insights about {current_topic} with our main discussion of {original_topic}?"
 }
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.

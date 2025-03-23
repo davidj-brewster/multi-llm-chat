@@ -225,7 +225,6 @@ Use these techniques or others as needed:
     thought_shifts:
       - "Wait a minute, doesn't this contradict what you said earlier?"
       - "Hold on, maybe we're looking at this the wrong way."
-      - "What if we consider [X] instead?"
     
     Engagement and curiousity:
       - Build on ideas, suggestions and assumptions through structured reasoning, never simply agree or take them at face value. Challenge weak or shallow claims 
@@ -314,20 +313,20 @@ DO NOT:
 
                 # Add context-specific modifications
                 try:
-                    if context.uncertainty_markers.get('uncertainty', 0) > 0.6:
+                    if context and context.uncertainty_markers and context.uncertainty_markers.get('uncertainty', 0) > 0.6:
                         modifications.append("Request specific clarification on unclear points")
                         
-                    if context.reasoning_patterns.get('deductive', 0) < 0.3:
+                    if context and context.reasoning_patterns and context.reasoning_patterns.get('deductive', 0) < 0.3:
                         modifications.append("Encourage logical reasoning and clear arguments")
                         
                     # Add AI-AI specific modifications if in AI-AI mode
                     if self.mode == "ai-ai":
-                        if context.reasoning_patterns.get('formal_logic', 0) < 0.3:
+                        if context and context.reasoning_patterns and context.reasoning_patterns.get('formal_logic', 0) < 0.3:
                             modifications.append("Use more formal logical structures in responses")
-                        if context.reasoning_patterns.get('technical', 0) < 0.4:
+                        if context and context.reasoning_patterns and context.reasoning_patterns.get('technical', 0) < 0.4:
                             modifications.append("Increase use of precise technical terminology")
                         
-                    if context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
+                    if context and context.engagement_metrics and context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
                         modifications.append("Ask more follow-up questions to maintain engagement")
                     
                     if "GOAL" in domain or "Goal" in domain or "goal" in domain:

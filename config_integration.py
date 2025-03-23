@@ -3,11 +3,34 @@ import os
 import yaml
 import logging
 import asyncio
+import traceback
 import datetime
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 import json
+
+# Custom exception classes for better error handling
+class ConfigIntegrationError(Exception):
+    """Base exception for configuration integration errors."""
+    pass
+
+class ConfigFileNotFoundError(ConfigIntegrationError):
+    """Raised when a configuration file is not found."""
+    pass
+
+class InvalidConfigFormatError(ConfigIntegrationError):
+    """Raised when the configuration format is invalid."""
+    pass
+
+class ModelConfigurationError(ConfigIntegrationError):
+    """Raised when there's an error in model configuration."""
+    pass
+
+class SystemInstructionsError(ConfigIntegrationError):
+    """Raised when there's an error loading system instructions."""
+    pass
+
 logger = logging.getLogger(__name__)
 
 # Supported model configurations
@@ -78,16 +101,24 @@ class TimeoutConfig:
     notify_on: List[str] = None
 
     def __post_init__(self):
-        if self.request < 30 or self.request > 600:
-            raise ValueError("Request timeout must be between 30 and 600 seconds")
-        if self.retry_count < 0 or self.retry_count > 5:
-            raise ValueError("Retry count must be between 0 and 5")
-        if self.notify_on is None:
-            self.notify_on = ["timeout", "retry", "error"]
-        valid_events = ["timeout", "retry", "error"]
-        invalid_events = [e for e in self.notify_on if e not in valid_events]
-        if invalid_events:
-            raise ValueError(f"Invalid notification events: {invalid_events}")
+        try:
+            if self.request < 30 or self.request > 600:
+                raise InvalidConfigFormatError(
+                    f"Request timeout must be between 30 and 600 seconds, got {self.request}"
+                )
+            if self.retry_count < 0 or self.retry_count > 5:
+                raise InvalidConfigFormatError(
+                    f"Retry count must be between 0 and 5, got {self.retry_count}"
+                )
+            if self.notify_on is None:
+                self.notify_on = ["timeout", "retry", "error"]
+            valid_events = ["timeout", "retry", "error"]
+            invalid_events = [e for e in self.notify_on if e not in valid_events]
+            if invalid_events:
+                raise InvalidConfigFormatError(f"Invalid notification events: {invalid_events}. Valid events are: {', '.join(valid_events)}")
+        except Exception as e:
+            logger.error(f"Error validating TimeoutConfig: {e}")
+            raise
 
 @dataclass
 class FileConfig:
@@ -142,40 +173,60 @@ class FileConfig:
     max_resolution: Optional[str] = None
 
     def __post_init__(self):
-        if not os.path.exists(self.path):
-            raise ValueError(f"File not found: {self.path}")
-        
-        file_size = os.path.getsize(self.path)
-        extension = os.path.splitext(self.path)[1].lower()
-        
-        # Validate file type
-        if self.type not in SUPPORTED_FILE_TYPES:
-            raise ValueError(f"Unsupported file type: {self.type}")
-        
-        type_config = SUPPORTED_FILE_TYPES[self.type]
-        
-        # Check extension
-        if extension not in type_config["extensions"]:
-            raise ValueError(f"Unsupported file extension {extension} for type {self.type}")
-        
-        # Check file size
-        if file_size > type_config["max_size"]:
-            raise ValueError(f"File size {file_size} exceeds maximum {type_config['max_size']} for type {self.type}")
-        
-        # Validate resolution for image/video
-        if self.type in ["image", "video"] and self.max_resolution:
-            max_width, max_height = type_config["max_resolution"]
-            requested_res = self.max_resolution.upper()
-            if requested_res == "4K":
-                if self.type != "video":
-                    raise ValueError("4K resolution only supported for video files")
-            elif "X" in requested_res:
-                try:
-                    width, height = map(int, requested_res.split("X"))
-                    if width > max_width or height > max_height:
-                        raise ValueError(f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}")
-                except ValueError:
-                    raise ValueError(f"Invalid resolution format: {requested_res}")
+        try:
+            if not os.path.exists(self.path):
+                raise ConfigFileNotFoundError(f"File not found: {self.path}")
+            
+            try:
+                file_size = os.path.getsize(self.path)
+            except (OSError, IOError) as e:
+                raise ConfigIntegrationError(f"Error accessing file {self.path}: {e}")
+                
+            extension = os.path.splitext(self.path)[1].lower()
+            
+            # Validate file type
+            if self.type not in SUPPORTED_FILE_TYPES:
+                supported_types = ", ".join(SUPPORTED_FILE_TYPES.keys())
+                raise InvalidConfigFormatError(f"Unsupported file type: {self.type}. Supported types: {supported_types}")
+            
+            type_config = SUPPORTED_FILE_TYPES[self.type]
+            
+            # Check extension
+            if extension not in type_config["extensions"]:
+                supported_extensions = ", ".join(type_config["extensions"])
+                raise InvalidConfigFormatError(
+                    f"Unsupported file extension {extension} for type {self.type}. "
+                    f"Supported extensions: {supported_extensions}"
+                )
+            
+            # Check file size
+            if file_size > type_config["max_size"]:
+                readable_size = f"{type_config['max_size'] / (1024 * 1024):.1f}MB"
+                raise InvalidConfigFormatError(
+                    f"File size {file_size / (1024 * 1024):.1f}MB exceeds maximum {readable_size} for type {self.type}"
+                )
+            
+            # Validate resolution for image/video
+            if self.type in ["image", "video"] and self.max_resolution:
+                max_width, max_height = type_config["max_resolution"]
+                requested_res = self.max_resolution.upper()
+                if requested_res == "4K":
+                    if self.type != "video":
+                        raise InvalidConfigFormatError("4K resolution only supported for video files")
+                elif "X" in requested_res:
+                    try:
+                        width, height = map(int, requested_res.split("X"))
+                        if width > max_width or height > max_height:
+                            raise InvalidConfigFormatError(f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}")
+                    except ValueError:
+                        raise InvalidConfigFormatError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT")
+        except ConfigIntegrationError:
+            # Re-raise specific configuration errors
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error validating file config: {e}")
+            logger.debug(traceback.format_exc())
+            raise ConfigIntegrationError(f"Unexpected error validating file configuration: {e}")
 
 @dataclass
 class ModelConfig:
@@ -235,7 +286,7 @@ class ModelConfig:
     def __post_init__(self):
         # Validate model type
         provider = next((p for p in SUPPORTED_MODELS if self.type.startswith(p)), None)
-        if not provider:
+        if not provider and self.type:
             raise ValueError(f"Unsupported model type: {self.type}")
         
         if provider not in ["ollama", "mlx"]:  # Local models support any variant
@@ -374,7 +425,7 @@ def load_system_instructions() -> Dict:
     """
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
-        raise FileNotFoundError("System instructions file not found")
+        raise SystemInstructionsError("System instructions file not found at docs/system_instructions.md")
     
     content = instructions_path.read_text()
     
@@ -402,7 +453,8 @@ def load_system_instructions() -> Dict:
             if isinstance(data, dict):
                 instructions.update(data)
         except yaml.YAMLError as e:
-            logger.error(f"Error parsing system instructions YAML: {e}")
+            logger.error(f"Error parsing system instructions YAML block: {e}")
+            logger.debug(f"Problematic YAML block: {block}")
             continue
     
     return instructions
@@ -444,13 +496,13 @@ def load_config(path: str) -> DiscussionConfig:
         - The function loads system instructions to resolve template references
     """
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Configuration file not found: {path}")
+        raise ConfigFileNotFoundError(f"Configuration file not found: {path}")
     
     try:
         with open(path) as f:
             config_dict = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML format: {e}")
+        raise InvalidConfigFormatError(f"Invalid YAML format in {path}: {e}")
     
     if not isinstance(config_dict, dict) or "discussion" not in config_dict:
         raise ValueError("Configuration must contain a 'discussion' section")
@@ -476,8 +528,9 @@ def load_config(path: str) -> DiscussionConfig:
                     model_config["persona"] = json.loads(instruction_text)
         
         return DiscussionConfig(**config_dict["discussion"])
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"Invalid configuration format: {e}")
+    except (TypeError, ValueError, KeyError) as e:
+        logger.error(f"Error processing configuration: {e}")
+        raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e}")
 
 def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
     """
@@ -527,15 +580,22 @@ def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
         "function_calling": False
     }
     
-    if model_config.type in ["gemini-pro-vision", "gpt-4-vision"]:
-        capabilities["vision"] = True
-    
-    if model_config.type.startswith(("claude", "gpt")):
-        capabilities["streaming"] = True
-    
-    if model_config.type in ["gpt-4", "claude-3-sonnet"]:
-        capabilities["function_calling"] = True
-    
+    try:
+        if not hasattr(model_config, 'type') or not model_config.type:
+            logger.warning("Invalid model_config provided to detect_model_capabilities")
+            return capabilities
+            
+        if model_config.type in ["gemini-pro-vision", "gpt-4-vision"]:
+            capabilities["vision"] = True
+        
+        if model_config.type.startswith(("claude", "gpt")):
+            capabilities["streaming"] = True
+        
+        if model_config.type in ["gpt-4", "claude-3-sonnet"]:
+            capabilities["function_calling"] = True
+    except Exception as e:
+        logger.error(f"Error detecting model capabilities: {e}")
+        # Return default capabilities on error
     return capabilities
 
 def run_from_config(config_path: str) -> None:
@@ -588,38 +648,55 @@ def run_from_config(config_path: str) -> None:
         - Saves the conversation with a sanitized filename based on the goal
         - Uses the ConversationManager from ai_battle.py to manage the conversation
     """
-    config = load_config(config_path)
-    
-    # Import here to avoid circular imports
-    from ai_battle import ConversationManager
-    
-    # Create manager
-    manager = ConversationManager(
-        domain=config.goal,
-        mode="ai-ai",  # Default to ai-ai mode for config-based initialization
-        human_delay=20.0,
-        min_delay=10
-    )
-    
-    # Get model names
-    human_model = next(name for name, model in config.models.items() 
-                      if model.role == "human")
-    ai_model = next(name for name, model in config.models.items() 
-                   if model.role == "assistant")
-    
-    # Run conversation
-    conversation = asyncio.run(manager.run_conversation(
-        initial_prompt=config.goal,
-        human_model=human_model,
-        ai_model=ai_model,
-        mode="ai-ai",
-        human_system_instruction=config.models[human_model].persona,
-        ai_system_instruction=config.models[ai_model].persona,
-        rounds=config.turns
-    ))
-    
-    # Save conversation
-    safe_prompt = manager._sanitize_filename_part(config.goal)
-    time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
-    filename = f"conversation-config_{safe_prompt}_{time_stamp}.html"
-    manager.save_conversation(conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+    try:
+        config = load_config(config_path)
+        
+        # Import here to avoid circular imports
+        try:
+            from ai_battle import ConversationManager
+        except ImportError as e:
+            logger.error(f"Failed to import ConversationManager: {e}")
+            raise ImportError(f"Failed to import ConversationManager: {e}. Make sure ai_battle.py is in the current directory.")
+        
+        # Create manager
+        manager = ConversationManager(
+            domain=config.goal,
+            mode="ai-ai",  # Default to ai-ai mode for config-based initialization
+            human_delay=20.0,
+            min_delay=10
+        )
+        
+        # Get model names
+        try:
+            human_model = next(name for name, model in config.models.items() 
+                              if model.role == "human")
+            ai_model = next(name for name, model in config.models.items() 
+                           if model.role == "assistant")
+        except StopIteration:
+            logger.error("Configuration must include both a human and an assistant model")
+            raise InvalidConfigFormatError("Configuration must include both a human model (role='human') and an assistant model (role='assistant')")
+        
+        # Run conversation
+        try:
+            conversation = asyncio.run(manager.run_conversation(
+                initial_prompt=config.goal,
+                human_model=human_model,
+                ai_model=ai_model,
+                mode="ai-ai",
+                human_system_instruction=config.models[human_model].persona,
+                ai_system_instruction=config.models[ai_model].persona,
+                rounds=config.turns
+            ))
+            
+            # Save conversation
+            safe_prompt = manager._sanitize_filename_part(config.goal)
+            time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
+            filename = f"conversation-config_{safe_prompt}_{time_stamp}.html"
+            manager.save_conversation(conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+        except Exception as e:
+            logger.error(f"Error running conversation: {e}")
+            logger.debug(traceback.format_exc())
+            raise
+    except Exception as e:
+        logger.error(f"Failed to run from config {config_path}: {e}")
+        raise

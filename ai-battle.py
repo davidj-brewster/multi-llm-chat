@@ -118,6 +118,8 @@ class ConversationManager:
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
                 elif model_name == "gemini-2-reasoning":
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-thinking-exp-01-21")
+                elif model_name == "gemini-2.0-flash-exp":
+                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
                 elif model_name == "gemini-2-pro":
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-pro-exp-02-05")
                 elif model_name == "gemini-2-flash-lite":
@@ -142,6 +144,8 @@ class ConversationManager:
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q5_K_S")
                 elif model_name == "ollama-qwen32-r1":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest")
+                elif model_name == "ollama-gemma3-1b":
+                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:1b-it-q8_0")
                 elif model_name == "ollama-gemma3-4b":
                     client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:4b-it-q8_0")
                 elif model_name == "ollama-gemma3-12b":
@@ -367,18 +371,58 @@ class ConversationManager:
                 elif file_metadata.type == "video":
                     # For video, we need to extract frames
                     file_data["duration"] = file_metadata.duration
-                    file_data["key_frames"] = []
-                    if file_metadata.thumbnail_path:
-                        with open(file_metadata.thumbnail_path, 'rb') as f:
-                            file_data["key_frames"].append({
-                                "timestamp": 0,
-                                "base64": base64.b64encode(f.read()).decode('utf-8')
-                            })
+                    # Use the entire processed video file
+                    if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
+                        processed_video_path = file_metadata.processed_video["processed_video_path"]
+                        # Set the path to the processed video file, not the original
+                        file_data["path"] = processed_video_path
+                        # Set the mime type to video/mp4 for better compatibility
+                        file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
+                        chunk_size = 1024 * 1024  # 1MB chunks
+                        try:
+                            with open(processed_video_path, 'rb') as f:
+                                video_content = f.read()
+                                # Calculate number of chunks
+                                total_size = len(video_content)
+                                num_chunks = (total_size + chunk_size - 1) // chunk_size
+                                
+                                # Create chunks
+                                chunks = []
+                                for i in range(num_chunks):
+                                    start = i * chunk_size
+                                    end = min(start + chunk_size, total_size)
+                                    chunk = video_content[start:end]
+                                    chunks.append(base64.b64encode(chunk).decode('utf-8'))
+                                
+                                file_data["video_chunks"] = chunks
+                                file_data["num_chunks"] = num_chunks
+                                file_data["video_path"] = processed_video_path
+                                file_data["fps"] = file_metadata.processed_video.get("fps", 2)
+                                file_data["resolution"] = file_metadata.processed_video.get("resolution", (0, 0))
+                                logger.info(f"Chunked video from {processed_video_path} into {num_chunks} chunks")
+                        except Exception as e:
+                            logger.error(f"Error reading processed video from {processed_video_path}: {e}")
+                            
+                            # Fallback to thumbnail if available
+                            if file_metadata.thumbnail_path:
+                                try:
+                                    with open(file_metadata.thumbnail_path, 'rb') as f:
+                                        file_data["key_frames"] = [{
+                                            "timestamp": 0,
+                                            "base64": base64.b64encode(f.read()).decode('utf-8')
+                                        }]
+                                        logger.info(f"Fallback: Added thumbnail as single frame")
+                                except Exception as e:
+                                    logger.error(f"Error reading thumbnail from {file_metadata.thumbnail_path}: {e}")
                 
                 # Add file context to prompt
                 file_context = f"Analyzing {file_metadata.type} file: {file_config.path}"
                 if file_metadata.dimensions:
                     file_context += f" ({file_metadata.dimensions[0]}x{file_metadata.dimensions[1]})"
+                if file_metadata.type == "video" and "video_chunks" in file_data:
+                    file_context += f" - FULL VIDEO CONTENT INCLUDED (in {file_data['num_chunks']} chunks)"
+                    if "fps" in file_data:
+                        file_context += f" at {file_data['fps']} fps"
                 initial_prompt = f"{file_context}\n\n{initial_prompt}"
                 
             except Exception as e:
@@ -386,13 +430,13 @@ class ConversationManager:
                 return []
         
         # Extract core topic from initial prompt
-        core_topic = initial_prompt.strip()
+        core_topic = initial_prompt
         if "Topic:" in initial_prompt:
             core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
         elif "GOAL" in initial_prompt:
             core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
         
-        self.conversation_history.append({"role": "user", "content": f"{core_topic}"})
+        self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
         
         # Continue with standard conversation flow, but pass file_data to the first turn
         return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, file_data, human_system_instruction, ai_system_instruction, rounds)

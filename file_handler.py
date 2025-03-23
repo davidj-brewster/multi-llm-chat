@@ -555,7 +555,19 @@ class ConversationMediaHandler:
             
             # Process video at lower framerate and resolution
             target_fps = 2  # Configurable
-            max_dimension = 1280  # Configurable - longest side will be this size
+            
+            # Use max_dimension from metadata if available
+            max_dimension = 512  # Default to 512 if not specified
+            if hasattr(metadata, 'max_resolution') and metadata.max_resolution:
+                try:
+                    # Parse max_resolution string (e.g., "512x512")
+                    resolution_parts = metadata.max_resolution.split('x')
+                    if len(resolution_parts) == 2:
+                        # Use the first dimension as max_dimension
+                        max_dimension = int(resolution_parts[0])
+                        logger.info(f"Using max_dimension {max_dimension} from configuration")
+                except (ValueError, AttributeError) as e:
+                    logger.warning(f"Could not parse max_resolution: {e}, using default {max_dimension}")
             
             logger.info(f"Processing video {file_path} with original dimensions {width}x{height}, fps: {original_fps}")
             logger.info(f"Target processing parameters: max dimension {max_dimension}px, fps: {target_fps}")
@@ -629,22 +641,81 @@ class ConversationMediaHandler:
                 # Process video at lower resolution and save
                 processed_video_path = self.output_dir / f"processed_{file_path.name}"
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for MP4
-                out = cv2.VideoWriter(str(processed_video_path), fourcc, target_fps, new_size)
-
-                video.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to first frame
-                frame_count = 0
-
-                while True:
-                    success, frame = video.read()
-                    if not success:
-                        break
-
-                    # Resize frame maintaining aspect ratio
-                    resized_frame = cv2.resize(frame, new_size)
-                    out.write(resized_frame)
-                    frame_count += 1
-
-                out.release()
+                
+                # Check if the file is a .mov file and convert to .mp4 using ffmpeg
+                if file_path.suffix.lower() == '.mov':
+                    # Create a .mp4 output path
+                    mp4_output_path = self.output_dir / f"processed_{file_path.stem}.mp4"
+                    
+                    try:
+                        # Use ffmpeg to convert .mov to .mp4 with proper encoding for Gemini
+                        import subprocess
+                        cmd = [
+                            'ffmpeg',
+                            '-i', str(file_path),
+                            '-c:v', 'libx264',  # H.264 video codec
+                            '-preset', 'medium',  # Encoding speed/quality balance
+                            '-crf', '23',  # Quality level (lower is better)
+                            '-c:a', 'aac',  # AAC audio codec
+                            '-b:a', '128k',  # Audio bitrate
+                            '-vf', f'scale={new_size[0]}:{new_size[1]}',  # Resize
+                            '-r', str(target_fps),  # Target framerate
+                            '-y',  # Overwrite output file if it exists
+                            str(mp4_output_path)
+                        ]
+                        
+                        logger.info(f"Converting .mov to .mp4 using ffmpeg: {' '.join(cmd)}")
+                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        
+                        if result.returncode != 0:
+                            logger.error(f"ffmpeg conversion failed: {result.stderr}")
+                            raise VideoProcessingError(f"ffmpeg conversion failed: {result.stderr}")
+                        
+                        logger.info(f"Successfully converted {file_path} to {mp4_output_path}")
+                        processed_video_path = mp4_output_path
+                        
+                        # Get frame count from the converted video
+                        converted_video = cv2.VideoCapture(str(mp4_output_path))
+                        frame_count = int(converted_video.get(cv2.CAP_PROP_FRAME_COUNT))
+                        converted_video.release()
+                        
+                    except Exception as e:
+                        logger.error(f"Error converting .mov to .mp4: {e}")
+                        # Fall back to OpenCV processing
+                        logger.info(f"Falling back to OpenCV processing")
+                        out = cv2.VideoWriter(str(processed_video_path), fourcc, target_fps, new_size)
+                        video.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to first frame
+                        frame_count = 0
+                        
+                        while True:
+                            success, frame = video.read()
+                            if not success:
+                                break
+                            
+                            # Resize frame maintaining aspect ratio
+                            resized_frame = cv2.resize(frame, new_size)
+                            out.write(resized_frame)
+                            frame_count += 1
+                        
+                        out.release()
+                else:
+                    # For non-mov files, use the original OpenCV approach
+                    out = cv2.VideoWriter(str(processed_video_path), fourcc, target_fps, new_size)
+                    video.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to first frame
+                    frame_count = 0
+                    
+                    while True:
+                        success, frame = video.read()
+                        if not success:
+                            break
+                        
+                        # Resize frame maintaining aspect ratio
+                        resized_frame = cv2.resize(frame, new_size)
+                        out.write(resized_frame)
+                        frame_count += 1
+                    
+                    out.release()
+                
                 video.release()
 
                 # Store processed video information
@@ -652,7 +723,9 @@ class ConversationMediaHandler:
                     "fps": target_fps,
                     "resolution": new_size,
                     "processed_video_path": str(processed_video_path),
-                    "frame_count": frame_count
+                    "frame_count": frame_count,
+                    "frame_paths": frame_paths,
+                    "mime_type": "video/mp4"  # Always use mp4 mime type for better compatibility
                 }
                 logger.info(f"Processed video saved to {processed_video_path} with {frame_count} frames at {target_fps} fps and resolution {new_size}")
             

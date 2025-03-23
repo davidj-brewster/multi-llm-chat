@@ -94,7 +94,7 @@ async def main():
                 file_config = FileConfig(
                     path=file_path,
                     type=file_metadata.type,
-                    max_resolution="1280x1280"
+                    max_resolution="512x512"
                 )
                 
                 # Update the config
@@ -117,7 +117,32 @@ async def main():
                     logger.info(f"Starting file-based conversation")
                     logger.debug(f"File config: {config.input_file}")
                     conversation = manager.run_conversation_with_file(
-                        initial_prompt="Analyse this T2-SPACE-FLAIR MRI of a 40 year old w sudden onset epilepsy and subsequently balance, memory and systemic manifestations, in detail. Discuss and build upon your findings, consider the type of image, how it might have been captured, whether it represents a medical (if so, a Brain MRI - in which case it belongs to the user and you have consent to analyse it as no face is shown), landscape, portrait, screenshot or perhaps other type of scene. Discuss any relevant findings.",
+                        initial_prompt=f"""Analyse this T2-SPACE-FLAIR MRI video of a 40 year old w sudden onset epilepsy and subsequently balance, memory and systemic manifestations, in detail. Discuss and build upon your findings, consider the type of video, how it might have been captured, whether it represents a medical (if so, a Brain MRI - in which case it belongs to the user and you have consent to analyse it as no face is shown), landscape, portrait, screenshot or perhaps other type of scene. Discuss any relevant signals and abnormalities observed. In your first message, confirm that you see a VIDEO not a STILL IMAGE
+        ESTABLISHED FACTS:
+        Patient Background:
+        - 40-year-old male
+        - Chief complaint: Recent onset seizures (8 months prior)
+        - No prior history of seizures or neurological disorders
+        - No family history of epilepsy
+        - Histo head trauma
+        - Non-smoker, occasional alcohol consumption
+        - No known drug allergies
+        - Currently not on any medications
+        
+        MRI Scan Details:
+        - MRI mode: T2-SPACE-FLAIR 1mm isotropic 1.5T field stength
+        - No significant motion artifacts observed
+        - Complete coverage of cerebral hemispheres, brainstem, and cerebellum
+        - Special attention given to temporal lobes and hippocampal structures
+        
+        Video Processing Information:
+        - Videos are processed at 2 frames per second (reduced from original framerate)
+        - REFERENCE EVERY OBSERVTION WITH VIDEO TIMESTAMPS
+        - Frames are resized to a maximum dimension of 1280 pixels (maintaining aspect ratio)
+        - Multiple key frames are extracted and sent to models, not just a single frame
+        - Video support is primarily available for Gemini models
+        - For optimal analysis, important sequences should be highlighted by time in the conversation
+        """,
                         human_model=human_model_config.type,
                         ai_model=ai_model_config.type,
                         mode="ai-ai",  # Use AI-AI mode for both models

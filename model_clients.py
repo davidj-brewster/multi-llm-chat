@@ -16,7 +16,7 @@ from configuration import detect_model_capabilities
 import asyncio
 import logging
 from ollama import Client
-
+import base64
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
@@ -253,9 +253,14 @@ class BaseClient:
             # For video, we'll use key frames
             return {
                 "type": "video",
-                "frames": file_data.get("key_frames", []),
+                "chunks": file_data.get("video_chunks", []),    # Video chunks if available
+                "num_chunks": file_data.get("num_chunks", 0),   # Number of chunks
+                "frames": file_data.get("key_frames", []),      # Fallback to key frames
                 "duration": file_data.get("duration", 0),
-                "mime_type": file_data.get("mime_type", "video/mp4")
+                "mime_type": file_data.get("mime_type", "video/mp4"),
+                "fps": file_data.get("fps", 0),
+                "resolution": file_data.get("resolution", (0, 0)),
+                "path": file_data.get("video_path", "")
             }
         elif file_data["type"] in ["text", "code"]:
             return {
@@ -761,7 +766,7 @@ class GeminiClient(BaseClient):
         self.model_name = self.model
         self.role = "human" if role in ["user", "human"] else "model"
         try:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
             raise ValueError(f"Invalid Gemini API key: {e}")
@@ -871,7 +876,18 @@ class GeminiClient(BaseClient):
             current_instructions = system_instruction if system_instruction and system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are a helpful AI {self.domain}. Think step by step and show reasoning. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed. Limit your output to {MAX_TOKENS} tokens."
 
         # Prepare content for Gemini API
+        # Convert history to Gemini format
         contents = []
+        
+        # Add history messages if available
+        if history and len(history) > 0:
+            for msg in history:
+                role = "user" if msg["role"] in ["user", "human"] else "model"
+                contents.append({
+                    "role": role,
+                    "parts": [{"text": msg["content"]}]
+                })
+            logger.info(f"Added {len(history)} messages from conversation history")
         
         # Add file content if provided
         if file_data:  # All Gemini models support vision according to detect_model_capabilities
@@ -888,6 +904,114 @@ class GeminiClient(BaseClient):
                         }
                     ]
                 })
+            elif file_data["type"] == "video":
+                # Handle video content
+                if "video_chunks" in file_data and file_data["video_chunks"]:
+                    # For Gemini, we need to combine all chunks back into a single video
+                    #full_video_content = ''.join(file_data["video_chunks"])
+                    video_file_name = file_data["path"]
+                    # Log information about the video file
+                    logger.info(f"Processing video: {video_file_name}")
+                    logger.info(f"MIME type: {file_data.get('mime_type', 'video/mp4')}")
+                    logger.info(f"Using model: {self.model_name}")
+                    
+                    video_bytes = open(video_file_name, "rb").read()
+                    logger.info(f"Video size: {len(video_bytes)} bytes")
+                    
+                    # Convert history to Gemini format
+                    gemini_history = []
+                    
+                    # Add history messages
+                    if history and len(history) > 0:
+                        for msg in history:
+                            role = "user" if msg["role"] in ["user", "human"] else "model"
+                            gemini_history.append({
+                                "role": role,
+                                "parts": [{"text": msg["content"]}]
+                            })
+                        logger.info(f"Added {len(history)} messages from conversation history")
+                    
+                    # Add video content to a new user message
+                    gemini_history.append({
+                        "role": "user",
+                        "parts": [
+                            {"text": prompt},
+                            {
+                                "inline_data": {
+                                    "mime_type": file_data.get("mime_type", "video/mp4"),
+                                    "data": video_bytes
+                                }
+                            }
+                        ]
+                    })
+                    
+                    try:
+                        # Generate the response with history
+                        logger.info(f"Sending request to Gemini with {len(gemini_history)} messages including video")
+                        response = self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=gemini_history,
+                            config=types.GenerateContentConfig(
+                                temperature=0.4,
+                                systemInstruction=current_instructions,
+                                max_output_tokens=8192,
+                                candidateCount=1,
+                                safety_settings=[
+                                    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+                                    types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
+                                ]
+                            )
+                        )
+                    except Exception as e:
+                        logger.error(f"Error with history-based video request: {e}")
+                        logger.info("Falling back to simple video request without history")
+                        
+                        # Fallback to simple request without history
+                        response = self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=types.Content(parts=[
+                                types.Part(text=prompt.strip()),
+                                types.Part(
+                                    inline_data=types.Blob(
+                                        data=video_bytes,
+                                        mime_type=file_data.get("mime_type", "video/mp4")
+                                    )
+                                )
+                            ]),
+                            config=types.GenerateContentConfig(
+                                temperature=0.4,
+                                systemInstruction=current_instructions,
+                                max_output_tokens=8192,
+                                candidateCount=1,
+                                safety_settings=[
+                                    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+                                    types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
+                                ]
+                            )
+                        )
+                    
+                    return str(response.text) if (response and response is not None) else ""
+                elif "key_frames" in file_data and file_data["key_frames"]:
+                    # Fallback to key frames if available
+                    for frame in file_data["key_frames"]:
+                        contents.append({
+                            "role": "human",
+                            "parts": [
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/jpeg",
+                                        "data": frame["base64"]
+                                    }
+                                }
+                            ]
+                        })
+                    logger.info(f"Added {len(file_data['key_frames'])} video frames to Gemini request")
             elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
                 # Add text content
                 contents.append({
@@ -901,9 +1025,8 @@ class GeminiClient(BaseClient):
             # Generate final response
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=contents if contents else prompt,
+                contents=contents if contents else prompt,  # This is for non-video content
                 config=types.GenerateContentConfig(
-                    system_instruction=current_instructions,
                     temperature=0.7,
                     max_output_tokens=1280,
                     candidateCount=1,
@@ -916,7 +1039,7 @@ class GeminiClient(BaseClient):
                     ]
                 )
             )
-
+            
             return str(response.text) if (response and response is not None) else ""
         except Exception as e:
             logger.error(f"GeminiClient generate_response error: {e}")
@@ -1326,6 +1449,8 @@ class MLXClient(BaseClient):
                 return "".join(partial_text).strip()
             except Exception as inner_e:
                 logger.error(f"MLX generate_response error: {e}, chunk processing error: {inner_e}")
+                # Return an error message instead of None
+                return f"Error generating response: {e}"
                 return f"Error: {e}"
 
 class OllamaClient(BaseClient):
@@ -1333,22 +1458,20 @@ class OllamaClient(BaseClient):
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "phi4:latest"):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434"  # Not directly used with ollama library
-        self.client = AsyncClient(host=self.base_url) # Use AsyncClient
+        self.client = Client(host=self.base_url) # Use synchronous Client instead of AsyncClient
 
     def test_connection(self) -> None:
         """Test Ollama connection"""
-        # A more reliable test would be to list the models.  This is asynchronous.
-        async def test():
-            try:
-                await self.client.list()
-                logger.info("Ollama connection test successful")
-            except Exception as e:
-                logger.error(f"Ollama connection test failed: {e}")
-                raise
-        asyncio.run(test())
+        # A more reliable test would be to list the models - now synchronous
+        try:
+            self.client.list()
+            logger.info("Ollama connection test successful")
+        except Exception as e:
+            logger.error(f"Ollama connection test failed: {e}")
+            raise
 
 
-    async def generate_response(self,  # Make this method async
+    def generate_response(self,  # Changed to synchronous method
                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
@@ -1393,11 +1516,21 @@ class OllamaClient(BaseClient):
             elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
                 # --- Key Change: Send *all* sampled frames ---
                 messages[-1]['images'] = [frame["base64"] for frame in file_data["key_frames"]]
+            elif file_data["type"] == "video" and "video_chunks" in file_data:
+                # For Ollama, we can send the entire video content since it's running locally
+                # Combine all chunks into a single video content
+                full_video_content = ''.join(file_data["video_chunks"])
+                
+                # Add the video content to the message
+                # Note: This assumes Ollama can handle video content directly
+                # If not, this will need to be modified to extract frames
+                messages[-1]['video'] = full_video_content
+                logger.info(f"Added full video content to Ollama request ({len(full_video_content)} bytes)")
 
 
         try:
             # Use the chat() method (Async)
-            response: ChatResponse = await self.client.chat(
+            response: ChatResponse = self.client.chat(  # Now synchronous
                 model=self.model,
                 messages=messages,  # Pass the correctly formatted messages
                 stream=False,
@@ -1414,4 +1547,5 @@ class OllamaClient(BaseClient):
 
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
+            return f"Error generating response: {e}"
             raise e

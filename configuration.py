@@ -1,17 +1,39 @@
 import os
 import yaml
 import logging
+import traceback
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
 from pathlib import Path
 import json
+
+# Custom exception classes for better error handling
+class ConfigurationError(Exception):
+    """Base exception for configuration-related errors."""
+    pass
+
+class ConfigFileNotFoundError(ConfigurationError):
+    """Raised when a configuration file is not found."""
+    pass
+
+class InvalidConfigFormatError(ConfigurationError):
+    """Raised when the configuration format is invalid."""
+    pass
+
+class ModelConfigurationError(ConfigurationError):
+    """Raised when there's an error in model configuration."""
+    pass
+
+class SystemInstructionsError(ConfigurationError):
+    """Raised when there's an error loading system instructions."""
+    pass
 
 logger = logging.getLogger(__name__)
 
 # Supported model configurations
 SUPPORTED_MODELS = {
     "claude": ["claude", "haiku"],
-    "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning"],
+    "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning","gemini-2.0-flash-exp", "gemini"],
     "openai": ["gpt-4-vision", "gpt-4o"],
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"]      # All MLX models supported
@@ -67,25 +89,44 @@ class FileConfig:
         self.__post_init__()
 
     def __post_init__(self):
-        if not os.path.exists(self.path):
-            raise ValueError(f"File not found: {self.path}")
-        
-        file_size = os.path.getsize(self.path)
-        extension = os.path.splitext(self.path)[1].lower()
-        
-        # Validate file type
-        if self.type not in SUPPORTED_FILE_TYPES:
-            raise ValueError(f"Unsupported file type: {self.type}")
-        
-        type_config = SUPPORTED_FILE_TYPES[self.type]
-        
-        # Check extension
-        if extension not in type_config["extensions"]:
-            raise ValueError(f"Unsupported file extension {extension} for type {self.type}")
-        
-        # Check file size
-        if file_size > type_config["max_size"]:
-            raise ValueError(f"File size {file_size} exceeds maximum {type_config['max_size']} for type {self.type}")
+        try:
+            if not os.path.exists(self.path):
+                raise ConfigFileNotFoundError(f"File not found: {self.path}")
+            
+            try:
+                file_size = os.path.getsize(self.path)
+            except (OSError, IOError) as e:
+                raise ConfigurationError(f"Error accessing file {self.path}: {e}")
+                
+            extension = os.path.splitext(self.path)[1].lower()
+            
+            # Validate file type
+            if self.type not in SUPPORTED_FILE_TYPES:
+                raise InvalidConfigFormatError(f"Unsupported file type: {self.type}")
+            
+            type_config = SUPPORTED_FILE_TYPES[self.type]
+            
+            # Check extension
+            if extension not in type_config["extensions"]:
+                raise InvalidConfigFormatError(
+                    f"Unsupported file extension {extension} for type {self.type}. "
+                    f"Supported extensions: {', '.join(type_config['extensions'])}"
+                )
+            
+            # Check file size
+            if file_size > type_config["max_size"]:
+                readable_size = f"{type_config['max_size'] / (1024 * 1024):.1f}MB"
+                raise InvalidConfigFormatError(
+                    f"File size {file_size / (1024 * 1024):.1f}MB exceeds maximum {readable_size} for type {self.type}"
+                )
+        except ConfigurationError:
+            # Re-raise specific configuration errors
+            raise
+        except Exception as e:
+            # Catch any other unexpected errors
+            logger.error(f"Unexpected error validating file config: {e}")
+            logger.debug(traceback.format_exc())
+            raise ConfigurationError(f"Unexpected error validating file configuration: {e}")
         
         # Validate resolution for image/video
         if self.type in ["image", "video"] and self.max_resolution:
@@ -93,14 +134,16 @@ class FileConfig:
             requested_res = self.max_resolution.upper()
             if requested_res == "4K":
                 if self.type != "video":
-                    raise ValueError("4K resolution only supported for video files")
+                    raise InvalidConfigFormatError("4K resolution only supported for video files")
             elif "X" in requested_res:
                 try:
                     width, height = map(int, requested_res.split("X"))
                     if width > max_width or height > max_height:
-                        raise ValueError(f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}")
+                        raise InvalidConfigFormatError(
+                            f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}"
+                        )
                 except ValueError:
-                    raise ValueError(f"Invalid resolution format: {requested_res}")
+                    raise InvalidConfigFormatError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT")
 
 @dataclass
 class ModelConfig:
@@ -112,15 +155,15 @@ class ModelConfig:
         # Validate model type
         provider = next((p for p in SUPPORTED_MODELS if self.type.startswith(p)), None)
         if not provider:
-            raise ValueError(f"Unsupported model type: {self.type}")
+            raise ModelConfigurationError(f"Unsupported model type: {self.type}. Supported providers: {', '.join(SUPPORTED_MODELS.keys())}")
         
         if provider not in ["ollama", "mlx"]:  # Local models support any variant
             if self.type not in SUPPORTED_MODELS[provider]:
-                raise ValueError(f"Unsupported model variant: {self.type}")
+                raise ModelConfigurationError(f"Unsupported model variant: {self.type}. Supported variants: {', '.join(SUPPORTED_MODELS[provider])}")
         
         # Validate role
         if self.role not in ["human", "assistant"]:
-            raise ValueError(f"Invalid role: {self.role}. Must be 'human' or 'assistant'")
+            raise ModelConfigurationError(f"Invalid role: {self.role}. Must be 'human' or 'assistant'")
         
         # Validate persona if provided
         if self.persona and not isinstance(self.persona, str):
@@ -161,7 +204,7 @@ def load_system_instructions() -> Dict:
     """Load system instructions from docs/system_instructions.md"""
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
-        raise FileNotFoundError("System instructions file not found")
+        raise SystemInstructionsError("System instructions file not found at docs/system_instructions.md")
     
     content = instructions_path.read_text()
     
@@ -189,7 +232,8 @@ def load_system_instructions() -> Dict:
             if isinstance(data, dict):
                 instructions.update(data)
         except yaml.YAMLError as e:
-            logger.error(f"Error parsing system instructions YAML: {e}")
+            logger.error(f"Error parsing system instructions YAML block: {e}")
+            logger.debug(f"Problematic YAML block: {block}")
             continue
     
     return instructions
@@ -197,13 +241,13 @@ def load_system_instructions() -> Dict:
 def load_config(path: str) -> DiscussionConfig:
     """Load and validate YAML configuration file"""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Configuration file not found: {path}")
+        raise ConfigFileNotFoundError(f"Configuration file not found: {path}")
     
     try:
         with open(path) as f:
             config_dict = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML format: {e}")
+        raise InvalidConfigFormatError(f"Invalid YAML format in {path}: {e}")
     
     if not isinstance(config_dict, dict) or "discussion" not in config_dict:
         raise ValueError("Configuration must contain a 'discussion' section")
@@ -230,7 +274,7 @@ def load_config(path: str) -> DiscussionConfig:
         
         return DiscussionConfig(**config_dict["discussion"])
     except (TypeError, ValueError) as e:
-        raise ValueError(f"Invalid configuration format: {e}")
+        raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e}")
 
 def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str, bool]:
     """Detect model capabilities based on type"""
@@ -242,46 +286,55 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
     }
     
     # Extract model type from ModelConfig or use string directly
-    model_type = model_config.type if isinstance(model_config, ModelConfig) else model_config
-    
-    # Vision-capable cloud models
-    vision_models = [
-        "claude",
-        "gpt-4o", 
-        "sonnet",
-        "openai",
-        "gemini-2-pro",
-        "gemini-2-reasoning",
-        "gemini-2-flash-lite",
-        "chatgpt-latest",
-        "gemini"
-    ]
-    
-    # Ollama vision-capable models
-    ollama_vision_models = [
-        "gemma3", "llava", "bakllava", "moondream", "llava-phi3", "gpt", "chatgpt"
-    ]
-    
-    # Check if it's an Ollama model with vision support
-    if "ollama" in model_type.lower():
-        for vision_model in ollama_vision_models:
-            if vision_model in model_type.lower():
-                capabilities["vision"] = True
-                break
-    else:
-        # Check cloud model vision capabilities
-        for prefix in vision_models:
-            if model_type.startswith(prefix):
-                capabilities["vision"] = True
-                break
-    
-    # Streaming capability
-    if model_type.startswith(("claude", "gpt", "chatgpt", "gemini", "gemma")):
-        capabilities["vision"] = True
-        capabilities["streaming"] = True
-    
-    # Function calling capability
-    if "gpt-4" in model_type or "claude" in model_type:
-        capabilities["function_calling"] = True
-    
-    return capabilities
+    try:
+        model_type = model_config.type if isinstance(model_config, ModelConfig) else model_config
+        
+        if not model_type:
+            logger.warning("Empty model type provided to detect_model_capabilities")
+            return capabilities
+            
+        # Vision-capable cloud models
+        vision_models = [
+            "claude",
+            "gpt-4o", 
+            "sonnet",
+            "openai",
+            "gemini-2-pro",
+            "gemini-2-reasoning",
+            "gemini-2-flash-lite",
+            "gemini-2.0-flash-exp",
+            "chatgpt-latest",
+            "gemini"
+        ]
+        
+        # Ollama vision-capable models
+        ollama_vision_models = [
+            "gemma3", "llava", "bakllava", "moondream", "llava-phi3", "gpt", "chatgpt"
+        ]
+        
+        # Check if it's an Ollama model with vision support
+        if "ollama" in model_type.lower():
+            for vision_model in ollama_vision_models:
+                if vision_model in model_type.lower():
+                    capabilities["vision"] = True
+                    break
+        else:
+            # Check cloud model vision capabilities
+            for prefix in vision_models:
+                if model_type.startswith(prefix):
+                    capabilities["vision"] = True
+                    break
+        
+        # Streaming capability
+        if model_type.startswith(("claude", "gpt", "chatgpt", "gemini", "gemma","gemini-2.0-flash-exp")):
+            capabilities["vision"] = True
+            capabilities["streaming"] = True
+        
+        # Function calling capability
+        if "gpt-4" in model_type or "claude" in model_type:
+            capabilities["function_calling"] = True
+        
+        return capabilities
+    except Exception as e:
+        logger.error(f"Error detecting model capabilities: {e}")
+        return capabilities  # Return default capabilities on error
