@@ -176,6 +176,21 @@ class ConversationArbiter:
 
     def analyze_conversation_flow(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """Analyze conversation flow patterns and transitions"""
+        """
+        Analyze conversation flow patterns and topic transitions.
+        
+        This method uses NLP techniques to identify topics in the conversation,
+        track topic shifts, and calculate metrics related to conversation coherence
+        and depth. It uses spaCy for semantic analysis when available, with a
+        fallback to basic analysis.
+        
+        Args:
+            messages: List of message dictionaries with 'content' key
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing flow metrics including topic_coherence,
+                           topic_depth, and topic_distribution
+        """
         try:
             if self.nlp:
                 docs = [self.nlp(msg["content"]) for msg in messages]
@@ -207,6 +222,19 @@ class ConversationArbiter:
 
     def _text_similarity(self, text1: str, text2: str) -> float:
         """Calculate semantic similarity between two texts"""
+        """
+        Calculate semantic similarity between two text strings.
+        
+        Uses spaCy's vector-based similarity when available, falling back to
+        SequenceMatcher for string similarity when spaCy is not available.
+        
+        Args:
+            text1: First text string
+            text2: Second text string
+            
+        Returns:
+            float: Similarity score between 0.0 and 1.0
+        """
         if self.nlp:
             doc1 = self.nlp(text1)
             doc2 = self.nlp(text2)
@@ -215,6 +243,18 @@ class ConversationArbiter:
 
     def _calculate_topic_distribution(self, topics: List[str]) -> Dict[str, float]:
         """Calculate normalized topic frequencies"""
+        """
+        Calculate normalized frequency distribution of topics.
+        
+        Counts occurrences of each topic and normalizes by the total count
+        to create a probability distribution.
+        
+        Args:
+            topics: List of topic strings
+            
+        Returns:
+            Dict[str, float]: Dictionary mapping topics to their normalized frequencies
+        """
         counts = Counter(topics)
         total = sum(counts.values())
         return {topic: count/total for topic, count in counts.items()}
@@ -355,6 +395,18 @@ class VisualizationGenerator:
 
     def generate_timeline(self, assertions: Dict[str, Dict[str, AssertionEvidence]]) -> str:
         """Generate timeline visualization of grounded assertions"""
+        """
+        Generate a timeline visualization of grounded assertions from both conversations.
+        
+        Creates a Plotly scatter plot showing assertions from both AI-AI and Human-AI
+        conversations on a timeline, with each assertion represented as a point with text.
+        
+        Args:
+            assertions: Dictionary mapping conversation types to their assertions
+            
+        Returns:
+            str: HTML representation of the timeline visualization
+        """
         ai_ai_assertions = list(assertions["ai-ai"].keys())
         human_ai_assertions = list(assertions["human-ai"].keys())
         
@@ -391,6 +443,22 @@ def evaluate_conversations(
                                 default_convo: List[Dict[str, str]],
                                 goal:str) -> ArbiterResult:
     """Compare and evaluate three conversation modes"""
+    """
+    Compare and evaluate three conversation modes: AI-AI, Human-AI, and default.
+    
+    This function performs comprehensive analysis of conversations including flow
+    analysis, topic coherence, and grounding of assertions. It uses the Gemini API
+    to evaluate the quality and effectiveness of different conversation modes.
+    
+    Args:
+        ai_ai_convo: List of message dictionaries from AI-AI conversation
+        human_ai_convo: List of message dictionaries from Human-AI conversation
+        default_convo: List of message dictionaries from default conversation
+        goal: The conversation goal or topic
+        
+    Returns:
+        ArbiterResult: Comprehensive evaluation results
+    """
     try:
         # Analyze conversation flows
         gemini_api_key = os.environ.get("GEMINI_API_KEY")

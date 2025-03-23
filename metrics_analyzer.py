@@ -112,6 +112,16 @@ class TopicAnalyzer:
     def _clean_message(self, message: str) -> str:
         """Clean message text for topic analysis"""
         # Remove code blocks
+        """
+        Clean message text for topic analysis by removing code blocks, thinking tags,
+        HTML, URLs, and special characters.
+        
+        Args:
+            message: The message text to clean
+            
+        Returns:
+            str: Cleaned message text suitable for topic analysis
+        """
         text = re.sub(r'```.*?```', '', message, flags=re.DOTALL)
         
         # Remove thinking tags
@@ -130,6 +140,18 @@ class TopicAnalyzer:
     
     def get_message_topics(self, message: str, all_messages: List[str]) -> List[str]:
         """Get topics for a single message"""
+        """
+        Extract the top topics from a message by analyzing its TF-IDF vector.
+        
+        Args:
+            message: The message text to analyze
+            all_messages: List of all messages in the conversation for context
+            
+        Returns:
+            List[str]: Top 3 terms representing the message topics based on
+                      TF-IDF scores
+        """
+        message = self._clean_message(message)
         # Add message to corpus and get its vector
         all_messages.append(message)
         tfidf_matrix = self.vectorizer.fit_transform(all_messages)
@@ -152,6 +174,20 @@ class MetricsAnalyzer:
     def analyze_message(self, message: Dict[str, str], 
                        all_messages: List[str]) -> MessageMetrics:
         """Extract metrics from a single message"""
+        """
+        Extract comprehensive metrics from a single message.
+        
+        Analyzes message content to extract metrics like length, thinking sections,
+        question count, code blocks, references to previous messages, assertion count,
+        complexity score, sentiment score, and topics.
+        
+        Args:
+            message: Dictionary containing message data with 'content' key
+            all_messages: List of all previous message contents for context
+            
+        Returns:
+            MessageMetrics: Object containing all extracted metrics
+        """
         content = message["content"]
         
         # Basic metrics
@@ -270,6 +306,20 @@ class MetricsAnalyzer:
     def analyze_conversation_flow(self, 
                                 conversation: List[Dict[str, str]]) -> nx.DiGraph:
         """Analyze conversation flow and create graph"""
+        """
+        Analyze conversation flow and create a directed graph representation.
+        
+        Creates a graph where nodes represent messages and edges represent the flow
+        between messages. Edge weights are based on relevance between messages.
+        Cross-references between non-adjacent messages are also detected and added
+        as edges.
+        
+        Args:
+            conversation: List of message dictionaries with 'role' and 'content' keys
+            
+        Returns:
+            nx.DiGraph: Directed graph representing the conversation flow
+        """
         G = nx.DiGraph()
         
         # Add nodes for each message
@@ -300,6 +350,17 @@ class MetricsAnalyzer:
     
     def _calculate_relevance(self, msg1: str, msg2: str) -> float:
         """Calculate relevance between two messages"""
+        """
+        Calculate the relevance between two messages using Jaccard similarity
+        of key terms.
+        
+        Args:
+            msg1: First message text
+            msg2: Second message text
+            
+        Returns:
+            float: Similarity score between 0.0 and 1.0
+        """
         # Extract key terms
         terms1 = set(self._extract_key_terms(msg1))
         terms2 = set(self._extract_key_terms(msg2))
@@ -312,6 +373,17 @@ class MetricsAnalyzer:
     
     def _extract_key_terms(self, text: str) -> List[str]:
         """Extract key terms from text"""
+        """
+        Extract key terms from text by removing code blocks, thinking tags,
+        and common stopwords.
+        
+        Args:
+            text: The text to extract terms from
+            
+        Returns:
+            List[str]: List of key terms (words longer than 3 characters
+                      that aren't stopwords)
+        """
         # Remove code blocks
         text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
         
@@ -327,6 +399,19 @@ class MetricsAnalyzer:
     
     def _has_reference(self, msg: str, previous_msg: str) -> bool:
         """Check if message references a previous message"""
+        """
+        Check if a message references a previous message either through
+        direct reference phrases or by mentioning key terms from the
+        previous message.
+        
+        Args:
+            msg: The message to check for references
+            previous_msg: The previous message that might be referenced
+            
+        Returns:
+            bool: True if the message references the previous message,
+                 False otherwise
+        """
         key_terms = self._extract_key_terms(previous_msg)
         msg_lower = msg.lower()
         
@@ -344,6 +429,19 @@ class MetricsAnalyzer:
     def analyze_conversation(self, 
                            conversation: List[Dict[str, str]]) -> ConversationMetrics:
         """Analyze entire conversation"""
+        """
+        Analyze an entire conversation to extract comprehensive metrics.
+        
+        Identifies topic clusters, tracks topic evolution, analyzes individual
+        messages, and calculates aggregate metrics for the conversation as a whole.
+        
+        Args:
+            conversation: List of message dictionaries with 'role' and 'content' keys
+            
+        Returns:
+            ConversationMetrics: Object containing comprehensive metrics for the
+                                entire conversation
+        """
         # Get message contents
         messages = [msg["content"] for msg in conversation]
         
@@ -425,6 +523,19 @@ class MetricsAnalyzer:
     
     def generate_flow_visualization(self, graph: nx.DiGraph) -> Dict:
         """Generate visualization data for conversation flow"""
+        """
+        Generate visualization data for conversation flow graph.
+        
+        Converts the NetworkX graph into a format suitable for visualization,
+        including node positions, role information, content previews, and
+        edge weights.
+        
+        Args:
+            graph: NetworkX DiGraph representing the conversation flow
+            
+        Returns:
+            Dict: Visualization data with 'nodes' and 'edges' keys
+        """
         # Node positions using spring layout
         pos = nx.spring_layout(graph)
         
@@ -456,6 +567,20 @@ class MetricsAnalyzer:
 
 def analyze_conversations(ai_ai_conversation: List[Dict[str, str]],
                         human_ai_conversation: List[Dict[str, str]]) -> Dict:
+    """
+    Analyze and compare two conversations (AI-AI and Human-AI).
+    
+    Performs comprehensive analysis of both conversations, including metrics
+    calculation and flow visualization. The results can be used to compare
+    the quality and characteristics of AI-AI versus Human-AI interactions.
+    
+    Args:
+        ai_ai_conversation: List of message dictionaries from AI-AI conversation
+        human_ai_conversation: List of message dictionaries from Human-AI conversation
+        
+    Returns:
+        Dict: Comparison results with 'metrics' and 'flow' data for both conversations
+    """
     """Analyze and compare two conversations"""
     analyzer = MetricsAnalyzer()
     

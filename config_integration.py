@@ -7,7 +7,7 @@ import datetime
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from pathlib import Path
-
+import json
 logger = logging.getLogger(__name__)
 
 # Supported model configurations
@@ -229,6 +229,19 @@ def load_config(path: str) -> DiscussionConfig:
 
 def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
     """Detect model capabilities based on type"""
+    """
+    Detect and return capabilities of an AI model based on its type.
+    
+    This function analyzes the model type to determine which capabilities
+    (vision, streaming, function calling) are supported by the model.
+    
+    Args:
+        model_config: ModelConfig object containing the model type
+        
+    Returns:
+        Dict[str, bool]: Dictionary mapping capability names to boolean values
+                        indicating whether each capability is supported
+    """
     capabilities = {
         "vision": False,
         "streaming": False,
@@ -248,6 +261,19 @@ def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
 
 def run_from_config(config_path: str) -> None:
     """Run discussion from configuration file"""
+    """
+    Run an AI discussion based on settings in a configuration file.
+    
+    This function loads a configuration file, initializes a ConversationManager
+    with the specified settings, and runs a conversation between the configured
+    models. The conversation is then saved to an HTML file.
+    
+    Args:
+        config_path: Path to the YAML configuration file
+        
+    Returns:
+        None
+    """
     config = load_config(config_path)
     
     # Import here to avoid circular imports

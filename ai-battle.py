@@ -88,6 +88,20 @@ class ConversationManager:
 
     def _get_client(self, model_name: str) -> Optional[BaseClient]:
         """Get or create a client instance."""
+        """
+        Get an existing client instance or create a new one for the specified model.
+        
+        This method manages client instances, creating them on demand and caching them
+        for reuse. It supports various model types including Claude, GPT, Gemini, MLX,
+        Ollama, and Pico models.
+        
+        Args:
+            model_name: Name of the model to get or create a client for
+            
+        Returns:
+            Optional[BaseClient]: Client instance if successful, None if the model
+                                 is unknown or client creation fails
+        """
         if model_name not in self._initialized_clients:
             try:
                 if model_name == "claude":
@@ -159,6 +173,14 @@ class ConversationManager:
 
     def cleanup_unused_clients(self):
         """Clean up clients that haven't been used recently."""
+        """
+        Clean up clients that haven't been used recently to free up resources.
+        
+        This method removes client instances from the model map and initialized
+        clients set, calling their __del__ method if available to ensure proper
+        cleanup of resources. It helps manage memory usage by releasing resources
+        associated with unused model clients.
+        """
         for model_name in list(self._initialized_clients):
             if model_name not in self.model_map:
                 continue
@@ -171,6 +193,20 @@ class ConversationManager:
 
     def validate_connections(self, required_models: List[str] = None) -> bool:
         """Validate required model connections."""
+        """
+        Validate that required model connections are available and working.
+        
+        This method checks if the specified models are available and properly
+        initialized. If no specific models are provided, it validates all models
+        in the model map except for local models like "ollama" and "mlx".
+        
+        Args:
+            required_models: List of model names to validate. If None, validates
+                           all models in the model map except "ollama" and "mlx".
+            
+        Returns:
+            bool: True if all required connections are valid, False otherwise.
+        """
         if required_models is None:
             required_models = [name for name, client in self.model_map.items()
                            if client and name not in ["ollama", "mlx"]]
@@ -184,6 +220,15 @@ class ConversationManager:
 
     def rate_limited_request(self):
         """Apply rate limiting to requests."""
+        """
+        Apply rate limiting to requests to avoid overwhelming API services.
+        
+        This method ensures that consecutive requests are separated by at least
+        the minimum delay specified in self.min_delay. If a request is made
+        before the minimum delay has elapsed since the last request, this method
+        will sleep for the remaining time to enforce the rate limit. This helps
+        prevent rate limit errors from API providers.
+        """
         with self.rate_limit_lock:
             current_time = time.time()
             if current_time - self.last_request_time < self.min_delay:
@@ -199,6 +244,25 @@ class ConversationManager:
                             file_data: Dict[str, Any] = None,
                             system_instruction: str=None) -> str:
         """Single conversation turn with specified model and role."""
+        """
+        Execute a single conversation turn with the specified model and role.
+        
+        This method handles the complexity of generating appropriate responses
+        based on the conversation mode, role, and history. It supports different
+        prompting strategies including meta-prompting and no-meta-prompting modes.
+        
+        Args:
+            prompt: The input prompt for this turn
+            model_type: Type of model to use
+            client: Client instance for the model
+            mode: Conversation mode (e.g., "human-aiai", "no-meta-prompting")
+            role: Role for this turn ("user" or "assistant")
+            file_data: Optional file data to include with the request
+            system_instruction: Optional system instruction to override defaults
+            
+        Returns:
+            str: Generated response text
+        """
         self.mode = mode
         mapped_role = "user" if (role == "human" or role == "HUMAN" or role == "user") else "assistant"
         prompt_level = "no-meta-prompting" if mode == "no-meta-prompting" or mode =="default" else mapped_role
@@ -480,7 +544,19 @@ async def save_conversation(conversation: List[Dict[str, str]],
                      ai_model: str, 
                      file_data: Dict[str, Any] = None,
                      mode: str = None) -> None:
-    """Save conversation to HTML file."""
+    """Save an AI conversation to an HTML file with proper encoding.
+
+    Args:
+        conversation (List[Dict[str, str]]): List of conversation messages with 'role' and 'content'
+        filename (str): Output HTML file path
+        human_model (str): Name of the human/user model
+        ai_model (str): Name of the AI model
+        file_data (Dict[str, Any], optional): Any associated file content (images, video, text)
+        mode (str, optional): Conversation mode ('human-ai' or 'ai-ai')
+
+    Raises:
+        Exception: If saving fails or template is missing
+    """
     try:
         with open("templates/conversation.html", "r") as f:
             template = f.read()

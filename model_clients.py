@@ -15,6 +15,7 @@ from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
 import asyncio
 import logging
+from ollama import Client
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,103 @@ class ModelConfig:
     seed: Optional[int] = random.randint(0, 1000)
 
 class BaseClient:
-    """Base class for AI clients with validation"""
+    """
+    Abstract base class for AI model client implementations with validation and conversation management.
+    
+    This class provides a common interface and shared functionality for interacting with
+    various AI model APIs (OpenAI, Claude, Gemini, etc.). It handles API key validation,
+    capability detection, instruction management, conversation context analysis, and
+    file content preparation for different model providers.
+    
+    The BaseClient implements core functionality that is common across all model providers,
+    while model-specific implementations are handled by subclasses. This design follows
+    the Template Method pattern, where the base class defines the skeleton of operations
+    and subclasses override specific steps.
+    
+    Attributes:
+        api_key (str): The API key for authentication with the model provider.
+        domain (str): The knowledge domain or subject area for the conversation.
+        mode (str): The conversation mode (e.g., "ai-ai", "human-ai", "default").
+        role (str): The role this client is playing (e.g., "human", "assistant").
+        model (str): The specific model identifier being used.
+        capabilities (Dict[str, bool]): Dictionary of supported capabilities (vision, streaming, etc.).
+        instructions (Optional[str]): System instructions for the model.
+        adaptive_manager (AdaptiveInstructionManager): Manager for dynamic instructions.
+    
+    Implementation Notes:
+        Subclasses must implement the generate_response method and should override
+        validate_connection to provide model-specific validation logic. The BaseClient
+        provides utility methods for conversation analysis, instruction management,
+        and file content preparation that subclasses can leverage.
+    
+    Examples:
+        Basic initialization:
+        >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+        >>> client.validate_connection()
+        True
+        
+        Custom instruction handling:
+        >>> client = BaseClient(mode="human-ai", api_key="sk-...", domain="medicine")
+        >>> client.instructions = "You are a medical assistant specializing in diagnostics."
+        >>> client._get_mode_aware_instructions(role="assistant")
+        'You are a medical assistant specializing in diagnostics.'
+        
+        Conversation analysis:
+        >>> history = [{"role": "user", "content": "What causes headaches?"}]
+        >>> analysis = client._analyze_conversation(history)
+        >>> analysis["summary"]
+        '<p>Previous exchanges:</p><p>Human: What causes headaches?</p>'
+        
+        File content preparation:
+        >>> image_data = {
+        ...     "type": "image",
+        ...     "base64": "base64_encoded_data",
+        ...     "mime_type": "image/jpeg",
+        ...     "dimensions": (800, 600)
+        ... }
+        >>> prepared = client._prepare_file_content(image_data)
+        >>> prepared["type"]
+        'image'
+    """
     def __init__(self, mode: str, api_key: str, domain: str = "", model: str = "", role: str = ""):
+        """
+        Initialize a new BaseClient instance.
+        
+        Creates a new client with the specified configuration and initializes the
+        adaptive instruction manager. Validates and processes the API key and
+        detects model capabilities based on the model identifier.
+        
+        Args:
+            mode (str): The conversation mode to use. Valid values include:
+                - "ai-ai": Both participants are AI models
+                - "human-ai": One human participant and one AI model
+                - "default": Standard assistant mode
+            api_key (str): The API key for authentication with the model provider.
+                Will be stripped of whitespace and validated during connection.
+            domain (str, optional): The knowledge domain or subject area for the
+                conversation. Used for generating context-aware instructions.
+                Defaults to an empty string.
+            model (str, optional): The specific model identifier to use. This is used
+                to detect capabilities and may be overridden by subclasses.
+                Defaults to an empty string.
+            role (str, optional): The role this client is playing in the conversation.
+                Valid values include "human", "user", "assistant", or "model".
+                Defaults to an empty string.
+                
+        Note:
+            Subclasses typically override this method to initialize model-specific
+            clients and configurations while calling super().__init__() to ensure
+            base functionality is properly initialized.
+            
+        Example:
+            >>> client = BaseClient(
+            ...     mode="ai-ai",
+            ...     api_key="sk-...",
+            ...     domain="Artificial Intelligence",
+            ...     model="gpt-4",
+            ...     role="assistant"
+            ... )
+        """
         self.api_key = api_key.strip() if api_key else ""
         self.domain = domain
         self.mode = mode
@@ -45,7 +141,52 @@ class BaseClient:
         self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
 
     def _prepare_file_content(self, file_data: Dict[str, Any]) -> Any:
-        """Prepare file content for model API."""
+        """
+        Prepare file content for model API consumption.
+        
+        Transforms raw file data into a standardized format suitable for sending to
+        model APIs. Handles different file types (image, video, text, code) and
+        extracts relevant metadata while ensuring the content is properly formatted
+        for the specific requirements of model APIs.
+        
+        Args:
+            file_data (Dict[str, Any]): Dictionary containing file metadata and content.
+                Must include a "type" key with one of the following values:
+                - "image": For image files (requires "base64", "mime_type", and optionally "dimensions")
+                - "video": For video files (requires "key_frames", "duration", and "mime_type")
+                - "text": For text files (requires "text_content")
+                - "code": For code files (requires "text_content" and optionally "mime_type")
+        
+        Returns:
+            Any: A dictionary with standardized format for the specific file type,
+                or None if file_data is empty or has an unsupported type.
+                
+        Examples:
+            Processing an image:
+            >>> file_data = {
+            ...     "type": "image",
+            ...     "base64": "base64_encoded_data",
+            ...     "mime_type": "image/jpeg",
+            ...     "dimensions": (800, 600)
+            ... }
+            >>> result = client._prepare_file_content(file_data)
+            >>> result["type"]
+            'image'
+            >>> result["width"]
+            800
+            
+            Processing a text file:
+            >>> file_data = {
+            ...     "type": "text",
+            ...     "text_content": "This is a sample text file.",
+            ...     "path": "sample.txt"
+            ... }
+            >>> result = client._prepare_file_content(file_data)
+            >>> result["type"]
+            'text'
+            >>> result["content"]
+            'This is a sample text file.'
+        """
         if not file_data:
             return None
         
@@ -75,7 +216,43 @@ class BaseClient:
             return None
 
     def _create_file_reference(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a lightweight reference to file data for history."""
+        """
+        Create a lightweight reference to file data for conversation history.
+        
+        Generates a memory-efficient representation of file data that can be stored
+        in conversation history without including large binary data like base64-encoded
+        images or full text content. This is particularly important for managing memory
+        usage in long conversations that include multiple files.
+        
+        Args:
+            file_data (Dict[str, Any]): Dictionary containing file metadata and content.
+                Must include a "type" key and may include other metadata like "path".
+        
+        Returns:
+            Dict[str, Any]: A lightweight reference containing:
+                - "type": The file type (image, video, text, code)
+                - "path": The file path if available
+                - "metadata": Additional metadata excluding large binary data
+        
+        Examples:
+            Creating a reference to an image file:
+            >>> file_data = {
+            ...     "type": "image",
+            ...     "path": "/path/to/image.jpg",
+            ...     "base64": "large_base64_encoded_data",
+            ...     "mime_type": "image/jpeg",
+            ...     "dimensions": (800, 600)
+            ... }
+            >>> reference = client._create_file_reference(file_data)
+            >>> reference["type"]
+            'image'
+            >>> reference["path"]
+            '/path/to/image.jpg'
+            >>> "base64" in reference["metadata"]
+            False
+            >>> reference["metadata"]["mime_type"]
+            'image/jpeg'
+        """
         return {
             "type": file_data["type"],
             "path": file_data.get("path", ""),
@@ -83,10 +260,75 @@ class BaseClient:
         }
 
     def __str__(self):
+        """
+        Return a string representation of the client.
+        
+        Provides a concise, human-readable representation of the client instance
+        that includes the class name and key configuration parameters. This is useful
+        for debugging, logging, and identifying client instances.
+        
+        Returns:
+            str: A string in the format "ClassName(mode=mode_value, domain=domain_value, model=model_value)"
+        
+        Examples:
+            >>> client = BaseClient(mode="ai-ai", domain="science", model="gpt-4")
+            >>> str(client)
+            'BaseClient(mode=ai-ai, domain=science, model=gpt-4)'
+            
+            >>> gemini = GeminiClient(mode="human-ai", role="assistant", api_key="...", domain="medicine", model="gemini-pro")
+            >>> str(gemini)
+            'GeminiClient(mode=human-ai, domain=medicine, model=gemini-pro)'
+        """
         return f"{self.__class__.__name__}(mode={self.mode}, domain={self.domain}, model={self.model})"
 
     def _analyze_conversation(self, history: List[Dict[str, str]]) -> Dict:
-        """Analyze conversation context to inform response generation"""
+        """
+        Analyze conversation context to inform response generation.
+        
+        Examines the conversation history to extract key information that can be used
+        to generate more contextually relevant responses. This includes identifying
+        the last AI response and any assessment of that response, as well as creating
+        a summary of recent exchanges.
+        
+        The analysis is particularly useful for:
+        - Maintaining conversation coherence
+        - Identifying topics and themes
+        - Tracking user satisfaction through assessments
+        - Providing context for instruction generation
+        
+        Args:
+            history (List[Dict[str, str]]): A list of message dictionaries representing
+                the conversation history. Each dictionary should have at least "role"
+                and "content" keys. The role can be "user", "human", "assistant", or "system".
+        
+        Returns:
+            Dict: A dictionary containing analysis results with the following keys:
+                - "ai_response": The last AI response content if available
+                - "ai_assessment": Any assessment of the last AI response if available
+                - "summary": HTML-formatted summary of recent conversation exchanges
+        
+        Examples:
+            Basic conversation analysis:
+            >>> history = [
+            ...     {"role": "user", "content": "What is machine learning?"},
+            ...     {"role": "assistant", "content": "Machine learning is a subset of AI..."},
+            ...     {"role": "user", "content": "Can you give me an example?"}
+            ... ]
+            >>> analysis = client._analyze_conversation(history)
+            >>> "summary" in analysis
+            True
+            >>> analysis["summary"].startswith("<p>Previous exchanges:</p>")
+            True
+            
+            Analysis with assessment:
+            >>> history_with_assessment = [
+            ...     {"role": "assistant", "content": "Machine learning is..."},
+            ...     {"role": "user", "content": {"assessment": "helpful", "feedback": "Good explanation"}}
+            ... ]
+            >>> analysis = client._analyze_conversation(history_with_assessment)
+            >>> analysis["ai_assessment"]
+            'helpful'
+        """
         if not history:
             return {}
 
@@ -117,17 +359,89 @@ class BaseClient:
         }
 
     def _get_initial_instructions(self) -> str:
-        """Get initial instructions before conversation history exists"""
+        """
+        Get initial instructions before conversation history exists.
+        
+        Retrieves mode-aware instructions for the initial state of a conversation
+        when no history is available yet. This provides the foundation for the model's
+        behavior and response style.
+        
+        Returns:
+            str: Initial instructions string based on the client's mode and domain.
+        
+        Examples:
+            >>> client = BaseClient(mode="ai-ai", domain="science")
+            >>> instructions = client._get_initial_instructions()
+            >>> len(instructions) > 0
+            True
+        """
         return self._get_mode_aware_instructions(self.domain)
 
     def _update_instructions(self, history: List[Dict[str, str]], role: str = None,mode: str = "ai-ai") -> str:
-        """Update instructions based on conversation context"""
+        """
+        Update instructions based on conversation context.
+        
+        Generates updated instructions that take into account the conversation history
+        and current context. This allows for dynamic adaptation of the model's behavior
+        as the conversation progresses.
+        
+        Args:
+            history (List[Dict[str, str]]): Conversation history as a list of message dictionaries.
+            role (str, optional): The role for which to generate instructions ("human", "assistant").
+                Defaults to None.
+            mode (str, optional): The conversation mode to use for instruction generation.
+                Defaults to "ai-ai".
+        
+        Returns:
+            str: Updated instructions string based on conversation context.
+        
+        Examples:
+            Default assistant instructions:
+            >>> client = BaseClient(mode="human-ai", domain="education")
+            >>> instructions = client._update_instructions([], role="assistant", mode="default")
+            >>> instructions
+            'You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO 1024 tokens'
+            
+            Adaptive instructions with history:
+            >>> history = [
+            ...     {"role": "user", "content": "Let's discuss quantum physics"},
+            ...     {"role": "assistant", "content": "Quantum physics is fascinating..."}
+            ... ]
+            >>> client._update_instructions(history, role="human", mode="ai-ai")  # Returns adaptive instructions
+        """
         if (mode == "human-ai" and role == "assistant") or mode == "default":
             return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO 1024 tokens"
         return self.adaptive_manager.generate_instructions(history, self.domain) if history else ""
 
     def _get_mode_aware_instructions(self, role: str = None, mode: str = None) -> str:
-        """Get instructions based on conversation mode and role"""
+        """
+        Get instructions based on conversation mode and role.
+        
+        Retrieves appropriate instructions based on the specified conversation mode
+        and participant role. This method handles the logic for determining which
+        type of instructions to provide in different conversation scenarios.
+        
+        Args:
+            role (str, optional): The role for which to generate instructions
+                ("human", "assistant", "user"). Defaults to None.
+            mode (str, optional): The conversation mode to use. If not provided,
+                the client's configured mode is used. Defaults to None.
+        
+        Returns:
+            str: Role and mode-specific instructions string.
+        
+        Examples:
+            Human role instructions:
+            >>> client = BaseClient(mode="ai-ai", domain="finance")
+            >>> human_instructions = client._get_mode_aware_instructions(role="human")
+            >>> "YOU ARE A HUMAN" in human_instructions
+            True
+            
+            Assistant role instructions:
+            >>> assistant_instructions = client._get_mode_aware_instructions(role="assistant", mode="human-ai")
+            >>> "You are an AI assistant" in assistant_instructions
+            True
+        """
         if role and role is not None:
             if role == "human":
                 return self.generate_human_prompt()
@@ -141,7 +455,40 @@ class BaseClient:
         return ""
 
     def generate_human_system_instructions(self) -> str:
-        """Generate sophisticated system instructions for human-like prompting behavior"""
+        """
+        Generate sophisticated system instructions for human-like prompting behavior.
+        
+        Creates detailed system instructions that guide an AI model to behave like a human
+        participant in a conversation. These instructions are particularly important in
+        AI-AI conversations where one AI needs to simulate human behavior, questioning
+        patterns, and conversational style.
+        
+        The generated instructions include:
+        - Guidelines for maintaining human-like conversation style
+        - Strategies for challenging and questioning the other participant
+        - Approaches for introducing personal interpretations and reasoning
+        - Techniques for maintaining the illusion of human expertise and experience
+        
+        Returns:
+            str: Comprehensive system instructions for human-like behavior, customized
+                 for the client's domain. For "default" mode, returns simplified
+                 assistant instructions.
+        
+        Examples:
+            Default mode instructions:
+            >>> client = BaseClient(mode="default", domain="science")
+            >>> instructions = client.generate_human_system_instructions()
+            >>> instructions.startswith("You are a helpful assistant")
+            True
+            
+            Domain-specific human instructions:
+            >>> client = BaseClient(mode="ai-ai", domain="Quantum Physics")
+            >>> instructions = client.generate_human_system_instructions()
+            >>> "exploring Quantum Physics" in instructions
+            True
+            >>> "NEVER REFER TO YOURSELF AS AN AI" in instructions
+            True
+        """
         if self.mode == "default":
             return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO APPROX 1024 tokens"
 
@@ -165,7 +512,40 @@ Remember:
 """
 
     def generate_human_prompt(self, history: str = None) -> str:
-        """Generate sophisticated human-like prompts based on conversation history"""
+        """
+        Generate sophisticated human-like prompts based on conversation history.
+        
+        Creates detailed instructions for generating human-like responses in a conversation.
+        This method is primarily used in AI-AI conversations where one AI needs to
+        simulate a human participant. The instructions focus on creating natural,
+        challenging, and insightful responses that mimic human conversation patterns.
+        
+        The generated prompt includes:
+        - Guidelines for challenging assumptions and ideas
+        - Strategies for maintaining natural conversation flow
+        - Techniques for demonstrating expertise while appearing to learn
+        - Approaches for varying response style, tone, and complexity
+        
+        Args:
+            history (str, optional): Conversation history to consider when generating
+                the prompt. Currently not used directly but included for future
+                history-aware prompt generation. Defaults to None.
+        
+        Returns:
+            str: Detailed instructions for generating human-like responses, customized
+                 for the client's domain.
+        
+        Examples:
+            Domain-specific human prompt:
+            >>> client = BaseClient(mode="ai-ai", domain="Artificial Intelligence")
+            >>> prompt = client.generate_human_prompt()
+            >>> "YOU ARE A HUMAN" in prompt
+            True
+            >>> "related to Artificial Intelligence" in prompt
+            True
+            >>> "CHALLENGE ASSUMPTIONS" in prompt
+            True
+        """
         return f"""YOU ARE A HUMAN AND SHOULD ACT AS A HUMAN INTERACTING WITH AN AI. 
 Create a respomse related to {self.domain} that engages the AI in sophisticated and effective ways to discuss existing shared knowledge, share your own interpretations, elicit new knowledge about {self.domain}. Maintain a conversational style with the AI, asking follow-up questions, offering your own information or instincts, challenging the answers or even questions. Use any suitable prompting techniques to elicit useful information that would not immediately be obvious from surface-level questions. Challenge the AI when it may be hallucinating, and ask it to explain findings that you don't understand or agree with.
 Prompt Guidelines:
@@ -548,7 +928,8 @@ class OpenAIClient(BaseClient):
         except Exception as e:
             logger.error(f"OpenAI generate_response error: {e}")
             raise e
-from ollama import Client
+
+
 class PicoClient(BaseClient):
     """Client for local Ollama model interactions"""
     def __init__(self, mode:str, domain: str, role:str=None, model: str = "DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx"):
@@ -615,9 +996,9 @@ class PicoClient(BaseClient):
                     "num_ctx": 16384,
                     "num_predict": 512,
                     "temperature": 0.7,
-                    "num_batch": 256,
-                    "n_batch": 256,
-                    "n_ubatch": 256,
+                    "num_batch": 512,
+                    "n_batch": 512,
+                    "n_ubatch": 512,
                     "top_p": 0.9
                 },
             )
