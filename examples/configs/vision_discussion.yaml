@@ -2,7 +2,7 @@ discussion:
   turns: 4  # Number of back-and-forth exchanges
   models:
     model1:
-      type: "ollama-gemma3-27b"
+      type: "ollama-gemma3-1b"
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:
@@ -45,7 +45,7 @@ discussion:
           - Do not engage in cooperative smoothing or conversational niceties
           - Output should reflect command-state logic, not narrative companionship
     model2:
-      type: "gemini-2.0-flash-exp"
+      type: "ollama-gemma3-12b"
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:
