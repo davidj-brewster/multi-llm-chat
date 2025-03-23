@@ -2,7 +2,53 @@
 import os
 from typing import Dict, List, Optional
 
+# Constants referenced in the code but not defined in the snippet
+# These would typically be defined in this file or imported
+SUPPORTED_FILE_TYPES = {}  # Placeholder
+SUPPORTED_MODELS = {}      # Placeholder
+
 class TimeoutConfig:
+    """
+    Configuration for request timeouts and retry behavior.
+    
+    This class defines timeout settings for API requests, including the maximum
+    request duration, retry behavior, and notification preferences. It includes
+    validation to ensure the settings are within acceptable ranges.
+    
+    Attributes:
+        request (int): Maximum request duration in seconds. Must be between
+            30 and 600 seconds (5 minutes). Defaults to 600 seconds.
+        
+        retry_count (int): Number of retry attempts for failed requests.
+            Must be between 0 and 5. Defaults to 1.
+        
+        notify_on (List[str]): List of events that should trigger notifications.
+            Valid values are "timeout", "retry", and "error". Defaults to all three.
+    
+    Examples:
+        Default configuration:
+        >>> timeout_config = TimeoutConfig()
+        >>> timeout_config.request
+        600
+        >>> timeout_config.retry_count
+        1
+        >>> timeout_config.notify_on
+        ['timeout', 'retry', 'error']
+        
+        Custom configuration:
+        >>> timeout_config = TimeoutConfig(
+        ...     request=300,
+        ...     retry_count=2,
+        ...     notify_on=["timeout", "error"]
+        ... )
+        
+        Invalid configuration (will raise ValueError):
+        >>> try:
+        ...     TimeoutConfig(request=1000)  # Exceeds maximum
+        ... except ValueError as e:
+        ...     print(f"Error: {e}")
+        'Error: Request timeout must be between 30 and 600 seconds'
+    """
     request: int = 600  # Default 5 minutes
     retry_count: int = 1
     notify_on: List[str] = None
@@ -20,6 +66,52 @@ class TimeoutConfig:
             raise ValueError(f"Invalid notification events: {invalid_events}")
 
 class FileConfig:
+    """
+    Configuration for file handling and validation.
+    
+    This class defines settings for handling different types of files (images, videos, text)
+    in the AI Battle framework. It includes validation logic to ensure files meet
+    the requirements for size, format, and resolution.
+    
+    Attributes:
+        path (str): Path to the file on the filesystem. Must exist and be accessible.
+        
+        type (str): Type of file. Must be one of the supported file types defined in
+            SUPPORTED_FILE_TYPES (e.g., "image", "video", "text").
+        
+        max_resolution (Optional[str], optional): Maximum resolution for image or video files.
+            Can be specified as "WIDTHxHEIGHT" (e.g., "1920x1080") or "4K" for videos.
+            Defaults to None, which uses the default maximum resolution for the file type.
+    
+    Implementation Notes:
+        The __post_init__ method performs extensive validation including:
+        - Checking if the file exists
+        - Validating the file type against supported types
+        - Checking the file extension against allowed extensions for the type
+        - Validating file size against maximum allowed size
+        - For images and videos, validating resolution if specified
+    
+    Examples:
+        Image file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/image.jpg",
+        ...     type="image",
+        ...     max_resolution="1920x1080"
+        ... )
+        
+        Video file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/video.mp4",
+        ...     type="video",
+        ...     max_resolution="4K"  # Only valid for videos
+        ... )
+        
+        Text file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/document.txt",
+        ...     type="text"
+        ... )
+    """
     path: str
     type: str
     max_resolution: Optional[str] = None
@@ -61,6 +153,55 @@ class FileConfig:
                     raise ValueError(f"Invalid resolution format: {requested_res}")
 
 class ModelConfig:
+    """
+    Configuration for AI model settings and behavior.
+    
+    This class defines the configuration for an AI model in the AI Battle framework,
+    including the model type, role, and optional persona. It includes validation
+    to ensure the model type is supported and the role is valid.
+    
+    Attributes:
+        type (str): The model type identifier, which should be one of the supported
+            model types defined in SUPPORTED_MODELS. This typically includes the
+            provider prefix (e.g., "claude-3-sonnet", "gemini-pro", "gpt-4").
+        
+        role (str): The role this model should play in the conversation. Must be
+            either "human" or "assistant".
+        
+        persona (Optional[str], optional): Optional persona instructions for the model.
+            This can be used to give the model a specific personality or behavior.
+            Defaults to None.
+    
+    Implementation Notes:
+        The __post_init__ method performs validation including:
+        - Checking if the model type is supported by a known provider
+        - For non-local models, validating the specific model variant
+        - Ensuring the role is either "human" or "assistant"
+        - Validating that the persona is a string if provided
+        
+        Local models (ollama, mlx) support any variant, while cloud models
+        (claude, gemini, openai) must use specific supported variants.
+    
+    Examples:
+        Assistant model configuration:
+        >>> model_config = ModelConfig(
+        ...     type="claude-3-sonnet",
+        ...     role="assistant"
+        ... )
+        
+        Human model configuration with persona:
+        >>> model_config = ModelConfig(
+        ...     type="gemini-pro",
+        ...     role="human",
+        ...     persona="You are a skeptical scientist who asks probing questions."
+        ... )
+        
+        Local model configuration:
+        >>> model_config = ModelConfig(
+        ...     type="ollama:llama2",
+        ...     role="assistant"
+        ... )
+    """
     type: str
     role: str
     persona: Optional[str] = None
@@ -84,6 +225,62 @@ class ModelConfig:
             raise ValueError("Persona must be a string")
 
 class DiscussionConfig:
+    """
+    Configuration for AI-to-AI or human-to-AI discussions.
+    
+    This class defines the overall configuration for a discussion between AI models
+    in the AI Battle framework. It includes settings for the number of turns,
+    participating models, discussion goal, optional input file, and timeout settings.
+    
+    Attributes:
+        turns (int): Number of conversation turns to execute. Must be greater than 0.
+        
+        models (Dict[str, ModelConfig]): Dictionary mapping model names to their
+            configurations. Must include at least two models, typically one with
+            role="human" and one with role="assistant".
+        
+        goal (str): The discussion topic or objective. This is used to guide the
+            conversation and provide context to the models.
+        
+        input_file (Optional[FileConfig], optional): Optional file to include as
+            context for the discussion (e.g., an image to discuss or a text document
+            to analyze). Defaults to None.
+        
+        timeouts (Optional[TimeoutConfig], optional): Timeout configuration for
+            API requests during the discussion. Defaults to None, which uses
+            the default TimeoutConfig.
+    
+    Implementation Notes:
+        The __post_init__ method performs validation and conversion including:
+        - Ensuring the number of turns is positive
+        - Verifying at least two models are configured
+        - Checking that a goal is provided
+        - Converting dictionary configurations to proper ModelConfig objects
+        - Converting dictionary timeout settings to a TimeoutConfig object
+    
+    Examples:
+        Basic discussion configuration:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=5,
+        ...     models={
+        ...         "model1": ModelConfig(type="claude-3-sonnet", role="human"),
+        ...         "model2": ModelConfig(type="gemini-pro", role="assistant")
+        ...     },
+        ...     goal="Discuss the implications of quantum computing on cryptography"
+        ... )
+        
+        Configuration with input file and custom timeouts:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=10,
+        ...     models={
+        ...         "human": ModelConfig(type="gpt-4", role="human"),
+        ...         "assistant": ModelConfig(type="claude-3-opus", role="assistant")
+        ...     },
+        ...     goal="Analyze the provided image and discuss its artistic elements",
+        ...     input_file=FileConfig(path="/path/to/artwork.jpg", type="image"),
+        ...     timeouts=TimeoutConfig(request=300, retry_count=2)
+        ... )
+    """
     turns: int
     models: Dict[str, ModelConfig]
     goal: str

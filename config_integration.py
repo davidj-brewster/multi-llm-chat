@@ -39,6 +39,40 @@ SUPPORTED_FILE_TYPES = {
 
 @dataclass
 class TimeoutConfig:
+    """
+    Configuration for request timeouts and retry behavior.
+    
+    This dataclass defines timeout settings for API requests, including the maximum
+    request duration, retry behavior, and notification preferences. It includes
+    validation to ensure the settings are within acceptable ranges.
+    
+    Attributes:
+        request (int): Maximum request duration in seconds. Must be between
+            30 and 600 seconds (10 minutes). Defaults to 600 seconds.
+        
+        retry_count (int): Number of retry attempts for failed requests.
+            Must be between 0 and 5. Defaults to 1.
+        
+        notify_on (List[str]): List of events that should trigger notifications.
+            Valid values are "timeout", "retry", and "error". Defaults to all three.
+    
+    Examples:
+        Default configuration:
+        >>> timeout_config = TimeoutConfig()
+        >>> timeout_config.request
+        600
+        >>> timeout_config.retry_count
+        1
+        >>> timeout_config.notify_on
+        ['timeout', 'retry', 'error']
+        
+        Custom configuration:
+        >>> timeout_config = TimeoutConfig(
+        ...     request=300,
+        ...     retry_count=2,
+        ...     notify_on=["timeout", "error"]
+        ... )
+    """
     request: int = 600  # Default 10 minutes
     retry_count: int = 1
     notify_on: List[str] = None
@@ -57,6 +91,52 @@ class TimeoutConfig:
 
 @dataclass
 class FileConfig:
+    """
+    Configuration for file handling and validation.
+    
+    This dataclass defines settings for handling different types of files (images, videos, text)
+    in the AI Battle framework. It includes validation logic to ensure files meet
+    the requirements for size, format, and resolution.
+    
+    Attributes:
+        path (str): Path to the file on the filesystem. Must exist and be accessible.
+        
+        type (str): Type of file. Must be one of the supported file types defined in
+            SUPPORTED_FILE_TYPES (e.g., "image", "video", "text").
+        
+        max_resolution (Optional[str], optional): Maximum resolution for image or video files.
+            Can be specified as "WIDTHxHEIGHT" (e.g., "1920x1080") or "4K" for videos.
+            Defaults to None, which uses the default maximum resolution for the file type.
+    
+    Implementation Notes:
+        The __post_init__ method performs extensive validation including:
+        - Checking if the file exists
+        - Validating the file type against supported types
+        - Checking the file extension against allowed extensions for the type
+        - Validating file size against maximum allowed size
+        - For images and videos, validating resolution if specified
+    
+    Examples:
+        Image file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/image.jpg",
+        ...     type="image",
+        ...     max_resolution="1920x1080"
+        ... )
+        
+        Video file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/video.mp4",
+        ...     type="video",
+        ...     max_resolution="4K"  # Only valid for videos
+        ... )
+        
+        Text file configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/document.txt",
+        ...     type="text"
+        ... )
+    """
     path: str
     type: str
     max_resolution: Optional[str] = None
@@ -99,6 +179,55 @@ class FileConfig:
 
 @dataclass
 class ModelConfig:
+    """
+    Configuration for AI model settings and behavior.
+    
+    This dataclass defines the configuration for an AI model in the AI Battle framework,
+    including the model type, role, and optional persona. It includes validation
+    to ensure the model type is supported and the role is valid.
+    
+    Attributes:
+        type (str): The model type identifier, which should be one of the supported
+            model types defined in SUPPORTED_MODELS. This typically includes the
+            provider prefix (e.g., "claude-3-sonnet", "gemini-pro", "gpt-4").
+        
+        role (str): The role this model should play in the conversation. Must be
+            either "human" or "assistant".
+        
+        persona (Optional[str], optional): Optional persona instructions for the model.
+            This can be used to give the model a specific personality or behavior.
+            Defaults to None.
+    
+    Implementation Notes:
+        The __post_init__ method performs validation including:
+        - Checking if the model type is supported by a known provider
+        - For non-local models, validating the specific model variant
+        - Ensuring the role is either "human" or "assistant"
+        - Validating that the persona is a string if provided
+        
+        Local models (ollama, mlx) support any variant, while cloud models
+        (claude, gemini, openai) must use specific supported variants.
+    
+    Examples:
+        Assistant model configuration:
+        >>> model_config = ModelConfig(
+        ...     type="claude-3-sonnet",
+        ...     role="assistant"
+        ... )
+        
+        Human model configuration with persona:
+        >>> model_config = ModelConfig(
+        ...     type="gemini-pro",
+        ...     role="human",
+        ...     persona="You are a skeptical scientist who asks probing questions."
+        ... )
+        
+        Local model configuration:
+        >>> model_config = ModelConfig(
+        ...     type="ollama:llama2",
+        ...     role="assistant"
+        ... )
+    """
     type: str
     role: str
     persona: Optional[str] = None
@@ -123,6 +252,62 @@ class ModelConfig:
 
 @dataclass
 class DiscussionConfig:
+    """
+    Configuration for AI-to-AI or human-to-AI discussions.
+    
+    This dataclass defines the overall configuration for a discussion between AI models
+    in the AI Battle framework. It includes settings for the number of turns,
+    participating models, discussion goal, optional input file, and timeout settings.
+    
+    Attributes:
+        turns (int): Number of conversation turns to execute. Must be greater than 0.
+        
+        models (Dict[str, ModelConfig]): Dictionary mapping model names to their
+            configurations. Must include at least two models, typically one with
+            role="human" and one with role="assistant".
+        
+        goal (str): The discussion topic or objective. This is used to guide the
+            conversation and provide context to the models.
+        
+        input_file (Optional[FileConfig], optional): Optional file to include as
+            context for the discussion (e.g., an image to discuss or a text document
+            to analyze). Defaults to None.
+        
+        timeouts (Optional[TimeoutConfig], optional): Timeout configuration for
+            API requests during the discussion. Defaults to None, which uses
+            the default TimeoutConfig.
+    
+    Implementation Notes:
+        The __post_init__ method performs validation and conversion including:
+        - Ensuring the number of turns is positive
+        - Verifying at least two models are configured
+        - Checking that a goal is provided
+        - Converting dictionary configurations to proper ModelConfig objects
+        - Converting dictionary timeout settings to a TimeoutConfig object
+    
+    Examples:
+        Basic discussion configuration:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=5,
+        ...     models={
+        ...         "model1": ModelConfig(type="claude-3-sonnet", role="human"),
+        ...         "model2": ModelConfig(type="gemini-pro", role="assistant")
+        ...     },
+        ...     goal="Discuss the implications of quantum computing on cryptography"
+        ... )
+        
+        Configuration with input file and custom timeouts:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=10,
+        ...     models={
+        ...         "human": ModelConfig(type="gpt-4", role="human"),
+        ...         "assistant": ModelConfig(type="claude-3-opus", role="assistant")
+        ...     },
+        ...     goal="Analyze the provided image and discuss its artistic elements",
+        ...     input_file=FileConfig(path="/path/to/artwork.jpg", type="image"),
+        ...     timeouts=TimeoutConfig(request=300, retry_count=2)
+        ... )
+    """
     turns: int
     models: Dict[str, ModelConfig]
     goal: str
@@ -153,7 +338,40 @@ class DiscussionConfig:
             self.timeouts = TimeoutConfig()
 
 def load_system_instructions() -> Dict:
-    """Load system instructions from docs/system_instructions.md"""
+    """
+    Load system instructions from docs/system_instructions.md.
+    
+    This function reads the system instructions markdown file and extracts YAML blocks
+    that define instruction templates. These templates can be referenced in model
+    configurations to provide standardized system instructions.
+    
+    The function parses all YAML code blocks in the markdown file and combines them
+    into a single dictionary of instruction templates.
+    
+    Returns:
+        Dict: A dictionary mapping template names to their instruction content.
+            For example:
+            {
+                "human_persona": {"role": "human", "instructions": "..."},
+                "assistant_persona": {"role": "assistant", "instructions": "..."}
+            }
+    
+    Raises:
+        FileNotFoundError: If the system instructions file is not found.
+        
+    Examples:
+        >>> instructions = load_system_instructions()
+        >>> "human_persona" in instructions
+        True
+        >>> isinstance(instructions["human_persona"], dict)
+        True
+    
+    Implementation Notes:
+        - The function looks for ```yaml blocks in the markdown file
+        - Each block should contain a valid YAML dictionary
+        - All dictionaries are merged into a single result dictionary
+        - YAML parsing errors are logged but don't stop processing
+    """
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
         raise FileNotFoundError("System instructions file not found")
@@ -190,7 +408,41 @@ def load_system_instructions() -> Dict:
     return instructions
 
 def load_config(path: str) -> DiscussionConfig:
-    """Load and validate YAML configuration file"""
+    """
+    Load and validate a YAML configuration file for AI discussions.
+    
+    This function reads a YAML configuration file, validates its structure, processes
+    any instruction templates, and creates a DiscussionConfig object. It handles
+    template substitution for model instructions, allowing for parameterized system
+    prompts.
+    
+    Args:
+        path (str): Path to the YAML configuration file.
+    
+    Returns:
+        DiscussionConfig: A fully initialized and validated discussion configuration
+            object that can be used to run AI conversations.
+    
+    Raises:
+        FileNotFoundError: If the configuration file is not found.
+        ValueError: If the YAML format is invalid or the configuration structure
+            doesn't match the expected format.
+    
+    Examples:
+        >>> config = load_config("examples/configs/debate_config.yaml")
+        >>> config.turns
+        5
+        >>> len(config.models) >= 2
+        True
+        >>> config.goal
+        'Discuss the ethical implications of AI'
+    
+    Implementation Notes:
+        - The configuration file must contain a 'discussion' section
+        - Model configurations can reference instruction templates
+        - Template parameters are substituted using {parameter_name} syntax
+        - The function loads system instructions to resolve template references
+    """
     if not os.path.exists(path):
         raise FileNotFoundError(f"Configuration file not found: {path}")
     
@@ -228,19 +480,46 @@ def load_config(path: str) -> DiscussionConfig:
         raise ValueError(f"Invalid configuration format: {e}")
 
 def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
-    """Detect model capabilities based on type"""
     """
     Detect and return capabilities of an AI model based on its type.
     
     This function analyzes the model type to determine which capabilities
-    (vision, streaming, function calling) are supported by the model.
+    (vision, streaming, function calling) are supported by the model. It uses
+    a rule-based approach based on known model capabilities.
     
     Args:
-        model_config: ModelConfig object containing the model type
+        model_config (ModelConfig): ModelConfig object or string containing the model type.
+            If a string is provided, it's treated as the model type directly.
         
     Returns:
         Dict[str, bool]: Dictionary mapping capability names to boolean values
-                        indicating whether each capability is supported
+            indicating whether each capability is supported. The capabilities include:
+            - "vision": Support for image/video processing
+            - "streaming": Support for streaming responses
+            - "function_calling": Support for function/tool calling
+    
+    Examples:
+        Checking capabilities of a vision model:
+        >>> model_config = ModelConfig(type="gemini-pro-vision", role="assistant")
+        >>> capabilities = detect_model_capabilities(model_config)
+        >>> capabilities["vision"]
+        True
+        >>> capabilities["streaming"]
+        False
+        
+        Checking capabilities of a text-only model:
+        >>> capabilities = detect_model_capabilities(ModelConfig(type="claude-3-sonnet", role="assistant"))
+        >>> capabilities["vision"]
+        False
+        >>> capabilities["streaming"]
+        True
+        >>> capabilities["function_calling"]
+        True
+    
+    Implementation Notes:
+        - Vision capability is determined by model name containing "vision"
+        - Streaming capability is determined by model provider (Claude, GPT)
+        - Function calling capability is limited to specific models
     """
     capabilities = {
         "vision": False,
@@ -260,19 +539,54 @@ def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
     return capabilities
 
 def run_from_config(config_path: str) -> None:
-    """Run discussion from configuration file"""
     """
     Run an AI discussion based on settings in a configuration file.
     
     This function loads a configuration file, initializes a ConversationManager
     with the specified settings, and runs a conversation between the configured
-    models. The conversation is then saved to an HTML file.
+    models. The conversation is then saved to an HTML file with a timestamped
+    filename.
     
     Args:
-        config_path: Path to the YAML configuration file
+        config_path (str): Path to the YAML configuration file containing the
+            discussion configuration.
         
     Returns:
-        None
+        None: The function doesn't return a value, but saves the conversation
+            to an HTML file as a side effect.
+    
+    Raises:
+        FileNotFoundError: If the configuration file is not found.
+        ValueError: If the configuration is invalid.
+        ImportError: If there are issues importing required modules.
+        
+    Examples:
+        Running a discussion from a configuration file:
+        >>> run_from_config("examples/configs/debate_config.yaml")
+        # Creates a file like: conversation-config_debate_0323-0337.html
+        
+        Running with a custom configuration:
+        >>> # First create a config file
+        >>> with open("custom_config.yaml", "w") as f:
+        ...     f.write('''
+        ...     discussion:
+        ...       turns: 5
+        ...       goal: "Discuss the future of AI"
+        ...       models:
+        ...         human_model:
+        ...           type: "gemini-pro"
+        ...           role: "human"
+        ...         ai_model:
+        ...           type: "claude-3-sonnet"
+        ...           role: "assistant"
+        ...     ''')
+        >>> run_from_config("custom_config.yaml")
+        
+    Implementation Notes:
+        - Uses asyncio to run the conversation asynchronously
+        - Automatically identifies human and assistant models from the config
+        - Saves the conversation with a sanitized filename based on the goal
+        - Uses the ConversationManager from ai_battle.py to manage the conversation
     """
     config = load_config(config_path)
     

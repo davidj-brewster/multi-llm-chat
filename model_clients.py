@@ -26,7 +26,58 @@ MAX_TOKENS = 1024
 TOKENS_PER_TURN = MAX_TOKENS
 @dataclass
 class ModelConfig:
-    """Configuration for AI model parameters"""
+    """
+    Configuration for AI model generation parameters.
+    
+    This dataclass encapsulates the common configuration parameters used across
+    different AI model providers for controlling the generation behavior. It provides
+    a standardized interface for setting parameters like temperature, token limits,
+    and stopping criteria.
+    
+    Attributes:
+        temperature (float): Controls randomness in response generation. Higher values
+            (e.g., 0.8) produce more diverse and creative outputs, while lower values
+            (e.g., 0.2) produce more deterministic and focused outputs. Defaults to 0.8.
+        
+        max_tokens (int): Maximum number of tokens to generate in the response.
+            This helps control response length and prevent excessive token usage.
+            Defaults to 1024.
+        
+        stop_sequences (List[str], optional): List of strings that, when encountered,
+            will stop the model from generating further text. Useful for controlling
+            response format. Defaults to None.
+        
+        seed (Optional[int], optional): Random seed for deterministic generation.
+            Setting the same seed with the same prompt and parameters should produce
+            the same output. Defaults to a random integer between 0 and 1000.
+    
+    Examples:
+        Basic configuration:
+        >>> config = ModelConfig()
+        >>> config.temperature
+        0.8
+        >>> config.max_tokens
+        1024
+        
+        Custom configuration:
+        >>> config = ModelConfig(
+        ...     temperature=0.3,
+        ...     max_tokens=2048,
+        ...     stop_sequences=["END", "STOP"],
+        ...     seed=42
+        ... )
+        >>> config.temperature
+        0.3
+        >>> config.stop_sequences
+        ['END', 'STOP']
+        
+        Using with a client:
+        >>> client = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+        >>> response = client.generate_response(
+        ...     prompt="Explain quantum entanglement",
+        ...     model_config=ModelConfig(temperature=0.2, max_tokens=500)
+        ... )
+    """
     temperature: float = 0.8
     max_tokens: int = 1024
     stop_sequences: List[str] = None
@@ -574,7 +625,36 @@ Generate a natural but sophisticated response that:
 - Restrict tokens to {TOKENS_PER_TURN} tokens per prompt"""
 
     def validate_connection(self) -> bool:
-        """Validate API connection"""
+        """
+        Validate API connection to the model provider.
+        
+        Performs a basic validation of the API connection by checking if the client
+        can successfully communicate with the model provider's API. This method is
+        intended to be overridden by subclasses to provide model-specific validation
+        logic.
+        
+        In the base implementation, this method simply logs a success message and
+        returns True. Subclasses should implement actual validation logic that tests
+        the API connection with minimal requests.
+        
+        Returns:
+            bool: True if the connection is valid, False otherwise.
+        
+        Examples:
+            Basic validation:
+            >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+            >>> client.validate_connection()
+            True
+            
+            Handling validation failure:
+            >>> client_with_invalid_key = BaseClient(mode="ai-ai", api_key="invalid", domain="science")
+            >>> try:
+            ...     is_valid = client_with_invalid_key.validate_connection()
+            ... except Exception as e:
+            ...     is_valid = False
+            >>> is_valid
+            False
+        """
         try:
             logger.info(f"{self.__class__.__name__} connection validated")
             logger.debug(MemoryManager.get_memory_usage())
@@ -584,16 +664,97 @@ Generate a natural but sophisticated response that:
             return False
 
     def test_connection(self) -> None:
-        """Test API connection with minimal request"""
+        """
+        Test API connection with minimal request.
+        
+        This method is intended to be overridden by subclasses to provide model-specific
+        connection testing logic. It should make a minimal API request to verify that
+        the connection is working properly.
+        
+        In the base implementation, this method simply returns True without performing
+        any actual testing. Subclasses should implement actual testing logic.
+        
+        Returns:
+            bool: True if the test is successful, False otherwise.
+        
+        Examples:
+            >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+            >>> client.test_connection()
+            True
+            
+            # In a subclass implementation:
+            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+            >>> gemini.test_connection()  # Makes a minimal request to the Gemini API
+            True
+        """
         return True
 
     def __del__(self):
-        """Cleanup when client is destroyed."""
+        """
+        Cleanup resources when client is destroyed.
+        
+        Performs cleanup operations when the client instance is garbage collected.
+        This includes releasing any resources held by the adaptive instruction manager.
+        
+        This method is automatically called by Python's garbage collector when the
+        client instance is about to be destroyed.
+        """
         if hasattr(self, '_adaptive_manager') and self._adaptive_manager:
             del self._adaptive_manager
 
 class GeminiClient(BaseClient):
-    """Client for Gemini API interactions"""
+    """
+    Client implementation for Google's Gemini API.
+    
+    This class extends the BaseClient to provide specific functionality for interacting
+    with Google's Gemini models. It handles Gemini-specific API initialization,
+    configuration, and response generation, while leveraging the common functionality
+    provided by the BaseClient.
+    
+    The GeminiClient supports various Gemini models including:
+    - gemini-pro: Text-only model
+    - gemini-pro-vision: Multimodal model supporting text and images
+    - gemini-2.0-flash-exp: Faster, more efficient model (default)
+    
+    Attributes:
+        Inherits all attributes from BaseClient, plus:
+        model_name (str): The specific Gemini model identifier.
+        client (genai.Client): The Google Generative AI client instance.
+        generation_config (types.GenerateContentConfig): Configuration for content generation.
+    
+    Implementation Notes:
+        - Uses the Google Generative AI Python SDK for API interactions
+        - Supports multimodal inputs (text, images) when using vision-capable models
+        - Handles content safety settings and generation parameters
+    
+    Examples:
+        Basic text generation:
+        >>> gemini = GeminiClient(
+        ...     mode="ai-ai",
+        ...     role="assistant",
+        ...     api_key="your_api_key",  # Will use GOOGLE_API_KEY env var if not provided
+        ...     domain="science",
+        ...     model="gemini-2.0-flash-exp"
+        ... )
+        >>> response = gemini.generate_response(
+        ...     prompt="Explain the theory of relativity",
+        ...     system_instruction="You are a physics professor."
+        ... )
+        >>> print(response[:50])
+        'The theory of relativity, developed by Albert Einstein...'
+        
+        Image analysis:
+        >>> image_data = {
+        ...     "type": "image",
+        ...     "base64": "base64_encoded_image_data",
+        ...     "mime_type": "image/jpeg",
+        ...     "dimensions": (800, 600)
+        ... }
+        >>> response = gemini.generate_response(
+        ...     prompt="Describe what you see in this image",
+        ...     file_data=image_data
+        ... )
+    """
     def __init__(self, mode: str, role: str, api_key: str, domain: str, model: str = "gemini-2.0-flash-exp"):
         api_key = os.getenv("GOOGLE_API_KEY")
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
@@ -609,6 +770,16 @@ class GeminiClient(BaseClient):
         self._setup_generation_config()
 
     def _setup_generation_config(self):
+        """
+        Initialize the default generation configuration for Gemini models.
+        
+        Sets up the default parameters for content generation, including temperature,
+        token limits, candidate count, response format, and safety settings. This
+        configuration serves as the base for all response generation requests.
+        
+        The configuration can be overridden on a per-request basis in the generate_response
+        method.
+        """
         self.generation_config = types.GenerateContentConfig(
             temperature=0.7,
             maxOutputTokens=1536,
@@ -617,14 +788,63 @@ class GeminiClient(BaseClient):
             safety_settings=[]
         )
     def generate_response(self,
-                         prompt: str,
+                          prompt: str,
                          system_instruction: str = None,
                          history: List[Dict[str, str]] = None,
                          role: str = None,
                          file_data: Dict[str, Any] = None,
                          mode: str = None,
                          model_config: Optional[ModelConfig] = None) -> str:
-        """Generate response using Gemini API with assertion verification"""
+        """
+        Generate a response using the Gemini API.
+        
+        Creates a response to the given prompt using Google's Gemini model, with
+        support for system instructions, conversation history, file data (images/text),
+        and custom configuration parameters.
+        
+        This method handles:
+        - Role and mode management
+        - Instruction generation based on conversation context
+        - File content preparation (images, text, code)
+        - API request formatting and execution
+        - Error handling and response processing
+        
+        Args:
+            prompt (str): The main text prompt to generate a response for.
+            
+            system_instruction (str, optional): Custom system instructions to override
+                the default or adaptive instructions. Defaults to None.
+                
+            history (List[Dict[str, str]], optional): Conversation history as a list
+                of message dictionaries with "role" and "content" keys. Defaults to None.
+                
+            role (str, optional): The role to use for this specific request
+                ("human" or "model"). Defaults to None.
+                
+            file_data (Dict[str, Any], optional): Dictionary containing file data
+                for multimodal requests (images, text, code). Defaults to None.
+                
+            mode (str, optional): The conversation mode to use for this specific
+                request. Defaults to None.
+                
+            model_config (ModelConfig, optional): Custom configuration parameters
+                for this specific request. Defaults to None.
+        
+        Returns:
+            str: The generated response text from the Gemini model.
+            
+        Raises:
+            ValueError: If the API key is invalid or the request is malformed.
+            Exception: For other API errors or connection issues.
+            
+        Examples:
+            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+            >>> response = gemini.generate_response(
+            ...     prompt="What is quantum entanglement?",
+            ...     system_instruction="You are a quantum physics professor.",
+            ...     model_config=ModelConfig(temperature=0.3, max_tokens=500)
+            ... )
+        """
         if model_config is None:
             model_config = ModelConfig()
             
