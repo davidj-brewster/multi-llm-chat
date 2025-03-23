@@ -127,23 +127,23 @@ class AssertionGrounder:
             logger.warning(f"Could not load spaCy model: {e}")
             self.nlp = None
 
-    def _calculate_confidence(self, 
-                            sources: List[Dict[str, str]], 
+    def _calculate_confidence(self,
+                            sources: List[Dict[str, str]],
                             assertion: str) -> float:
         """Calculate confidence score using improved metrics"""
         if not sources:
             return 0.0
-            
+
         # Source scoring (from v1)
         source_score = min(len(sources) / 3.0, 1.0)
-        
+
         # Authority scoring (from v1)
-        authority_score = sum(0.2 if ".edu" in s["url"] or 
-                                   ".gov" in s["url"] or 
-                                   ".org" in s["url"] 
-                            else 0.1 
+        authority_score = sum(0.2 if ".edu" in s["url"] or
+                                   ".gov" in s["url"] or
+                                   ".org" in s["url"]
+                            else 0.1
                             for s in sources) / len(sources)
-        
+
         # Enhanced consistency scoring (from v2)
         try:
             if self.nlp:
@@ -160,8 +160,8 @@ class AssertionGrounder:
                 consistency_scores = []
                 for i, s1 in enumerate(sources):
                     for s2 in sources[i+1:]:
-                        ratio = SequenceMatcher(None, 
-                                              s1["excerpt"], 
+                        ratio = SequenceMatcher(None,
+                                              s1["excerpt"],
                                               s2["excerpt"]).ratio()
                         consistency_scores.append(ratio)
                 consistency_score = sum(consistency_scores) / len(consistency_scores) if consistency_scores else 0.5
@@ -175,13 +175,13 @@ class AssertionGrounder:
             authority_score * 0.3 +
             consistency_score * 0.4
         )
-        
+
         return min(final_score, 1.0)
 
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
     #model_config=MODEL_CONFIG
-    def __init__(self, api_key: str, 
+    def __init__(self, api_key: str,
                  model: str = "gemini-exp-1206",
                  search_client: Optional[Any] = None):
         self.model_config = MODEL_CONFIG
@@ -200,33 +200,33 @@ class ConversationArbiter:
             # Use spaCy for linguistic analysis if available
             if self.nlp:
                 docs = [self.nlp(msg["content"]) for msg in messages]
-                
+
                 # Analyze topic transitions
                 topics = []
                 for doc in docs:
                     # Extract main topics using noun chunks and named entities
                     topics.extend([chunk.text for chunk in doc.noun_chunks])
                     topics.extend([ent.text for ent in doc.ents])
-                
+
                 # Calculate topic coherence
                 topic_shifts = 0
                 for i in range(1, len(topics)):
-                    if not any(self._text_similarity(topics[i], prev) > 0.3 
+                    if not any(self._text_similarity(topics[i], prev) > 0.3
                              for prev in topics[max(0, i-3):i]):
                         topic_shifts += 1
-                
+
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / len(messages)),
                     "topic_depth": len(set(topics)) / len(messages),
                     "topic_distribution": self._calculate_topic_distribution(topics)
                 }
-                
+
             else:
                 # Fallback to basic analysis
                 flow_metrics = self._basic_flow_analysis(messages)
-            
+
             return flow_metrics
-            
+
         except Exception as e:
             logger.error(f"Error analyzing conversation flow: {e}")
             return {"topic_coherence": 0.5, "topic_depth": 0.5, "topic_distribution": {}}
@@ -247,11 +247,11 @@ class ConversationArbiter:
         total = sum(counts.values())
         return {topic: count/total for topic, count in counts.items()}
 
-    def _compare_conversations(self, 
+    def _compare_conversations(self,
                              ai_ai_analysis: Dict,
                              human_ai_analysis: Dict) -> Tuple[str, List[str]]:
         """Compare analyses to determine winner"""
-        
+
         # Calculate overall scores with grounding bonus
         def calc_score(analysis: Dict) -> float:
             base_score = sum([
@@ -259,29 +259,29 @@ class ConversationArbiter:
                 analysis["conversation_quality"]["depth"],
                 analysis["conversation_quality"]["goal_progress"]
             ]) / 3
-            
+
             # Bonus for grounded assertions
             grounding_score = len(analysis.get("grounded_assertions", {})) * 0.05
-            
+
             return base_score + min(grounding_score, 0.2)  # Cap grounding bonus
-        
+
         ai_ai_score = calc_score(ai_ai_analysis)
         human_ai_score = calc_score(human_ai_analysis)
-        
+
         # Determine winner
         winner = "ai-ai" if ai_ai_score > human_ai_score else "human-ai"
-        
+
         # Extract key differences
         differences = []
         metrics = ["coherence", "depth", "goal_progress", "grounded_assertions"]
         for metric in metrics:
-            ai_ai_val = (ai_ai_analysis["conversation_quality"].get(metric, 0) 
+            ai_ai_val = (ai_ai_analysis["conversation_quality"].get(metric, 0)
                         if metric != "grounded_assertions"
                         else len(ai_ai_analysis.get("grounded_assertions", {})))
             human_ai_val = (human_ai_analysis["conversation_quality"].get(metric, 0)
-                          if metric != "grounded_assertions" 
+                          if metric != "grounded_assertions"
                           else len(human_ai_analysis.get("grounded_assertions", {})))
-            
+
             diff = abs(ai_ai_val - human_ai_val)
             if diff > 0.1 or (metric == "grounded_assertions" and diff > 0):
                 better = "AI-AI" if ai_ai_val > human_ai_val else "Human-AI"
@@ -289,9 +289,9 @@ class ConversationArbiter:
                     f"{better} performed better at {metric}: "
                     f"({ai_ai_val:.2f} vs {human_ai_val:.2f})"
                 )
-        
+
         return winner, differences
-    
+
     def _create_empty_analysis(self) -> Dict:
         """Create empty analysis structure for error cases"""
         return {
@@ -316,17 +316,17 @@ class ConversationArbiter:
                 "Retry analysis with valid conversation data"
             ]
         }
-    
 
-    def _create_evaluation_prompt(self, conversation: List[Dict[str, str]], 
+
+    def _create_evaluation_prompt(self, conversation: List[Dict[str, str]],
                                 goal: str, mode: str) -> str:
         """Create detailed prompt for conversation evaluation"""
         return f"""
         Analyze this conversation and return a structured evaluation in JSON format.
-        
+
         GOAL: {goal}
         MODE: {mode}
-        
+
         REQUIRED OUTPUT FORMAT:
         {{
             "conversation_quality": {{
@@ -380,47 +380,47 @@ class ConversationArbiter:
                 "suggestion 2"
             ]
         }}
-        
+
         EVALUATION GUIDELINES:
-        
+
         1. Score all numeric metrics on a 0-1 scale where:
            - 0.0-0.2: Poor performance
            - 0.3-0.4: Below average
            - 0.5-0.6: Average
            - 0.7-0.8: Good
            - 0.9-1.0: Excellent
-        
+
         2. When identifying assertions:
            - Focus on specific, verifiable factual claims
            - Include quantitative statements
            - Note technical claims requiring evidence
            - Highlight referenced research or studies
-        
+
         3. For key insights:
            - Identify effective patterns and techniques
            - Note significant breakthroughs or realizations
            - Highlight missed opportunities
            - Mark critical turning points
-        
+
         4. For improvement suggestions:
            - Provide specific, actionable recommendations
            - Suggest alternative approaches
            - Recommend strategy adjustments
            - Focus on enhancing goal achievement
-        
+
         IMPORTANT:
         - Return ONLY valid JSON matching the specified schema
         - Ensure all numeric values are between 0 and 1
         - Include specific examples and quotes to support ratings
         - Ground factual claims in the conversation content
         """
-    
-    def _analyze_conversation(self, conversation: List[Dict[str, str]], 
+
+    def _analyze_conversation(self, conversation: List[Dict[str, str]],
                             goal: str, mode: str) -> Dict:
         """Analyze a single conversation with assertion grounding"""
         analysis = None
         prompt = self._create_evaluation_prompt(conversation, goal, mode)
-        
+
         try:
             # Get initial analysis
             response = self.client.models.generate_content(
@@ -454,7 +454,7 @@ class ConversationArbiter:
                 import re
                 json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
                 analysis = json.loads(json_match.group(0)) if json_match else None
-            
+
             # Ground assertions if grounder available
             if self.grounder:
                 grounded_assertions = {}
@@ -463,30 +463,30 @@ class ConversationArbiter:
                     if evidence.confidence > 0.5:  # Only keep well-supported assertions
                         grounded_assertions[assertion] = evidence
                 analysis["grounded_assertions"] = grounded_assertions
-            
+
             if not analysis:
                 raise ValueError("Failed to parse model response into valid analysis format")
-            
+
             return analysis
-                
+
         except Exception as e:
             logger.error(f"Error analyzing conversation: {e}")
             raise
             #return self._create_empty_analysis()
-    
+
     def evaluate_conversations(self,
                              ai_ai_conversation: List[Dict[str, str]],
                              human_ai_conversation: List[Dict[str, str]],
                              goal: str) -> ArbiterResult:
         """Evaluate and compare two conversations"""
-        
+
         # Generate unique IDs for conversations
         from uuid import uuid4
         conversation_ids = {
             "ai-ai": str(uuid4()),
             "human-ai": str(uuid4())
         }
-        
+
         # Analyze each conversation
         ai_ai_analysis = self._analyze_conversation(
             ai_ai_conversation, goal, "ai-ai"
@@ -494,18 +494,18 @@ class ConversationArbiter:
         human_ai_analysis = self._analyze_conversation(
             human_ai_conversation, goal, "human-ai"
         )
-        
+
         # Compare and determine winner
         winner, key_differences = self._compare_conversations(
             ai_ai_analysis, human_ai_analysis
         )
-        
+
         # Extract strategy scores with fallback
         strategy_analysis = {
             "ai-ai": ai_ai_analysis["conversation_quality"].get("strategy", 0.0),
             "human-ai": human_ai_analysis["conversation_quality"].get("strategy", 0.0)
         }
-        
+
         result = ArbiterResult(
             winner=winner,
             conversation_metrics={
@@ -522,7 +522,7 @@ class ConversationArbiter:
                     for role, metrics in human_ai_analysis["participant_analysis"].items()
                 }
             },
-            key_insights=key_differences + 
+            key_insights=key_differences +
                         ai_ai_analysis["key_insights"] +
                         human_ai_analysis["key_insights"],
             improvement_suggestions=ai_ai_analysis["improvement_suggestions"] +
@@ -535,26 +535,26 @@ class ConversationArbiter:
             execution_timestamp=datetime.datetime.now().isoformat(),
             conversation_ids=conversation_ids
         )
-        
+
         # Save metrics to JSON
         self._save_metrics(result)
-        
+
         return result
-    
+
     def _save_metrics(self, result: ArbiterResult) -> None:
         """Save metrics to JSON file for analytics"""
         metrics_dir = Path("metrics")
         metrics_dir.mkdir(exist_ok=True)
-        
+
         metrics_file = metrics_dir / "conversation_metrics.json"
-        
+
         # Load existing metrics if any
         if metrics_file.exists():
             with open(metrics_file) as f:
                 metrics_history = json.load(f)
         else:
             metrics_history = []
-        
+
         # Add new metrics
         metrics_history.append({
             "timestamp": result.execution_timestamp,
@@ -579,11 +579,11 @@ class ConversationArbiter:
                 for mode, assertions in result.grounded_assertions.items()
             }
         })
-        
+
         # Save updated metrics
         with open(metrics_file, 'w') as f:
             json.dump(metrics_history, f, indent=2)
-    
+
     def generate_report(self, result: ArbiterResult) -> str:
         """Generate detailed HTML report of arbiter results"""
         try:
@@ -592,7 +592,7 @@ class ConversationArbiter:
         except Exception as e:
             logger.warning(f"Failed to load report template: {e}")
             template = None
-            
+
         return template.format(report_content=self._generate_report_content(result))
 
     def _generate_report_content(self, result: ArbiterResult) -> str:
@@ -601,12 +601,12 @@ class ConversationArbiter:
         <link rel="stylesheet" href="/static/css/arbiter_report.css">
         <div class="arbiter-report">
             <h2>Conversation Analysis Report</h2>
-            
+
             <div class="winner-section">
                 <h3>Winner: {result.winner.upper()}</h3>
                 <p>This mode demonstrated better overall performance in achieving the conversation goals.</p>
             </div>
-            
+
             <div class="metrics-section">
                 <h3>Conversation Metrics</h3>
                 <div class="metrics-comparison">
@@ -630,7 +630,7 @@ class ConversationArbiter:
                     </div>
                 </div>
             </div>
-            
+
             <div class="grounded-assertions-section">
                 <h3>Grounded Assertions</h3>
                 <div class="ai-ai-assertions">
@@ -642,7 +642,7 @@ class ConversationArbiter:
                     {self._format_assertions(result.grounded_assertions["human-ai"])}
                 </div>
             </div>
-            
+
             <div class="insights-section">
                 <h3>Key Insights</h3>
                 <ul>
@@ -651,7 +651,7 @@ class ConversationArbiter:
                     }
                 </ul>
             </div>
-            
+
             <div class="suggestions-section">
                 <h3>Improvement Suggestions</h3>
                 <ul>
@@ -660,7 +660,7 @@ class ConversationArbiter:
                     }
                 </ul>
             </div>
-            
+
             <div class="strategy-section">
                 <h3>Strategy Analysis</h3>
                 <p>AI-AI Strategy Effectiveness: <span class="metric-value">{result.strategy_analysis["ai-ai"]:.2f}</span></p>
@@ -668,12 +668,12 @@ class ConversationArbiter:
             </div>
         </div>
         """
-    
+
     def _format_assertions(self, assertions: Dict[str, AssertionEvidence]) -> str:
         """Format grounded assertions as HTML"""
         if not assertions:
             return "<p>No grounded assertions found.</p>"
-            
+
         html = ["<div class='assertions-list'>"]
         for assertion, evidence in assertions.items():
             html.append(f"""
@@ -706,22 +706,22 @@ class ConversationArbiter:
             "logical": ["if...then", "consequently", "it follows that"],
             "analytical": ["analyze", "consider", "examine", "evaluate"]
         }
-        
+
         for msg in messages:
             content = msg["content"].lower()
             found_patterns = defaultdict(int)
-            
+
             for pattern_type, markers in reasoning_markers.items():
                 for marker in markers:
                     if marker in content:
                         found_patterns[pattern_type] += 1
-            
+
             if found_patterns:
                 patterns.append({
                     "message_index": messages.index(msg),
                     "patterns": dict(found_patterns)
                 })
-        
+
         return patterns
 
     def _assess_knowledge_integration(self, messages: List[Dict[str, str]]) -> Dict[str, float]:
@@ -731,41 +731,41 @@ class ConversationArbiter:
             "fact_density": 0.0,
             "knowledge_depth": 0.0
         }
-        
+
         try:
             # Calculate metrics
             total_facts = 0
             knowledge_connections = 0
-            
+
             for i, msg in enumerate(messages):
                 # Count potential fact statements
                 sentences = msg["content"].split(". ")
-                facts = len([s for s in sentences if any(marker in s.lower() 
+                facts = len([s for s in sentences if any(marker in s.lower()
                     for marker in ["is", "are", "was", "were", "research", "study", "evidence"])])
                 total_facts += facts
-                
+
                 # Look for references to previous messages
                 if i > 0:
                     prev_content = " ".join(m["content"] for m in messages[max(0, i-3):i])
-                    references = sum(1 for word in msg["content"].split() 
+                    references = sum(1 for word in msg["content"].split()
                                   if word in prev_content)
                     knowledge_connections += references / len(msg["content"].split())
-            
+
             # Calculate final metrics
             if len(messages) > 0:
                 knowledge_metrics["fact_density"] = min(1.0, total_facts / len(messages))
                 knowledge_metrics["build_on_previous"] = min(1.0, knowledge_connections / len(messages))
-                knowledge_metrics["knowledge_depth"] = min(1.0, (knowledge_metrics["fact_density"] + 
+                knowledge_metrics["knowledge_depth"] = min(1.0, (knowledge_metrics["fact_density"] +
                                                                knowledge_metrics["build_on_previous"]) / 2)
-        
+
         except Exception as e:
             logger.error(f"Error in knowledge integration assessment: {e}")
-        
+
         return knowledge_metrics
 
 class VisualizationGenerator:
     """Generates visualizations for conversation analysis"""
-    
+
     def __init__(self):
         try:
             import plotly.graph_objects as go
@@ -773,39 +773,39 @@ class VisualizationGenerator:
         except ImportError:
             logger.warning("Plotly not available - visualizations will be limited")
             self.plotly = None
-            
+
     def generate_metrics_chart(self, result: ArbiterResult) -> str:
         """Generate comparison chart of conversation metrics"""
         if not self.plotly:
             return ""
-            
+
         # Extract metrics for comparison
         metrics = ["coherence", "depth", "engagement", "reasoning", "knowledge"]
         ai_ai_values = [getattr(result.conversation_metrics["ai-ai"], m) for m in metrics]
         human_ai_values = [getattr(result.conversation_metrics["human-ai"], m) for m in metrics]
-        
+
         fig = self.plotly.Figure(data=[
             self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
             self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values)
         ])
-        
+
         fig.update_layout(
             title="Conversation Metrics Comparison",
             barmode="group",
             yaxis_range=[0, 1]
         )
-        
+
         return fig.to_html(full_html=False)
 
     def generate_timeline(self, result: ArbiterResult) -> str:
         """Generate timeline visualization of conversation flow"""
         if not self.plotly:
             return ""
-            
+
         # Create timeline data
         ai_ai_assertions = list(result.grounded_assertions["ai-ai"].keys())
         human_ai_assertions = list(result.grounded_assertions["human-ai"].keys())
-        
+
         fig = self.plotly.Figure([
             self.plotly.Scatter(
                 x=list(range(len(ai_ai_assertions))),
@@ -819,75 +819,75 @@ class VisualizationGenerator:
                 x=list(range(len(human_ai_assertions))),
                 y=[0] * len(human_ai_assertions),
                 mode="markers+text",
-                name="Human-AI Assertions", 
+                name="Human-AI Assertions",
                 text=human_ai_assertions,
                 textposition="bottom center"
             )
         ])
-        
+
         fig.update_layout(
             title="Conversation Timeline",
             showlegend=True,
             yaxis_visible=False
         )
-        
+
         return fig.to_html(full_html=False)
 
 class ReportGenerator:
     """Generates detailed HTML reports with visualizations"""
-    
+
     def __init__(self):
         self.viz = VisualizationGenerator()
-        
+
     def generate_report(self, result: ArbiterResult) -> str:
         """Generate complete HTML report with metrics and visualizations"""
         return f"""
         <div class="arbiter-report">
             <h1>Conversation Analysis Report</h1>
-            
+
             <div class="summary-section">
                 <h2>Summary</h2>
                 <p>Winner: <strong>{result.winner}</strong></p>
                 <p>Analysis completed: {result.execution_timestamp}</p>
             </div>
-            
+
             <div class="visualization-section">
                 <h2>Metrics Comparison</h2>
                 {self.viz.generate_metrics_chart(result)}
-                
+
                 <h2>Conversation Timeline</h2>
                 {self.viz.generate_timeline(result)}
             </div>
-            
+
             <div class="detailed-metrics">
                 <h2>Detailed Metrics</h2>
                 {self._format_detailed_metrics(result)}
             </div>
-            
+
             <div class="insights-section">
                 <h2>Key Insights</h2>
                 {self._format_insights(result)}
             </div>
-            
+
             <div class="grounded-assertions">
                 <h2>Grounded Assertions</h2>
                 {self._format_assertions(result)}
             </div>
         </div>
         """
-    
+
     def _format_detailed_metrics(self, result: ArbiterResult) -> str:
         """Format detailed metrics as HTML tables"""
         return f"""
         <div class="metrics-tables">
             <h3>AI-AI Conversation</h3>
             {self._metrics_table(result.conversation_metrics["ai-ai"])}
-            
+
             <h3>Human-AI Conversation</h3>
             {self._metrics_table(result.conversation_metrics["human-ai"])}
         </div>
         """
-    
+
     def _metrics_table(self, metrics: ConversationMetrics) -> str:
         """Create HTML table for conversation metrics"""
         rows = []
@@ -898,7 +898,7 @@ class ReportGenerator:
                 <td>{value:.2f}</td>
             </tr>
             """)
-        
+
         return f"""
         <table class="metrics-table">
             <thead>
@@ -919,14 +919,14 @@ def evaluate_conversations(ai_ai_conversation: List[Dict[str, str]],
                          search_client: Optional[Any] = None) -> Tuple[str, str]:
     """
     Evaluate two conversations and return winner with report
-    
+
     Args:
         ai_ai_conversation: List of messages from AI-AI conversation
         human_ai_conversation: List of messages from Human-AI conversation
         goal: Original conversation goal/topic
         gemini_api_key: API key for Gemini model
         search_client: Optional search client for grounding assertions
-    
+
     Returns:
         Tuple of (winner, HTML report)
     """

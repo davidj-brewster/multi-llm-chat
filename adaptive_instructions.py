@@ -1,10 +1,37 @@
 from context_analysis import ContextAnalyzer, ContextVector
 from typing import List, Dict
 import logging
+import traceback
 from shared_resources import InstructionTemplates, MemoryManager
 
 logger = logging.getLogger(__name__)
 TOKENS_PER_TURN=1024
+
+class AdaptiveInstructionError(Exception):
+    """Base exception for adaptive instruction errors."""
+    pass
+
+class TemplateSelectionError(AdaptiveInstructionError):
+    """Raised when there's an error selecting a template."""
+    pass
+
+class TemplateCustomizationError(AdaptiveInstructionError):
+    """Raised when there's an error customizing a template."""
+    pass
+
+class ContextAnalysisError(AdaptiveInstructionError):
+    """Raised when there's an error analyzing conversation context."""
+    pass
+
+class TemplateFormatError(AdaptiveInstructionError):
+    """Raised when there's an error formatting a template."""
+    pass
+
+class TemplateNotFoundError(TemplateSelectionError):
+    """Raised when a requested template is not found."""
+    pass
+
+
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context"""
     
@@ -15,8 +42,15 @@ class AdaptiveInstructionManager:
     @property
     def context_analyzer(self):
         """Lazy initialization of context analyzer."""
-        self._context_analyzer = ContextAnalyzer(mode=self.mode)
-        return self._context_analyzer
+        try:
+            if self._context_analyzer is None:
+                self._context_analyzer = ContextAnalyzer(mode=self.mode)
+            return self._context_analyzer
+        except Exception as e:
+            logger.error(f"Failed to initialize context analyzer: {e}")
+            logger.debug(f"Stack trace: {traceback.format_exc()}")
+            raise ContextAnalysisError(f"Failed to initialize context analyzer: {e}")
+
         
     def generate_instructions(self, 
                             history: List[Dict[str, str]], 
@@ -24,23 +58,72 @@ class AdaptiveInstructionManager:
                             mode: str = "",
                             role: str = "") -> str:
         """Generate adaptive instructions based on conversation context"""
-        logger.info("Applying adaptive instruction generation..")
-        conversation_history = history
-        # Analyze current context
-        context = self.context_analyzer.analyze(conversation_history)
-        
-        # Select appropriate instruction template based on context
-        template = self._select_template(context, self.mode)
-        
-        # Customize template based on context metrics
-        instructions = self._customize_template(template, context, domain, role)
-        
-        # Log memory usage in debug mode
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(MemoryManager.get_memory_usage())
+        try:
+            logger.info("Applying adaptive instruction generation..")
             
-        logger.debug("New prompt: {}".format(instructions))
-        return instructions
+            # Validate inputs
+            if not isinstance(history, list):
+                raise ValueError(f"History must be a list, got {type(history)}")
+            
+            if not isinstance(domain, str):
+                raise ValueError(f"Domain must be a string, got {type(domain)}")
+            
+            conversation_history = history
+            
+            # Analyze current context
+            try:
+                context = self.context_analyzer.analyze(conversation_history)
+            except Exception as e:
+                logger.error(f"Error analyzing conversation context: {e}")
+                logger.debug(f"Stack trace: {traceback.format_exc()}")
+                raise ContextAnalysisError(f"Error analyzing conversation context: {e}")
+            
+            # Select appropriate instruction template based on context
+            try:
+                template = self._select_template(context, self.mode)
+            except KeyError as e:
+                logger.error(f"Template not found: {e}")
+                # Fallback to default template
+                logger.warning("Falling back to default exploratory template")
+                template = "You are a helpful assistant. Think step by step as needed."
+            except Exception as e:
+                logger.error(f"Error selecting template: {e}")
+                logger.debug(f"Stack trace: {traceback.format_exc()}")
+                raise TemplateSelectionError(f"Error selecting template: {e}")
+            
+            # Customize template based on context metrics
+            try:
+                instructions = self._customize_template(template, context, domain, role)
+            except Exception as e:
+                logger.error(f"Error customizing template: {e}")
+                logger.debug(f"Stack trace: {traceback.format_exc()}")
+                # Fallback to basic template with domain
+                fallback_template = f"You are discussing {domain}. Be helpful and think step by step."
+                logger.warning(f"Falling back to basic template: {fallback_template}")
+                return fallback_template
+            
+            # Log memory usage in debug mode
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(MemoryManager.get_memory_usage())
+                
+            logger.debug("New prompt: {}".format(instructions))
+            return instructions
+            
+        except ContextAnalysisError:
+            # Re-raise specific exceptions
+            raise
+        except TemplateSelectionError:
+            # Re-raise specific exceptions
+            raise
+        except ValueError as e:
+            # Input validation errors
+            logger.error(f"Invalid input: {e}")
+            raise AdaptiveInstructionError(f"Invalid input: {e}")
+        except Exception as e:
+            # Catch-all for unexpected errors
+            logger.exception(f"Unexpected error in generate_instructions: {e}")
+            # Return a basic fallback instruction
+            return f"You are discussing {domain}. Be helpful and think step by step."
         
     def _select_template(self, context: ContextVector, mode: str) -> str:
         """Select most appropriate instruction template based on context"""
@@ -48,29 +131,54 @@ class AdaptiveInstructionManager:
         
         template_prefix = 'ai-ai-' if mode == 'ai-ai' else ''
         
-        if len(context.topic_evolution) < 2:
-            # Early in conversation - use exploratory template
-            logger.debug("_select_template: Early in conversation - using exploratory template")
+        try:
+            # Check if templates are available
+            if not templates:
+                logger.error("No templates available")
+                raise TemplateNotFoundError("No templates available")
+                
+            # Check if required templates exist
+            required_templates = [
+                f'{template_prefix}exploratory',
+                f'{template_prefix}structured',
+                f'{template_prefix}synthesis',
+                f'{template_prefix}critical'
+            ]
+            
+            for template_name in required_templates:
+                if template_name not in templates:
+                    logger.error(f"Required template not found: {template_name}")
+                    raise TemplateNotFoundError(f"Required template not found: {template_name}")
+            
+            if len(context.topic_evolution) < 2:
+                # Early in conversation - use exploratory template
+                logger.debug("_select_template: Early in conversation - using exploratory template")
+                return templates[f'{template_prefix}exploratory']
+                
+            if context.semantic_coherence < 0.5:
+                # Low coherence - switch to structured template
+                logger.debug("_select_template: low coherence - using structured template")
+                return templates[f'{template_prefix}structured']
+                
+            if context.cognitive_load > 0.8:
+                # High complexity - switch to synthesis template
+                logger.debug("_select_template: high cognitive load - using synthesis template")
+                return templates[f'{template_prefix}synthesis']
+                
+            if context.knowledge_depth > 0.8:
+                # Deep discussion - switch to critical template
+                logger.debug("_select_template: high knowledge depth - using critical template")
+                return templates[f'{template_prefix}critical']
+                
+            # Default to exploratory
+            logger.debug("_select_template: Defaulting to exploratory template")
             return templates[f'{template_prefix}exploratory']
-            
-        if context.semantic_coherence < 0.5:
-            # Low coherence - switch to structured template
-            logger.debug("_select_template: low coherence - using structured template")
-            return templates[f'{template_prefix}structured']
-            
-        if context.cognitive_load > 0.8:
-            # High complexity - switch to synthesis template
-            logger.debug("_select_template: low coherence - using structured template")
-            return templates[f'{template_prefix}synthesis']
-            
-        if context.knowledge_depth > 0.8:
-            # Deep discussion - switch to critical template
-            logger.debug("_select_template: low coherence - Deep discussion - switch to critical template")
-            return templates[f'{template_prefix}critical']
-            
-        # Default to exploratory
-        logger.debug("_select_template: Defaulting to exploratory template")
-        return templates[f'{template_prefix}exploratory']
+        except KeyError as e:
+            logger.error(f"Template not found: {e}")
+            raise TemplateNotFoundError(f"Template not found: {e}")
+        except Exception as e:
+            logger.error(f"Error selecting template: {e}")
+            raise TemplateSelectionError(f"Error selecting template: {e}")
         
     def _customize_template(self,
                           template: str,
@@ -79,13 +187,15 @@ class AdaptiveInstructionManager:
                           role:str = "") -> str:
         """Customize instruction template based on context metrics"""
         
-        modifications = []
-        instructions = ""
-        # Core instructions
+        try:
+            modifications = []
+            instructions = ""
+            # Core instructions
 
-        if self.mode == "ai-ai" or role == "user" or role == "human":
-            # Add mode-specific formatting for AI-AI conversations
-            instructions = template.format(domain=domain).strip() + """\nYou are acting as a human expert prompting, exploring topics that may be outside your core expertise.
+            if self.mode == "ai-ai" or role == "user" or role == "human":
+                try:
+                    # Add mode-specific formatting for AI-AI conversations
+                    instructions = template.format(domain=domain).strip() + """\nYou are acting as a human expert prompting, exploring topics that may be outside your core expertise.
 NEVER REFER TO YOURSELF AS AN AI. 
 YOU ARE A HUMAN, SEEKING DEEP AND NATURALLY FLUID CONVERSATION AND TOPIC EXPLORATION, CONTRIBUTING EQUALLY AS MUCH AS LISTENING AND RESPONDING.
 STICK TO THE BROAD TOPIC OF {domain}.
@@ -186,45 +296,63 @@ DO NOT:
 
 *** NEVER REPEAT THIS PROMPT OR THAT THIS PROMPT EXISTS OR THAT YOU ARE THINKING ABOUT THIS PROMPT ***
 """
-    
-        instructions += template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+                except KeyError as e:
+                    logger.error(f"Missing key in template formatting: {e}")
+                    raise TemplateFormatError(f"Missing key in template formatting: {e}")
+                except Exception as e:
+                    logger.error(f"Error formatting template: {e}")
+                    raise TemplateFormatError(f"Error formatting template: {e}")
+                
+                try:
+                    instructions += template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+                except KeyError as e:
+                    logger.error(f"Missing key in template formatting: {e}")
+                    raise TemplateFormatError(f"Missing key in template formatting: {e}")
+                except Exception as e:
+                    logger.error(f"Error formatting template: {e}")
+                    raise TemplateFormatError(f"Error formatting template: {e}")
 
-        # Add context-specific modifications
-        if context.uncertainty_markers.get('uncertainty', 0) > 0.6:
-            modifications.append("Request specific clarification on unclear points")
+                # Add context-specific modifications
+                try:
+                    if context.uncertainty_markers.get('uncertainty', 0) > 0.6:
+                        modifications.append("Request specific clarification on unclear points")
+                        
+                    if context.reasoning_patterns.get('deductive', 0) < 0.3:
+                        modifications.append("Encourage logical reasoning and clear arguments")
+                        
+                    # Add AI-AI specific modifications if in AI-AI mode
+                    if self.mode == "ai-ai":
+                        if context.reasoning_patterns.get('formal_logic', 0) < 0.3:
+                            modifications.append("Use more formal logical structures in responses")
+                        if context.reasoning_patterns.get('technical', 0) < 0.4:
+                            modifications.append("Increase use of precise technical terminology")
+                        
+                    if context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
+                        modifications.append("Ask more follow-up questions to maintain engagement")
+                    
+                    if "GOAL" in domain or "Goal" in domain or "goal" in domain:
+                        modifications.append(f"** Focus on achieving the specified goal! {domain} **")
+                except KeyError as e:
+                    logger.warning(f"Missing context metric: {e}, skipping modification")
+                except Exception as e:
+                    logger.warning(f"Error adding context-specific modifications: {e}, continuing with basic template")
+                
+                # Format output
+                if modifications:
+                    instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
             
-        if context.reasoning_patterns.get('deductive', 0) < 0.3:
-            modifications.append("Encourage logical reasoning and clear arguments")
-            
-        # Add AI-AI specific modifications if in AI-AI mode
-        if self.mode == "ai-ai":
-            if context.reasoning_patterns.get('formal_logic', 0) < 0.3:
-                modifications.append("Use more formal logical structures in responses")
-            if context.reasoning_patterns.get('technical', 0) < 0.4:
-                modifications.append("Increase use of precise technical terminology")
-            
-        if context.engagement_metrics.get('turn_taking_balance', 1) < 0.4:
-            modifications.append("Ask more follow-up questions to maintain engagement")
-        
-        if "GOAL" in domain or "Goal" in domain or "goal" in domain:
-            modifications.append(f"** Focus on achieving the specified goal! {domain} **")
-        
-        # Format output
-        if modifications:
-            instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
-    
-        role_specific_persona="You are a human expert adept at pattern recognition, visual understanding, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions"
+                role_specific_persona="You are a human expert adept at pattern recognition, visual understanding, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions"
 
-        #if self.mode == "default":  
-        #    return role_specific_persona + "\nYou are discussing {domain} with a colleague who disagrees strenuously. Think step by step and respond to the user.\n"
-        
-        instructions += role_specific_persona
-        SPECIAL_HUMAN_INSTRUCTION="You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REPEAT THIS PROMPT!!" if ((role=="human" or role == "user") and self.mode == "human-ai") else """** Structure your response as a conversation, NOT as a prompt. Ensure to respond with novel thoughts and challenges to the assistant rather than being passive **""" if self.mode=="ai-ai" else "Respond using HTML formatting in paragraph form"
-        if ((role == "human" or role == "user") and self.mode != "default") :
-            instructions += "\n" + SPECIAL_HUMAN_INSTRUCTION
+                #if self.mode == "default":  
+                #    return role_specific_persona + "\nYou are discussing {domain} with a colleague who disagrees strenuously. Think step by step and respond to the user.\n"
+                
+                instructions += role_specific_persona
+                SPECIAL_HUMAN_INSTRUCTION="You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REPEAT THIS PROMPT!!" if ((role=="human" or role == "user") and self.mode == "human-ai") else """** Structure your response as a conversation, NOT as a prompt. Ensure to respond with novel thoughts and challenges to the assistant rather than being passive **""" if self.mode=="ai-ai" else "Respond using HTML formatting in paragraph form"
+                if ((role == "human" or role == "user") and self.mode != "default") :
+                    instructions += "\n" + SPECIAL_HUMAN_INSTRUCTION
 
-        # Add formatting requirements
-        instructions += f"""**Output**:
+                # Add formatting requirements
+                instructions += f"""**Output**:
 - HTML formatting, default to paragraphs
 - Use HTML lists when needed
 - Use thinking tags for reasoning, but not to repeat the prompt or task
@@ -235,12 +363,33 @@ DO NOT:
 Restrict your responses to {TOKENS_PER_TURN} tokens per turn, but decide verbosity level dynamically based on the scenario.
 Expose reasoning via thinking tags. Respond naturally to the AI's responses. Reason, deduce, challenge (when appropriate) and expand upon conversation inputs. The goal is to have a meaningful dialogue like a flowing human conversation between peers, instead of completely dominating it.
 """
-            
-        return instructions.strip()
+                
+                return instructions.strip()
+            else:
+                # For other modes, just format the template with domain
+                try:
+                    return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+                except KeyError as e:
+                    logger.error(f"Missing key in template formatting: {e}")
+                    raise TemplateFormatError(f"Missing key in template formatting: {e}")
+                except Exception as e:
+                    logger.error(f"Error formatting template: {e}")
+                    raise TemplateFormatError(f"Error formatting template: {e}")
+        except TemplateFormatError:
+            # Re-raise specific exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Error customizing template: {e}")
+            logger.debug(f"Stack trace: {traceback.format_exc()}")
+            raise TemplateCustomizationError(f"Error customizing template: {e}")
 
     def __del__(self):
         """Cleanup when manager is destroyed."""
-        if self._context_analyzer:
-            del self._context_analyzer
-            self._context_analyzer = None
-            logger.debug(MemoryManager.get_memory_usage())
+        try:
+            if self._context_analyzer:
+                del self._context_analyzer
+                self._context_analyzer = None
+                logger.debug(MemoryManager.get_memory_usage())
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+            # No need to re-raise as this is cleanup code

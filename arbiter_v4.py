@@ -78,7 +78,7 @@ from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
 class AssertionGrounder:
     """Grounds assertions using Gemini with Google Search integration"""
-    
+
     def __init__(self, api_key: str = os.environ.get("GEMINI_API_KEY"), model: str = "gemini-2.0-pro-exp-02-05"):
         key=os.environ.get("GEMINI_API_KEY")
         self.client = genai.Client(api_key=key)
@@ -96,7 +96,7 @@ class AssertionGrounder:
                     response_modalities=["TEXT"],
                     temperature=0.1
                 ),
-                contents=f"""INSTRUCTIONS: 
+                contents=f"""INSTRUCTIONS:
 OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
 Review the following three conversations and provide insights. The topic is {topic}.
 NOTE: The first participant in each conversation is the Human and the second participant is the human and vice versa from there.
@@ -155,21 +155,21 @@ CONVERSATION 3:
         """Calculate confidence based on source quality and quantity"""
         if not sources:
             return 0.0
-            
+
         source_score = min(len(sources) / 3.0, 1.0)
-        authority_score = sum(0.2 if any(d in s["domain"] for d in [".edu", ".gov", ".org"]) 
+        authority_score = sum(0.2 if any(d in s["domain"] for d in [".edu", ".gov", ".org"])
                             else 0.1 for s in sources) / len(sources)
-                            
+
         return min((source_score * 0.5) + (authority_score * 0.5), 1.0)
 
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  model: str = "gemini-2.0-pro-exp-02-05",
                  api_key=os.environ.get("GEMINI_API_KEY")):
         self.client = genai.Client(api_key=api_key)
-        
+
         self.model = model
         self.grounder = AssertionGrounder(api_key=api_key)
         self.nlp = spacy.load('en_core_web_lg') #has vectors
@@ -178,15 +178,15 @@ class ConversationArbiter:
         """Analyze conversation flow patterns and transitions"""
         """
         Analyze conversation flow patterns and topic transitions.
-        
+
         This method uses NLP techniques to identify topics in the conversation,
         track topic shifts, and calculate metrics related to conversation coherence
         and depth. It uses spaCy for semantic analysis when available, with a
         fallback to basic analysis.
-        
+
         Args:
             messages: List of message dictionaries with 'content' key
-            
+
         Returns:
             Dict[str, Any]: Dictionary containing flow metrics including topic_coherence,
                            topic_depth, and topic_distribution
@@ -198,13 +198,13 @@ class ConversationArbiter:
                 for doc in docs:
                     topics.extend([chunk.text for chunk in doc.noun_chunks])
                     topics.extend([ent.text for ent in doc.ents])
-                
+
                 topic_shifts = 0
                 for i in range(1, len(topics)):
-                    if not any(self._text_similarity(topics[i], prev) > 0.3 
+                    if not any(self._text_similarity(topics[i], prev) > 0.3
                              for prev in topics[max(0, i-3):i]):
                         topic_shifts += 1
-                
+
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / len(messages)),
                     "topic_depth": len(set(topics)) / len(messages),
@@ -213,9 +213,9 @@ class ConversationArbiter:
             else:
                 # Fallback to basic analysis
                 flow_metrics = self._basic_flow_analysis(messages)
-            
+
             return flow_metrics
-            
+
         except Exception as e:
             logger.error(f"Error analyzing conversation flow: {e}")
             return {"topic_coherence": 0.5, "topic_depth": 0.5, "topic_distribution": {}}
@@ -224,14 +224,14 @@ class ConversationArbiter:
         """Calculate semantic similarity between two texts"""
         """
         Calculate semantic similarity between two text strings.
-        
+
         Uses spaCy's vector-based similarity when available, falling back to
         SequenceMatcher for string similarity when spaCy is not available.
-        
+
         Args:
             text1: First text string
             text2: Second text string
-            
+
         Returns:
             float: Similarity score between 0.0 and 1.0
         """
@@ -245,13 +245,13 @@ class ConversationArbiter:
         """Calculate normalized topic frequencies"""
         """
         Calculate normalized frequency distribution of topics.
-        
+
         Counts occurrences of each topic and normalizes by the total count
         to create a probability distribution.
-        
+
         Args:
             topics: List of topic strings
-            
+
         Returns:
             Dict[str, float]: Dictionary mapping topics to their normalized frequencies
         """
@@ -305,19 +305,19 @@ class ConversationArbiter:
                 )
             )
             print(response.text)
-            
+
             # Parse JSON response
             try:
                 return json.loads(response.text)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse Gemini response: {e}")
                 return self._create_empty_analysis()
-                
+
         except Exception as e:
             logger.error(f"Error getting Gemini analysis: {e}")
             raise
 
-    def _determine_winner(self, 
+    def _determine_winner(self,
                          ai_ai_metrics: Dict[str, float],
                          human_ai_metrics: Dict[str, float]) -> str:
         """Determine conversation winner based on metrics"""
@@ -330,86 +330,86 @@ class ConversationArbiter:
             "knowledge": 0.15,
             "goal_progress": 0.15
         }
-        
+
         ai_ai_score = sum(
-            weights[metric] * value 
+            weights[metric] * value
             for metric, value in ai_ai_metrics.items()
             if metric in weights
         )
-        
+
         human_ai_score = sum(
             weights[metric] * value
             for metric, value in human_ai_metrics.items()
             if metric in weights
         )
-        
+
         return "ai-ai" if ai_ai_score > human_ai_score else "human-ai"
 
     def _combine_insights(self, analyses: List[Dict[str, Any]]) -> List[str]:
         """Combine and deduplicate insights from multiple analyses"""
         all_insights = []
         seen = set()
-        
+
         for analysis in analyses:
             for insight in analysis.get("key_insights", []):
                 normalized = insight.lower().strip()
                 if normalized not in seen:
                     all_insights.append(insight)
                     seen.add(normalized)
-                    
+
         return all_insights
 
     def _gemini_search(self,
                                ai_ai_analysis: Dict[str, Any],
                                human_ai_analysis: Dict[str, Any]) -> Any: #Dict[str, Dict[str, AssertionEvidence]]:
         """Ground assertions from both conversations"""
-        
-        grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)  
+
+        grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)
         return grounded
 
 
 class VisualizationGenerator:
     """Generates visualizations for conversation analysis"""
-    
+
     def __init__(self):
         self.plotly = go
-            
+
     def generate_metrics_chart(self, result: ArbiterResult) -> str:
         """Generate comparison chart of conversation metrics"""
         metrics = ["coherence", "depth", "engagement", "reasoning", "knowledge"]
         ai_ai_values = [getattr(result.conversation_metrics["ai-ai"], m) for m in metrics]
         human_ai_values = [getattr(result.conversation_metrics["human-ai"], m) for m in metrics]
-        
+
         fig = self.plotly.Figure(data=[
             self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
             self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values)
         ])
-        
+
         fig.update_layout(
             title="Conversation Metrics Comparison",
             barmode="group",
             yaxis_range=[0, 1]
         )
-        
+
         return fig.to_html(full_html=False)
 
     def generate_timeline(self, assertions: Dict[str, Dict[str, AssertionEvidence]]) -> str:
         """Generate timeline visualization of grounded assertions"""
         """
         Generate a timeline visualization of grounded assertions from both conversations.
-        
+
         Creates a Plotly scatter plot showing assertions from both AI-AI and Human-AI
         conversations on a timeline, with each assertion represented as a point with text.
-        
+
         Args:
             assertions: Dictionary mapping conversation types to their assertions
-            
+
         Returns:
             str: HTML representation of the timeline visualization
         """
         ai_ai_assertions = list(assertions["ai-ai"].keys())
         human_ai_assertions = list(assertions["human-ai"].keys())
-        
+
         fig = self.plotly.Figure([
             self.plotly.Scatter(
                 x=list(range(len(ai_ai_assertions))),
@@ -428,16 +428,16 @@ class VisualizationGenerator:
                 textposition="bottom center"
             )
         ])
-        
+
         fig.update_layout(
             title="Conversation Timeline",
             showlegend=True,
             yaxis_visible=False
         )
-        
+
         return fig.to_html(full_html=False)
 
-def evaluate_conversations( 
+def evaluate_conversations(
                                 ai_ai_convo: List[Dict[str, str]],
                                 human_ai_convo: List[Dict[str, str]],
                                 default_convo: List[Dict[str, str]],
@@ -445,17 +445,17 @@ def evaluate_conversations(
     """Compare and evaluate three conversation modes"""
     """
     Compare and evaluate three conversation modes: AI-AI, Human-AI, and default.
-    
+
     This function performs comprehensive analysis of conversations including flow
     analysis, topic coherence, and grounding of assertions. It uses the Gemini API
     to evaluate the quality and effectiveness of different conversation modes.
-    
+
     Args:
         ai_ai_convo: List of message dictionaries from AI-AI conversation
         human_ai_convo: List of message dictionaries from Human-AI conversation
         default_convo: List of message dictionaries from default conversation
         goal: The conversation goal or topic
-        
+
     Returns:
         ArbiterResult: Comprehensive evaluation results
     """
@@ -467,11 +467,11 @@ def evaluate_conversations(
         ai_ai_flow =  arbiter.analyze_conversation_flow(ai_ai_convo)
         human_ai_flow =  arbiter.analyze_conversation_flow(human_ai_convo)
         default_flow =  arbiter.analyze_conversation_flow(default_convo)
-        
+
         # Generate prompts for Gemini analysis
         #ai_ai_prompt = arbiter._format_gemini_prompt(ai_ai_convo)
         #human_ai_prompt = arbiter._format_gemini_prompt(human_ai_convo)
-        
+
         # Get Gemini analysis
         #ai_ai_analysis = arbiter._get_gemini_analysis(ai_ai_convo)
 
@@ -485,7 +485,7 @@ def evaluate_conversations(
 
         # Compare and determine winner
         #winner = self._determine_winner(ai_ai_analysis, human_ai_analysis)
-        
+
         #return ArbiterResult(
         #    winner=None,
         #    conversation_metrics=None,
@@ -514,7 +514,7 @@ def evaluate_conversations(
         #    ),
         #execution_timestamp=datetime.datetime.now().isoformat()
 
-        
+
     except Exception as e:
         logger.error(f"Error in conversation evaluation: {e}")
         raise

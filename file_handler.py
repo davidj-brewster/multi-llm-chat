@@ -14,6 +14,7 @@ import os
 import logging
 import mimetypes
 from PIL import Image
+from PIL import UnidentifiedImageError
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 from dataclasses import dataclass
@@ -34,6 +35,26 @@ class MediaValidationError(MediaProcessingError):
 
 class MediaProcessingConfigError(MediaProcessingError):
     """Raised when there's a configuration-related error."""
+    pass
+
+class ImageProcessingError(MediaProcessingError):
+    """Raised when there's an error processing an image."""
+    pass
+
+class VideoProcessingError(MediaProcessingError):
+    """Raised when there's an error processing a video."""
+    pass
+
+class TextProcessingError(MediaProcessingError):
+    """Raised when there's an error processing a text file."""
+    pass
+
+class CodeProcessingError(MediaProcessingError):
+    """Raised when there's an error processing a code file."""
+    pass
+
+class FileIOError(MediaProcessingError):
+    """Raised when there's an error reading from or writing to a file."""
     pass
 
 @dataclass
@@ -237,9 +258,21 @@ class ConversationMediaHandler:
         except MediaProcessingError as e:
             logger.error(f"Media processing error for {file_path}: {e}")
             raise
+        except FileNotFoundError as e:
+            logger.error(f"File not found: {file_path}")
+            raise MediaValidationError(f"File not found: {file_path}")
+        except PermissionError as e:
+            logger.error(f"Permission denied when accessing file: {file_path}")
+            raise MediaProcessingError(f"Permission denied when accessing file: {file_path}")
+        except OSError as e:
+            logger.error(f"OS error when processing file {file_path}: {e}")
+            raise MediaProcessingError(f"OS error when processing file: {e}")
+        except MemoryError as e:
+            logger.error(f"Out of memory when processing file {file_path}")
+            raise MediaProcessingError(f"File too large to process in available memory: {file_path}")
         except Exception as e:
             logger.exception(f"Unexpected error processing file {file_path}")
-            raise MediaProcessingError(f"Failed to process file: {e}")
+            raise MediaProcessingError(f"Failed to process file {file_path}: {e}")
 
     def prepare_media_message(self, 
                             file_path: str,
@@ -268,8 +301,15 @@ class ConversationMediaHandler:
             return None
 
         try:
-            with open(file_path, 'rb') as f:
-                file_data = f.read()
+            try:
+                with open(file_path, 'rb') as f:
+                    file_data = f.read()
+            except FileNotFoundError:
+                raise FileIOError(f"File not found: {file_path}")
+            except PermissionError:
+                raise FileIOError(f"Permission denied when accessing file: {file_path}")
+            except OSError as e:
+                raise FileIOError(f"Error reading file {file_path}: {e}")
 
             # Base message structure
             message = {
@@ -307,9 +347,18 @@ class ConversationMediaHandler:
 
             return message
 
+        except FileIOError as e:
+            logger.error(f"File I/O error: {e}")
+            raise
+        except MediaProcessingError as e:
+            logger.error(f"Media processing error: {e}")
+            raise
+        except MemoryError:
+            logger.error(f"Out of memory when preparing media message for {file_path}")
+            raise MediaProcessingError(f"File too large to process in available memory: {file_path}")
         except Exception as e:
             logger.exception(f"Failed to prepare media message for {file_path}")
-            raise MediaProcessingError(f"Failed to prepare media message: {e}")
+            raise MediaProcessingError(f"Failed to prepare media message for {file_path}: {e}")
 
     def create_media_prompt(self, 
                           metadata: FileMetadata,
@@ -409,51 +458,64 @@ class ConversationMediaHandler:
         Raises:
             MediaValidationError: If image validation fails
         """
-        with Image.open(file_path) as img:
-            # Check dimensions
-            if img.size[0] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][0] or \
-               img.size[1] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][1]:
-                logger.info(f"Image dimensions {img.size} exceed maximum resolution " +
-                           f"{FileConfig.SUPPORTED_FILE_TYPES['image']['max_resolution']}")
-                logger.warning(f"Image dimensions {img.size} exceed maximum, will be resized")
-            
-                raise MediaValidationError(f"Image dimensions too large: {img.size}")
-                
-            metadata.dimensions = img.size
-            
-            # Create thumbnail
-            logger.info(f"Creating thumbnail for image {file_path} with original size {img.size}")
-            
-            # Calculate thumbnail size maintaining aspect ratio with longest side = 512px
-            max_dimension = 1024
-            width, height = img.size
-            if width > height:
-                thumb_size = (max_dimension, int(height * max_dimension / width))
-            else:
-                thumb_size = (int(width * max_dimension / height), max_dimension)
-                
-            logger.info(f"Calculated thumbnail size: {thumb_size} (maintaining aspect ratio)")
-            thumb_img = img.copy()
-            thumb_img.thumbnail(thumb_size)
-            
-            # Save thumbnail to file
-            thumb_path = self.output_dir / f"thumb_{file_path.name}"
-            thumb_img.save(thumb_path)
-            metadata.thumbnail_path = str(thumb_path)
-            logger.info(f"Created thumbnail for {file_path}: {thumb_path} with size {thumb_img.size}")
-            
-            # Resize image if larger than max resolution
-            if img.size[0] > self.max_image_resolution[0] or img.size[1] > self.max_image_resolution[1]:
-                logger.info(f"Resizing image {file_path} from {img.size} to fit within {self.max_image_resolution}")
-                # Calculate new dimensions while maintaining aspect ratio
-                ratio = min(self.max_image_resolution[0] / img.size[0], self.max_image_resolution[1] / img.size[1])
-                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-                resized_img = img.resize(new_size, Image.LANCZOS)
-                logger.info(f"Resized image from {metadata.dimensions} to {new_size}")
-                metadata.dimensions = new_size
-                resized_path = self.output_dir / f"resized_{file_path.name}"
-                logger.info(f"Saving resized image to {resized_path}")
-                resized_img.save(resized_path)
+        try:
+            try:
+                with Image.open(file_path) as img:
+                    # Check dimensions
+                    if img.size[0] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][0] or \
+                       img.size[1] > FileConfig.SUPPORTED_FILE_TYPES["image"]["max_resolution"][1]:
+                        logger.info(f"Image dimensions {img.size} exceed maximum resolution " +
+                                   f"{FileConfig.SUPPORTED_FILE_TYPES['image']['max_resolution']}")
+                        logger.warning(f"Image dimensions {img.size} exceed maximum, will be resized")
+                    
+                        raise MediaValidationError(f"Image dimensions too large: {img.size}")
+                        
+                    metadata.dimensions = img.size
+                    
+                    # Create thumbnail
+                    logger.info(f"Creating thumbnail for image {file_path} with original size {img.size}")
+                    
+                    # Calculate thumbnail size maintaining aspect ratio with longest side = 512px
+                    max_dimension = 1024
+                    width, height = img.size
+                    if width > height:
+                        thumb_size = (max_dimension, int(height * max_dimension / width))
+                    else:
+                        thumb_size = (int(width * max_dimension / height), max_dimension)
+                        
+                    logger.info(f"Calculated thumbnail size: {thumb_size} (maintaining aspect ratio)")
+                    thumb_img = img.copy()
+                    thumb_img.thumbnail(thumb_size)
+                    
+                    # Save thumbnail to file
+                    thumb_path = self.output_dir / f"thumb_{file_path.name}"
+                    try:
+                        thumb_img.save(thumb_path)
+                        metadata.thumbnail_path = str(thumb_path)
+                        logger.info(f"Created thumbnail for {file_path}: {thumb_path} with size {thumb_img.size}")
+                    except (OSError, IOError) as e:
+                        logger.error(f"Failed to save thumbnail for {file_path}: {e}")
+                        # Continue processing even if thumbnail creation fails
+                    
+                    # Resize image if larger than max resolution
+                    if img.size[0] > self.max_image_resolution[0] or img.size[1] > self.max_image_resolution[1]:
+                        logger.info(f"Resizing image {file_path} from {img.size} to fit within {self.max_image_resolution}")
+                        # Calculate new dimensions while maintaining aspect ratio
+                        ratio = min(self.max_image_resolution[0] / img.size[0], self.max_image_resolution[1] / img.size[1])
+                        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                        resized_img = img.resize(new_size, Image.LANCZOS)
+                        logger.info(f"Resized image from {metadata.dimensions} to {new_size}")
+                        metadata.dimensions = new_size
+                        resized_path = self.output_dir / f"resized_{file_path.name}"
+                        logger.info(f"Saving resized image to {resized_path}")
+                        resized_img.save(resized_path)
+            except UnidentifiedImageError:
+                raise ImageProcessingError(f"Cannot identify image file: {file_path}")
+            except (IOError, OSError) as e:
+                raise ImageProcessingError(f"Error opening or processing image file {file_path}: {e}")
+        except Exception as e:
+            logger.exception(f"Unexpected error processing image {file_path}")
+            raise ImageProcessingError(f"Failed to process image {file_path}: {e}")
             
     def _process_video(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -475,7 +537,12 @@ class ConversationMediaHandler:
         """
         try:
             import cv2
-            video = cv2.VideoCapture(str(file_path))
+            try:
+                video = cv2.VideoCapture(str(file_path))
+                if not video.isOpened():
+                    raise VideoProcessingError(f"Failed to open video file: {file_path}")
+            except Exception as e:
+                raise VideoProcessingError(f"Error opening video file {file_path}: {e}")
             
             # Get video properties
             width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -502,7 +569,12 @@ class ConversationMediaHandler:
                 
             # Create directory for processed frames
             frames_dir = self.output_dir / f"frames_{file_path.stem}"
-            frames_dir.mkdir(exist_ok=True)
+            try:
+                frames_dir.mkdir(exist_ok=True)
+            except (OSError, IOError) as e:
+                logger.error(f"Failed to create frames directory {frames_dir}: {e}")
+                # Continue processing but log the error
+                pass
             
             # Extract frames at target FPS and resolution
             frame_count = 0
@@ -528,8 +600,13 @@ class ConversationMediaHandler:
                 
                 # Save frame
                 frame_path = frames_dir / f"frame_{frame_count:04d}.jpg"
-                cv2.imwrite(str(frame_path), frame)
-                frame_paths.append(str(frame_path))
+                try:
+                    cv2.imwrite(str(frame_path), frame)
+                    frame_paths.append(str(frame_path))
+                except Exception as e:
+                    logger.error(f"Failed to save frame {frame_count} to {frame_path}: {e}")
+                    # Continue processing other frames
+                    continue
                 logger.info(f"Saved frame {frame_count} to {frame_path}")
                 frame_count += 1
                 # Create thumbnail from first frame
@@ -540,8 +617,13 @@ class ConversationMediaHandler:
                     thumb_frame = cv2.resize(frame, new_size)
                     logger.info(f"Creating thumbnail for video {file_path} with size {new_size}")
                     thumb_path = self.output_dir / f"thumb_{file_path.name}.jpg"
-                    cv2.imwrite(str(thumb_path), thumb_frame)
-                    metadata.thumbnail_path = str(thumb_path)
+                    try:
+                        cv2.imwrite(str(thumb_path), thumb_frame)
+                        metadata.thumbnail_path = str(thumb_path)
+                    except Exception as e:
+                        logger.error(f"Failed to save thumbnail for video {file_path}: {e}")
+                        # Continue processing even if thumbnail creation fails
+                        pass
                     logger.debug(f"Created thumbnail for video {file_path}: {thumb_path}")
 
                 # Process video at lower resolution and save
@@ -575,7 +657,13 @@ class ConversationMediaHandler:
                 logger.info(f"Processed video saved to {processed_video_path} with {frame_count} frames at {target_fps} fps and resolution {new_size}")
             
         except ImportError:
-            logger.warning("OpenCV not available for video processing")
+            logger.warning("OpenCV not available for video processing. Install opencv-python package.")
+            raise VideoProcessingError("OpenCV library not available for video processing")
+        except VideoProcessingError:
+            raise  # Re-raise specific exceptions
+        except Exception as e:
+            logger.exception(f"Unexpected error processing video {file_path}")
+            raise VideoProcessingError(f"Failed to process video {file_path}: {e}")
             
     def _process_text(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -591,11 +679,18 @@ class ConversationMediaHandler:
             MediaValidationError: If text file cannot be decoded
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                metadata.text_content = content
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    metadata.text_content = content
+            except FileNotFoundError:
+                raise TextProcessingError(f"Text file not found: {file_path}")
+            except PermissionError:
+                raise TextProcessingError(f"Permission denied when accessing text file: {file_path}")
         except UnicodeDecodeError:
             raise MediaValidationError(f"Could not decode text file {file_path} as UTF-8")
+        except Exception as e:
+            raise TextProcessingError(f"Error processing text file {file_path}: {e}")
             
     def _process_code(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -609,8 +704,15 @@ class ConversationMediaHandler:
             MediaValidationError: If code file cannot be decoded
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except FileNotFoundError:
+                raise CodeProcessingError(f"Code file not found: {file_path}")
+            except PermissionError:
+                raise CodeProcessingError(f"Permission denied when accessing code file: {file_path}")
+            except OSError as e:
+                raise CodeProcessingError(f"Error reading code file {file_path}: {e}")
                 
             # Get file extension for language detection
             ext = file_path.suffix.lower()
@@ -626,3 +728,5 @@ class ConversationMediaHandler:
             metadata.mime_type = f"text/x-{language}"
         except UnicodeDecodeError:
             raise MediaValidationError(f"Could not decode code file {file_path} as UTF-8")
+        except Exception as e:
+            raise CodeProcessingError(f"Error processing code file {file_path}: {e}")
