@@ -3,12 +3,14 @@ import os
 import glob
 from typing import Dict, List, Optional, Union
 from pathlib import Path
+from dataclasses import dataclass
 
 # Constants referenced in the code but not defined in the snippet
 # These would typically be defined in this file or imported
 SUPPORTED_FILE_TYPES = {}  # Placeholder
 SUPPORTED_MODELS = {}      # Placeholder
 
+@dataclass
 class TimeoutConfig:
     """
     Configuration for request timeouts and retry behavior.
@@ -182,6 +184,7 @@ class FileConfig:
                 except ValueError:
                     raise ValueError(f"Invalid resolution format: {requested_res}")
 
+#@dataclass
 class MultiFileConfig:
     """
     Configuration for handling multiple files.
@@ -238,13 +241,12 @@ class MultiFileConfig:
         ...     file_pattern="*.jpg"
         ... )
     """
-    files: List[FileConfig] = None
-    directory: Optional[str] = None
-    file_pattern: Optional[str] = None
-    max_files: int = 10
-    max_resolution: Optional[str] = None
-    
-    def __post_init__(self):
+    def __init__(self, files=None, directory=None, file_pattern=None, max_files=10, max_resolution=None):
+        self.files = files
+        self.directory = directory
+        self.file_pattern = file_pattern
+        self.max_files = max_files
+        self.max_resolution = max_resolution
         if not self.files and not self.directory:
             raise ValueError("Either files or directory must be provided")
         
@@ -258,6 +260,7 @@ class MultiFileConfig:
             raise ValueError(f"Path is not a directory: {self.directory}")
 
 
+@dataclass
 class ModelConfig:
     """
     Configuration for AI model settings and behavior.
@@ -330,6 +333,7 @@ class ModelConfig:
         if self.persona and not isinstance(self.persona, str):
             raise ValueError("Persona must be a string")
 
+@dataclass
 class DiscussionConfig:
     """
     Configuration for AI-to-AI or human-to-AI discussions.

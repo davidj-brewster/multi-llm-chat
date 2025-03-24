@@ -8,7 +8,7 @@ import time
 import random
 import logging
 import re
-from typing import List, Dict, Optional, TypeVar, Any
+from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
 import io
 import asyncio
@@ -333,7 +333,7 @@ class ConversationManager:
                                   human_model: str,
                                   ai_model: str,
                                   mode: str,
-                                  file_config: FileConfig,
+                                  file_config: Union[FileConfig, Dict[str, Any]],
                                   human_system_instruction: str = None,
                                   ai_system_instruction: str = None,
                                   rounds: int = 1) -> List[Dict[str, str]]:
@@ -346,7 +346,69 @@ class ConversationManager:
 
         # Process file if provided
         file_data = None
-        if file_config:
+        
+        # Handle dictionary format for multiple files
+        if isinstance(file_config, dict) and "files" in file_config:
+            # Multiple files case
+            files_list = file_config.get("files", [])
+            if not files_list:
+                logger.warning("No files found in file_config")
+                return []
+                
+            # Process all files and create a list of file data
+            file_data_list = []
+            for file_config_item in files_list:
+                try:
+                    # Process file
+                    file_metadata = self.media_handler.process_file(file_config_item.path)
+                    
+                    # Create file data dictionary
+                    single_file_data = {
+                        "type": file_metadata.type,
+                        "path": file_config_item.path,
+                        "mime_type": file_metadata.mime_type,
+                        "dimensions": file_metadata.dimensions
+                    }
+                    
+                    # Add type-specific data
+                    if file_metadata.type == "image":
+                        with open(file_config_item.path, 'rb') as f:
+                            single_file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                            single_file_data["type"] = "image"
+                            single_file_data["mime_type"] = file_metadata.mime_type
+                            single_file_data["path"] = file_config_item.path
+                            
+                    elif file_metadata.type in ["text", "code"]:
+                        single_file_data["text_content"] = file_metadata.text_content
+                        
+                    elif file_metadata.type == "video":
+                        # Handle video processing (same as single file case)
+                        single_file_data["duration"] = file_metadata.duration
+                        # Use the entire processed video file
+                        if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
+                            processed_video_path = file_metadata.processed_video["processed_video_path"]
+                            # Set the path to the processed video file, not the original
+                            single_file_data["path"] = processed_video_path
+                            # Set the mime type to video/mp4 for better compatibility
+                            single_file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
+                            # Process video chunks (same as single file case)
+                            # ... (video processing code)
+                            
+                    # Add to list
+                    file_data_list.append(single_file_data)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing file {file_config_item.path}: {e}")
+                    # Continue with other files
+            
+            # If we have files, use the first one as the main file_data and add the rest as additional_files
+            if file_data_list:
+                file_data = file_data_list[0]
+                if len(file_data_list) > 1:
+                    file_data["additional_files"] = file_data_list[1:]
+                    
+        # Handle single FileConfig object
+        elif file_config:
             try:
                 # Process file
                 file_metadata = self.media_handler.process_file(file_config.path)

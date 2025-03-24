@@ -270,6 +270,59 @@ class BaseClient:
             }
         else:
             return None
+            
+    def _prepare_multiple_file_content(self, file_data_list: List[Dict[str, Any]]) -> List[Any]:
+        """
+        Prepare multiple file content for model API consumption.
+        
+        Transforms a list of raw file data into standardized formats suitable for sending to
+        model APIs. This is particularly useful for models that support multiple images
+        or mixed media types in a single request.
+        
+        Args:
+            file_data_list (List[Dict[str, Any]]): List of dictionaries containing file metadata and content.
+                Each dictionary must include a "type" key and appropriate content fields as required
+                by the _prepare_file_content method.
+                
+        Returns:
+            List[Any]: A list of dictionaries with standardized format for each file type,
+                excluding any files that could not be prepared (None values are filtered out).
+                
+        Examples:
+            Processing multiple images:
+            >>> file_data_list = [
+            ...     {
+            ...         "type": "image",
+            ...         "base64": "base64_encoded_data_1",
+            ...         "mime_type": "image/jpeg",
+            ...         "dimensions": (800, 600)
+            ...     },
+            ...     {
+            ...         "type": "image",
+            ...         "base64": "base64_encoded_data_2",
+            ...         "mime_type": "image/png",
+            ...         "dimensions": (1024, 768)
+            ...     }
+            ... ]
+            >>> results = client._prepare_multiple_file_content(file_data_list)
+            >>> len(results)
+            2
+            >>> results[0]["type"]
+            'image'
+            >>> results[1]["width"]
+            1024
+        """
+        if not file_data_list:
+            return []
+        
+        # Process each file and filter out None results
+        prepared_content = []
+        for file_data in file_data_list:
+            prepared = self._prepare_file_content(file_data)
+            if prepared:
+                prepared_content.append(prepared)
+        
+        return prepared_content
 
     def _create_file_reference(self, file_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -891,8 +944,40 @@ class GeminiClient(BaseClient):
         
         # Add file content if provided
         if file_data:  # All Gemini models support vision according to detect_model_capabilities
-            if file_data["type"] == "image" and "base64" in file_data:
-                # Format image for Gemini
+            if isinstance(file_data, list) and file_data:
+                # Handle multiple files
+                image_parts = []
+                text_content = ""
+                
+                # Process all files
+                for file_item in file_data:
+                    if file_item["type"] == "image" and "base64" in file_item:
+                        # Add image to parts
+                        image_parts.append({
+                            "inline_data": {
+                                "mime_type": file_item.get("mime_type"),
+                                "data": file_item["base64"]
+                            }
+                        })
+                    elif file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                        # Collect text content
+                        text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item['text_content']}"
+                
+                # Add all images as separate messages
+                for image_part in image_parts:
+                    contents.append({
+                        "role": "human",
+                        "parts": [image_part]
+                    })
+                
+                # Add collected text content if any
+                if text_content:
+                    contents.append({
+                        "role": "model",
+                        "parts": [{"text": text_content}]
+                    })
+            elif file_data["type"] == "image" and "base64" in file_data:
+                # Format image for Gemini (single image case)
                 contents.append({
                     "role": "human",
                     "parts": [
@@ -1102,48 +1187,95 @@ class ClaudeClient(BaseClient):
         
         # Handle file data for Claude
         if file_data:
-            if file_data['type'] == "image" and "base64" in file_data:
-                # Check if model supports vision
+            if isinstance(file_data, list) and file_data:
+                # Handle multiple files
                 if self.capabilities.get("vision", False):
-                    # Format for Claude's multimodal API
-                    message_content = [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": file_data.get("mime_type", "image/jpeg"),
-                                "data": file_data["base64"]
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
-                        }
-                    ]
+                    # Format for Claude's multimodal API with multiple images
+                    message_content = []
+                    
+                    # Add all images first
+                    for file_item in file_data:
+                        if file_item['type'] == "image" and "base64" in file_item:
+                            message_content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": file_item.get("mime_type", "image/jpeg"),
+                                    "data": file_item["base64"]
+                                }
+                            })
+                    
+                    # Add text content from text/code files
+                    text_content = prompt
+                    for file_item in file_data:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                    
+                    # Add the prompt text
+                    message_content.append({
+                        "type": "text",
+                        "text": text_content
+                    })
+                    
                     messages.append({
                         "role": "user",
                         "content": message_content
                     })
                 else:
-                    # Model doesn't support vision, use text only
-                    logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                    # Model doesn't support vision, use text only with all text files
+                    text_content = prompt
+                    for file_item in file_data:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                    
                     messages.append({
                         "role": "user",
-                        "content": prompt
+                        "content": text_content
                     })
-            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
-                # Add text content with prompt
-                messages.append({
-                    "role": "user",
-                    "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
-                })
             else:
-                # Standard prompt with reference to file
-                content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
-                messages.append({
-                    "role": "user",
-                    "content": content
-                })
+                # Handle single file (original implementation)
+                if file_data['type'] == "image" and "base64" in file_data:
+                    # Check if model supports vision
+                    if self.capabilities.get("vision", False):
+                        # Format for Claude's multimodal API
+                        message_content = [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": file_data.get("mime_type", "image/jpeg"),
+                                    "data": file_data["base64"]
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                        messages.append({
+                            "role": "user",
+                            "content": message_content
+                        })
+                    else:
+                        # Model doesn't support vision, use text only
+                        logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                        messages.append({
+                            "role": "user",
+                            "content": prompt
+                        })
+                elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                    # Add text content with prompt
+                    messages.append({
+                        "role": "user",
+                        "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
+                    })
+                else:
+                    # Standard prompt with reference to file
+                    content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
+                    messages.append({
+                        "role": "user",
+                        "content": content
+                    })
         else:
             # Standard prompt without file data
             content = context_prompt if context_prompt else ""
@@ -1230,35 +1362,75 @@ class OpenAIClient(BaseClient):
 
         # Handle file data for OpenAI
         if file_data:
-            if file_data["type"] == "image" and "base64" in file_data:
-                # Check if model supports vision
+            if isinstance(file_data, list) and file_data:
+                # Handle multiple files
                 if self.capabilities.get("vision", False):
-                    # Format for OpenAI's vision API
-                    formatted_messages.append({
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
+                    # Format for OpenAI's vision API with multiple images
+                    content_parts = [{"type": "text", "text": prompt}]
+                    
+                    # Add all images
+                    for file_item in file_data:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            content_parts.append({
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
+                                    "url": f"data:{file_item.get('mime_type', 'image/jpeg')};base64,{file_item['base64']}",
                                     "detail": "high"
                                 }
-                            }
-                        ]
+                            })
+                    
+                    # Add text content from text/code files to the prompt
+                    text_content = prompt
+                    for file_item in file_data:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
+                    
+                    # Update the text part with combined text content
+                    content_parts[0]["text"] = text_content
+                    
+                    formatted_messages.append({
+                        "role": "user",
+                        "content": content_parts
                     })
                 else:
-                    # Model doesn't support vision, use text only
-                    logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
-                    formatted_messages.append({"role": "user", "content": prompt})
-            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
-                # Standard prompt with text content
-                content = f"{file_data.get('text_content', '')}\n\n{prompt}"
-                formatted_messages.append({"role": "user", "content": content})
+                    # Model doesn't support vision, use text only with all text files
+                    text_content = prompt
+                    for file_item in file_data:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
+                    
+                    formatted_messages.append({"role": "user", "content": text_content})
             else:
-                # Standard prompt with reference to file
-                content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
-                formatted_messages.append({"role": "user", "content": content})
+                # Handle single file (original implementation)
+                if file_data["type"] == "image" and "base64" in file_data:
+                    # Check if model supports vision
+                    if self.capabilities.get("vision", False):
+                        # Format for OpenAI's vision API
+                        formatted_messages.append({
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
+                                        "detail": "high"
+                                    }
+                                }
+                            ]
+                        })
+                    else:
+                        # Model doesn't support vision, use text only
+                        logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                        formatted_messages.append({"role": "user", "content": prompt})
+                elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                    # Standard prompt with text content
+                    content = f"{file_data.get('text_content', '')}\n\n{prompt}"
+                    formatted_messages.append({"role": "user", "content": content})
+                else:
+                    # Standard prompt with reference to file
+                    content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
+                    formatted_messages.append({"role": "user", "content": content})
         else:
             # Standard prompt without file data
             formatted_messages.append({"role": "user", "content": prompt})
@@ -1438,17 +1610,35 @@ class MLXClient(BaseClient):
                 
         messages.append({"role": "user", "content": str(prompt)})
 
-        # MLX doesn't support vision directly, but we can include text content
-        if file_data and file_data["type"] in ["text", "code"] and "text_content" in file_data:
-            # Add text content to the last message
+        # Handle file data
+        if file_data:
+            # MLX doesn't support vision directly, but we can include text content
+            if file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                # Add text content to the last message
+                last_msg = messages[-1]
+                file_content = file_data["text_content"]
+                file_path = file_data.get("path", "file")
+                
+                # Update the last message with file content
+                last_msg["content"] = f"[File: {file_path}]\n\n{file_content}\n\n{last_msg['content']}"
+                
+                # Replace the last message
+                messages[-1] = last_msg
+        # Handle multiple files
+        elif isinstance(file_data, list) and file_data:
+            # Get the last message
             last_msg = messages[-1]
-            file_content = file_data["text_content"]
-            file_path = file_data.get("path", "file")
+            combined_content = last_msg["content"]
             
-            # Update the last message with file content
-            last_msg["content"] = f"[File: {file_path}]\n\n{file_content}\n\n{last_msg['content']}"
+            # Add each text/code file content to the message
+            for file_item in file_data:
+                if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                    file_content = file_item["text_content"]
+                    file_path = file_item.get("path", "file")
+                    combined_content = f"[File: {file_path}]\n\n{file_content}\n\n{combined_content}"
             
-            # Replace the last message
+            # Update the last message with combined content
+            last_msg["content"] = combined_content
             messages[-1] = last_msg
 
         try:
