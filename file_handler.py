@@ -13,10 +13,11 @@ Key components:
 import os
 import logging
 import mimetypes
+import glob
 from PIL import Image
 from PIL import UnidentifiedImageError
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List, Union
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -98,9 +99,9 @@ class FileConfig:
             "max_size": 10 * 1024 * 1024,  # 10MB
             "max_resolution": (8192, 8192),
             "supported_models": {
-                "gemini": ["gemini-pro-vision"],
-                "claude": ["claude-3-sonnet", "claude-3-haiku"],
-                "openai": ["gpt-4-vision", "dall-e-3"]
+                "gemini": ["gemini-pro-vision", "gemini-2-pro", "gemini-2-reasoning", "gemini-2-flash-lite", "gemini-2.0-flash-exp", "gemini"],
+                "claude": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus", "claude-3-7-sonnet", "claude-3-5-haiku"],
+                "openai": ["gpt-4-vision", "gpt-4o", "o1", "chatgpt-latest"]
             }
         },
         "video": {
@@ -201,6 +202,105 @@ class ConversationMediaHandler:
         self.output_dir.mkdir(exist_ok=True)
         logger.info(f"Initialized ConversationMediaHandler with output directory: {output_dir}")
 
+    def process_directory(self, directory_path: str, file_pattern: str = None, max_files: int = 10) -> List[FileMetadata]:
+        """
+        Process all files in a directory that match the pattern.
+        
+        Args:
+            directory_path: Path to the directory
+            file_pattern: Optional glob pattern to filter files (e.g., "*.jpg")
+            max_files: Maximum number of files to process
+            
+        Returns:
+            List[FileMetadata]: List of metadata for processed files
+            
+        Raises:
+            MediaValidationError: If directory does not exist or is not accessible
+            MediaProcessingError: For general processing errors
+        """
+        try:
+            directory_path = Path(directory_path)
+            if not directory_path.exists():
+                raise MediaValidationError(f"Directory not found: {directory_path}")
+            
+            if not directory_path.is_dir():
+                raise MediaValidationError(f"Path is not a directory: {directory_path}")
+            
+            # Get list of files matching the pattern
+            if file_pattern:
+                file_paths = list(directory_path.glob(file_pattern))
+            else:
+                file_paths = [p for p in directory_path.iterdir() if p.is_file()]
+            
+            # Sort files by name for consistent ordering
+            file_paths.sort()
+            
+            # Limit the number of files
+            if max_files > 0 and len(file_paths) > max_files:
+                logger.warning(f"Directory contains {len(file_paths)} files, limiting to {max_files}")
+                file_paths = file_paths[:max_files]
+            
+            # Process each file
+            return self.process_multiple_files([str(p) for p in file_paths])[0]  # Return successful files only
+            
+        except MediaValidationError as e:
+            logger.error(f"Directory validation error: {e}")
+            raise
+        except Exception as e:
+            logger.exception(f"Error processing directory {directory_path}")
+            raise MediaProcessingError(f"Failed to process directory {directory_path}: {e}")
+    
+    def process_multiple_files(self, file_paths: List[str]) -> Tuple[List[FileMetadata], List[Dict[str, Any]]]:
+        """
+        Process multiple files and return their metadata along with error information.
+        
+        Args:
+            file_paths: List of file paths to process
+            
+        Returns:
+            Tuple[List[FileMetadata], List[Dict[str, Any]]]:
+                - List of metadata for successfully processed files
+                - List of error information for failed files
+        """
+        successful_files = []
+        failed_files = []
+        
+        for file_path in file_paths:
+            try:
+                # Process file
+                metadata = self.process_file(file_path)
+                successful_files.append(metadata)
+                logger.info(f"Successfully processed file: {file_path}")
+            except UnsupportedMediaTypeError as e:
+                # Log but ignore files with unsupported media types
+                failed_files.append({
+                    "path": file_path,
+                    "error": str(e),
+                    "error_type": "unsupported_media_type"
+                })
+                logger.warning(f"Ignoring unsupported media type: {file_path} - {e}")
+            except MediaValidationError as e:
+                # Log but ignore files that fail validation
+                failed_files.append({
+                    "path": file_path,
+                    "error": str(e),
+                    "error_type": "validation_error"
+                })
+                logger.warning(f"Ignoring file that failed validation: {file_path} - {e}")
+            except Exception as e:
+                # Log but ignore files that fail for other reasons
+                failed_files.append({
+                    "path": file_path,
+                    "error": str(e),
+                    "error_type": "processing_error"
+                })
+                logger.error(f"Error processing file: {file_path} - {e}")
+        
+        # Log summary
+        logger.info(f"Processed {len(successful_files)} files successfully, {len(failed_files)} files failed")
+        
+        return successful_files, failed_files
+    
     def process_file(self, file_path: str) -> Optional[FileMetadata]:
         """
         Process and validate a file.
@@ -274,6 +374,99 @@ class ConversationMediaHandler:
             logger.exception(f"Unexpected error processing file {file_path}")
             raise MediaProcessingError(f"Failed to process file {file_path}: {e}")
 
+    def prepare_multiple_media_messages(self,
+                                      file_metadatas: List[FileMetadata],
+                                      conversation_context: str = "",
+                                      role: str = "user") -> List[Dict[str, Any]]:
+        """
+        Prepare multiple media files for conversation inclusion.
+        
+        Creates structured messages containing the media content and metadata,
+        suitable for inclusion in a conversation.
+        
+        Args:
+            file_metadatas: List of FileMetadata objects
+            conversation_context: Optional context string
+            role: Message role (default: "user")
+            
+        Returns:
+            List[Dict[str, Any]]: List of structured messages
+            
+        Raises:
+            MediaProcessingError: If media processing fails
+        """
+        messages = []
+        
+        # Add context as a separate message if provided
+        if conversation_context:
+            messages.append({
+                "role": role,
+                "content": [{"type": "text", "text": conversation_context}],
+                "metadata": {"type": "text"}
+            })
+        
+        # Process each file
+        for metadata in file_metadatas:
+            try:
+                # Read file data
+                try:
+                    with open(metadata.path, 'rb') as f:
+                        file_data = f.read()
+                except FileNotFoundError:
+                    raise FileIOError(f"File not found: {metadata.path}")
+                except PermissionError:
+                    raise FileIOError(f"Permission denied when accessing file: {metadata.path}")
+                except OSError as e:
+                    raise FileIOError(f"Error reading file {metadata.path}: {e}")
+                
+                # Create message for this file
+                message = {
+                    "role": role,
+                    "content": [],
+                    "metadata": metadata
+                }
+                
+                # Add file content based on type
+                if metadata.type == "image":
+                    message["content"].append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "mime_type": metadata.mime_type,
+                            "data": file_data
+                        }
+                    })
+                elif metadata.type == "video":
+                    message["content"].append({
+                        "type": "video",
+                        "source": {
+                            "type": "base64",
+                            "mime_type": metadata.mime_type,
+                            "data": file_data
+                        }
+                    })
+                
+                messages.append(message)
+                
+            except FileIOError as e:
+                logger.error(f"File I/O error: {e}")
+                # Continue with other files
+                continue
+            except MediaProcessingError as e:
+                logger.error(f"Media processing error: {e}")
+                # Continue with other files
+                continue
+            except MemoryError:
+                logger.error(f"Out of memory when preparing media message for {metadata.path}")
+                # Continue with other files
+                continue
+            except Exception as e:
+                logger.exception(f"Failed to prepare media message for {metadata.path}")
+                # Continue with other files
+                continue
+        
+        return messages
+    
     def prepare_media_message(self,
                             file_path: str,
                             conversation_context: str = "",

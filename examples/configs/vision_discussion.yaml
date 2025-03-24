@@ -2,7 +2,7 @@ discussion:
   turns: 4  # Number of back-and-forth exchanges
   models:
     model1:
-      type: "ollama-gemma3-1b"
+      type: "gemini-2.0-flash-exp"
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:
@@ -109,7 +109,11 @@ established_facts:
     current_medications: "None"
     symptoms:
       - Two witnessed tonic-clonic seizures in the past 8 months
+      - Significant memory loss following seizures
+      - Sleep disturbances
+      - Recent double vision particularly in vertical axis
       - Post-ictal confusion lasting more than 30 minutes
+      - Multiple suspected seizures during sleep exhibited by heart rate, breathing rate, sleep movement and blood oxygen level variations
       - No focal neurological deficits
   
   mri_scan_details:

@@ -1,6 +1,8 @@
 """Configuration integration module for AI Battle framework"""
 import os
-from typing import Dict, List, Optional
+import glob
+from typing import Dict, List, Optional, Union
+from pathlib import Path
 
 # Constants referenced in the code but not defined in the snippet
 # These would typically be defined in this file or imported
@@ -74,7 +76,7 @@ class FileConfig:
     the requirements for size, format, and resolution.
     
     Attributes:
-        path (str): Path to the file on the filesystem. Must exist and be accessible.
+        path (str): Path to the file or directory on the filesystem. Must exist and be accessible.
         
         type (str): Type of file. Must be one of the supported file types defined in
             SUPPORTED_FILE_TYPES (e.g., "image", "video", "text").
@@ -82,14 +84,25 @@ class FileConfig:
         max_resolution (Optional[str], optional): Maximum resolution for image or video files.
             Can be specified as "WIDTHxHEIGHT" (e.g., "1920x1080") or "4K" for videos.
             Defaults to None, which uses the default maximum resolution for the file type.
+            
+        is_directory (bool, optional): Indicates if the path is a directory rather than a single file.
+            When True, the directory will be scanned for files matching the file_pattern.
+            Defaults to False.
+            
+        file_pattern (Optional[str], optional): Glob pattern for filtering files when is_directory is True.
+            For example, "*.jpg" to include only JPEG files. Defaults to None, which includes all files.
     
     Implementation Notes:
         The __post_init__ method performs extensive validation including:
-        - Checking if the file exists
-        - Validating the file type against supported types
-        - Checking the file extension against allowed extensions for the type
-        - Validating file size against maximum allowed size
-        - For images and videos, validating resolution if specified
+        - Checking if the file or directory exists
+        - For single files:
+          - Validating the file type against supported types
+          - Checking the file extension against allowed extensions for the type
+          - Validating file size against maximum allowed size
+          - For images and videos, validating resolution if specified
+        - For directories:
+          - Checking if the directory exists and is accessible
+          - Validating the file_pattern if provided
     
     Examples:
         Image file configuration:
@@ -111,15 +124,32 @@ class FileConfig:
         ...     path="/path/to/document.txt",
         ...     type="text"
         ... )
+        
+        Directory configuration:
+        >>> file_config = FileConfig(
+        ...     path="/path/to/images",
+        ...     type="image",
+        ...     is_directory=True,
+        ...     file_pattern="*.jpg"
+        ... )
     """
     path: str
     type: str
     max_resolution: Optional[str] = None
+    is_directory: bool = False
+    file_pattern: Optional[str] = None
 
     def __post_init__(self):
         if not os.path.exists(self.path):
-            raise ValueError(f"File not found: {self.path}")
+            raise ValueError(f"Path not found: {self.path}")
         
+        # Handle directory case
+        if self.is_directory:
+            if not os.path.isdir(self.path):
+                raise ValueError(f"Path is not a directory: {self.path}")
+            return
+        
+        # Handle single file case
         file_size = os.path.getsize(self.path)
         extension = os.path.splitext(self.path)[1].lower()
         
@@ -151,6 +181,82 @@ class FileConfig:
                         raise ValueError(f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}")
                 except ValueError:
                     raise ValueError(f"Invalid resolution format: {requested_res}")
+
+class MultiFileConfig:
+    """
+    Configuration for handling multiple files.
+    
+    This class defines settings for handling multiple files or directories in the AI Battle framework.
+    It provides options for specifying individual files, a directory to scan, or both.
+    
+    Attributes:
+        files (List[FileConfig], optional): List of individual file configurations.
+            Each item in the list should be a FileConfig object. Defaults to an empty list.
+            
+        directory (Optional[str], optional): Directory path to scan for files.
+            If provided, all files in the directory matching the file_pattern will be included.
+            Defaults to None.
+            
+        file_pattern (Optional[str], optional): Glob pattern for filtering files when directory is provided.
+            For example, "*.jpg" to include only JPEG files. Defaults to None, which includes all files.
+            
+        max_files (int, optional): Maximum number of files to process from the directory.
+            This limit helps prevent processing too many files which could cause performance issues.
+            Defaults to 10.
+            
+        max_resolution (Optional[str], optional): Default maximum resolution for all files.
+            This will be applied to all files unless overridden in individual FileConfig objects.
+            Defaults to None.
+    
+    Implementation Notes:
+        The __post_init__ method performs validation including:
+        - Ensuring that either files or directory is provided
+        - Initializing the files list if it's None
+        - Validating the directory path if provided
+        
+    Examples:
+        Multiple individual files:
+        >>> multi_file_config = MultiFileConfig(
+        ...     files=[
+        ...         FileConfig(path="/path/to/image1.jpg", type="image"),
+        ...         FileConfig(path="/path/to/image2.png", type="image")
+        ...     ]
+        ... )
+        
+        Directory with pattern:
+        >>> multi_file_config = MultiFileConfig(
+        ...     directory="/path/to/images",
+        ...     file_pattern="*.jpg",
+        ...     max_files=5,
+        ...     max_resolution="1024x1024"
+        ... )
+        
+        Combined approach:
+        >>> multi_file_config = MultiFileConfig(
+        ...     files=[FileConfig(path="/path/to/important.jpg", type="image")],
+        ...     directory="/path/to/images",
+        ...     file_pattern="*.jpg"
+        ... )
+    """
+    files: List[FileConfig] = None
+    directory: Optional[str] = None
+    file_pattern: Optional[str] = None
+    max_files: int = 10
+    max_resolution: Optional[str] = None
+    
+    def __post_init__(self):
+        if not self.files and not self.directory:
+            raise ValueError("Either files or directory must be provided")
+        
+        if self.files is None:
+            self.files = []
+        
+        if self.directory and not os.path.exists(self.directory):
+            raise ValueError(f"Directory not found: {self.directory}")
+        
+        if self.directory and not os.path.isdir(self.directory):
+            raise ValueError(f"Path is not a directory: {self.directory}")
+
 
 class ModelConfig:
     """
@@ -244,7 +350,12 @@ class DiscussionConfig:
         
         input_file (Optional[FileConfig], optional): Optional file to include as
             context for the discussion (e.g., an image to discuss or a text document
-            to analyze). Defaults to None.
+            to analyze). Defaults to None. This is kept for backward compatibility.
+            
+        input_files (Optional[MultiFileConfig], optional): Optional configuration for
+            multiple files to include as context for the discussion. This allows for
+            specifying multiple files or a directory of files to process. Defaults to None.
+            When both input_file and input_files are provided, input_files takes precedence.
         
         timeouts (Optional[TimeoutConfig], optional): Timeout configuration for
             API requests during the discussion. Defaults to None, which uses
@@ -280,11 +391,44 @@ class DiscussionConfig:
         ...     input_file=FileConfig(path="/path/to/artwork.jpg", type="image"),
         ...     timeouts=TimeoutConfig(request=300, retry_count=2)
         ... )
+        
+        Configuration with multiple input files:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=8,
+        ...     models={
+        ...         "human": ModelConfig(type="gemini-pro", role="human"),
+        ...         "assistant": ModelConfig(type="ollama-gemma3-12b", role="assistant")
+        ...     },
+        ...     goal="Compare and contrast the provided medical images",
+        ...     input_files=MultiFileConfig(
+        ...         files=[
+        ...             FileConfig(path="/path/to/scan1.jpg", type="image"),
+        ...             FileConfig(path="/path/to/scan2.jpg", type="image")
+        ...         ],
+        ...         max_resolution="1024x1024"
+        ...     )
+        ... )
+        
+        Configuration with directory of input files:
+        >>> discussion_config = DiscussionConfig(
+        ...     turns=5,
+        ...     models={
+        ...         "human": ModelConfig(type="claude-3-sonnet", role="human"),
+        ...         "assistant": ModelConfig(type="gpt-4o", role="assistant")
+        ...     },
+        ...     goal="Analyze the collection of X-ray images",
+        ...     input_files=MultiFileConfig(
+        ...         directory="/path/to/xrays",
+        ...         file_pattern="*.jpg",
+        ...         max_files=10
+        ...     )
+        ... )
     """
     turns: int
     models: Dict[str, ModelConfig]
     goal: str
     input_file: Optional[FileConfig] = None
+    input_files: Optional[MultiFileConfig] = None
     timeouts: Optional[TimeoutConfig] = None
 
     def __post_init__(self):
@@ -316,6 +460,7 @@ class DiscussionConfig:
     models: Dict[str, ModelConfig]
     goal: str
     input_file: Optional[FileConfig] = None
+    input_files: Optional[MultiFileConfig] = None
     timeouts: Optional[TimeoutConfig] = None
 
     def __post_init__(self):

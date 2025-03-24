@@ -882,7 +882,7 @@ class GeminiClient(BaseClient):
         # Add history messages if available
         if history and len(history) > 0:
             for msg in history:
-                role = "user" if msg["role"] in ["user", "human"] else "model"
+                role = "user" if msg["role"] in ["user", "human","system","developer"] else "model"
                 contents.append({
                     "role": role,
                     "parts": [{"text": msg["content"]}]
@@ -952,13 +952,13 @@ class GeminiClient(BaseClient):
                             model=self.model_name,
                             contents=gemini_history,
                             config=types.GenerateContentConfig(
-                                temperature=0.4,
+                                temperature=0.2,
                                 systemInstruction=current_instructions,
                                 max_output_tokens=8192,
                                 candidateCount=1,
                                 safety_settings=[
                                     types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
-                                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_ONLY_HIGH"),
+                                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
                                     types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_ONLY_HIGH"),
                                     types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
                                     types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE"),
@@ -1101,28 +1101,36 @@ class ClaudeClient(BaseClient):
         messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
         
         # Handle file data for Claude
-        if file_data:  # All Claude models support vision according to detect_model_capabilities
+        if file_data:
             if file_data['type'] == "image" and "base64" in file_data:
-                # Format for Claude's multimodal API
-                #logger.info(file_data)
-                message_content = [
-                    {
-                        "type": "image", 
-                        "source": { 
-                            "type": "base64", 
-                            "media_type": file_data["mime_type"], 
-                            "data": file_data["base64"] 
-                        } 
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-                messages.append({
-                    "role": "user",
-                    "content": message_content
-                })
+                # Check if model supports vision
+                if self.capabilities.get("vision", False):
+                    # Format for Claude's multimodal API
+                    message_content = [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": file_data.get("mime_type", "image/jpeg"),
+                                "data": file_data["base64"]
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                    messages.append({
+                        "role": "user",
+                        "content": message_content
+                    })
+                else:
+                    # Model doesn't support vision, use text only
+                    logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                    messages.append({
+                        "role": "user",
+                        "content": prompt
+                    })
             elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
                 # Add text content with prompt
                 messages.append({
@@ -1130,16 +1138,21 @@ class ClaudeClient(BaseClient):
                     "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
                 })
             else:
-                # Standard prompt
+                # Standard prompt with reference to file
+                content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
                 messages.append({
                     "role": "user",
-                    "content": context_prompt if context_prompt else "" + "\n" + prompt if prompt else ""
+                    "content": content
                 })
         else:
             # Standard prompt without file data
+            content = context_prompt if context_prompt else ""
+            if prompt:
+                content = f"{content}\n{prompt}" if content else prompt
+            
             messages.append({
                 "role": "user",
-                "content": context_prompt if context_prompt else "" + "\n" + prompt if prompt else ""
+                "content": content
             })
 
         try:
@@ -1216,25 +1229,35 @@ class OpenAIClient(BaseClient):
                     formatted_messages.append({'role': new_role, 'content': msg['content']})
 
         # Handle file data for OpenAI
-        if file_data and ("gpt-4o" in self.model or "o1" in self.model):
+        if file_data:
             if file_data["type"] == "image" and "base64" in file_data:
-                # Format for OpenAI's vision API
-                formatted_messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
-                                "detail": "high"
+                # Check if model supports vision
+                if self.capabilities.get("vision", False):
+                    # Format for OpenAI's vision API
+                    formatted_messages.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
+                                    "detail": "high"
+                                }
                             }
-                        }
-                    ]
-                })
+                        ]
+                    })
+                else:
+                    # Model doesn't support vision, use text only
+                    logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                    formatted_messages.append({"role": "user", "content": prompt})
+            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                # Standard prompt with text content
+                content = f"{file_data.get('text_content', '')}\n\n{prompt}"
+                formatted_messages.append({"role": "user", "content": content})
             else:
-                # Standard prompt with text content if available
-                content = f"{file_data.get('text_content', '')}\n\n{prompt}" if file_data and file_data.get("text_content") else prompt
+                # Standard prompt with reference to file
+                content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
                 formatted_messages.append({"role": "user", "content": content})
         else:
             # Standard prompt without file data
