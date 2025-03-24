@@ -260,7 +260,6 @@ class MultiFileConfig:
             raise ValueError(f"Path is not a directory: {self.directory}")
 
 
-@dataclass
 class ModelConfig:
     """
     Configuration for AI model settings and behavior.
@@ -311,11 +310,10 @@ class ModelConfig:
         ...     role="assistant"
         ... )
     """
-    type: str
-    role: str
-    persona: Optional[str] = None
-
-    def __post_init__(self):
+    def __init__(self, type, role, persona=None):
+        self.type = type
+        self.role = role
+        self.persona = persona
         # Validate model type
         provider = next((p for p in SUPPORTED_MODELS if self.type.startswith(p)), None)
         if not provider:
