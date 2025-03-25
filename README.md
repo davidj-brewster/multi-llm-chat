@@ -1,16 +1,40 @@
 # AI Battle - Multi-Model Conversational Framework
 
+## Overview
+
+AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
+
+- **Model Collaboration**: Multiple AI models working together in different roles
+- **Adaptive Learning**: Dynamic instruction generation based on conversation context
+- **Deep Analysis**: Multi-dimensional context analysis and conversation assessment
+- **Flexible Deployment**: Support for both cloud and local model execution
+- **Configuration System**: YAML-based configuration for easy setup and customization
+- **File-Based Discussions**: Support for images, videos, text, and code files in conversations
+
+## As a versatile AI client
+
+### Multi-Model and Multi-modal client API Support!**
+  - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support
+  - Gemini (Flash/Pro/Thinking) - Multimodal w Video + Image support
+  - OpenAI (GPT 4o/o1/o3/4.5 models) - Multimodal with Image support
+  - Ollama (e.g., llama2-vision, gemma3, phi4) - Multimodal incl. Video
+  - MLX (Local inference on Apple Silicon)
+  - Pico client via Ollama API
+  - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
+
+### Use-cases
+
 Simulate an advanced human interlocutor within AI-to-AI conversations, keeping the LMs goal-oriented, engaged, coherent and at a significantly increased cognitive and conversational level. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the "Human" AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
 
-Critically it has universal benefits from the tiniest 1B parameter models all the way to the largest commercial offerings - in fact, evening the playing field and bringing some surprisingly tiny LLMs up to a high level of conversational coherence.
-
+## Theoretical underpinnings with examples
 
 My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
 
 ### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
 
-Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance. AI development should focus on refining conversational adaptability 
-through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
+Critically this framework has universal benefits from the tiniest 1B parameter models all the way to the largest commercial offerings - in fact, evening the playing field and bringing some surprisingly tiny LLMs up to a high level of conversational coherence.
+
+The tl;dr is that Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability  through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
 
 ### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
 
@@ -40,141 +64,13 @@ This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search ground
 * This demonstrates the power of structured prompting in influencing AI-generated perspectives.
 * This could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models!
 
-## Overview
+## Detailed Documentation
 
-AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
-
-- **Model Collaboration**: Multiple AI models working together in different roles
-- **Adaptive Learning**: Dynamic instruction generation based on conversation context
-- **Deep Analysis**: Multi-dimensional context analysis and conversation assessment
-- **Flexible Deployment**: Support for both cloud and local model execution
-- **Configuration System**: YAML-based configuration for easy setup and customization
-- **File-Based Discussions**: Support for images, videos, text, and code files in conversations
-
-The framework excels at creating rich, goal-oriented discussions between models while maintaining conversation coherence and knowledge depth.
-
- ## Features
-
-- **Multi-Model API Support**
-  - Claude (Anthropic)
-  - Gemini (Google) - Video + Image input
-  - OpenAI (GPT/o1 models)
-  - MLX (Local inference on Apple Silicon)
-  - Ollama/Pico integration - Video + Image input (e.g., llama2-vision, gemma3)
-  - llama.cpp integration
-
-- **Role Management**
-  - Models are assigned either "human" or "AI" roles
-  - Dynamic conversation flow control and optimised setups for large context LLMs and unfiltered local models
-  - Coherent and on-point AI-AI conversations through upwards of 20 turns
-  - Code-focused autonomous "pair-programmers mode" 
-
-- **Advanced Prompting**
-  - Sophisticated meta-prompt engineering patterns give the "Human" AI a life-like command of the conversation without robotic or mechanical communication patterns
-  - Dynamic strategy adaptation based on subject matter and "AI" responses
-  - Context-aware responses building collaboration and clarifying uncertain points
-  - Thinking tag support for reasoning visualization
-
-- **Output Management**
-  - Formatted HTML conversation exports
-  - Conversation history tracking
-  - Support for code or goal-focused discussions or theoretical deep dives and discussions
-  - Plays nicely with anything from tiny quantized local models all the way up to o1
-
-- **Human Moderator Controls**
-  - Inject messages (via streamlit UI)
-  - Provide initial prompt
-  - Real human moderator intervention support (WIP)
-
- - **Moderator intervention**
-
-```
-  python
-  await manager.moderator_intervention(
-      "Let's focus more on practical applications"
-  )
-```
-
-- **Dynamic Role Assignment**
-  - Models can be configured as either "human" prompt engineers or AI assistants
-  - Multiple AI models can participate simultaneously
-  - Streamlit UI for more direct human turn-by-turn guidance and "moderator" interaction
-
-## Advanced Features
-
-- Temperature and parameter control based on model type
-- System instruction management
-- Conversation history tracking, logging and error handling
-- Real-time human moderation
-- Thinking tag visualization
-
- - **Code Focus Mode**
-  - Code block extraction
-  - Iterative improvement tracking through multiple rounds
-
-### Advanced Prompting
-
-- **Strategy Patterns**
-  - Systematic analysis prompts
-  - Multi-perspective examination
-  - Socratic questioning
-  - Adversarial challenges
-  - abliterated local models can be specifically orchestrated as unfiltered agents
-
-- **Dynamic Adaptation**
-  - Context-aware prompt modification
-  - Response quality monitoring
-  - Strategy switching based on AI responses and human-mimicing behaviours
-  - Thinking tag visualization
-
-
-```mermaid
-graph TD
-    User[User Input] --> CM[Conversation Manager]
-    CM --> CA[Context Analysis]
-    CM --> AI[Adaptive Instructions]
-    CM --> Models[Model Orchestration]
-    
-    subgraph Analysis
-        CA --> Context[Context Vector]
-        CA --> Metrics[Performance Metrics]
-    end
-    
-    subgraph Learning
-        AI --> Strategy[Strategy Selection]
-        AI --> Feedback[Feedback Loop]
-    end
-    
-    subgraph Execution
-        Models --> Cloud[Cloud Models]
-        Models --> Local[Local Models]
-    end
-    
-    subgraph "New Features"
-        Config[Configuration System] --> CM
-        Files[File Processing] --> CM
-    end
-```
-
-## Performance Insights
-
-### Quantitative improvements of Human-Human mode over Human-AI (both AIs on either case)
-
-Performance analysis (via Claude 3.5 using Anthropic API Console Dashboard) of the 's adaptive instruction system measured improvements in conversation quality:
-- **Conversation Depth**: With two LMs collaborating in "human" personas, it measured a 45% improvement in critical conversation success and relevance metrics
--  achieved through dynamic turn-by-turn template selection and instruction modification
--  that's compared to a single highly-effectively prompted "Human" LM, where the improvement is already crazy high.
-- **Topic Coherence**: 50% enhancement via real-time coherence assessment
-- **Information Density**: 40% optimization through balanced content delivery
-- **Engagement Quality**: 35% increase in sustained interaction quality
-
-### Bayesian Strategy Selection Framework
-
-Rated well against the following criteria:
-- Optimizing response patterns based on prior effectiveness
-- Adapting to conversation state changes in real-time
-- Resolving competing conversational priorities
-- Maintaining coherence while exploring new directions
+- [Architecture Overview](docs/architecture.md)
+- [Model Integration Guide](docs/models.md)
+- [Context Analysis System](docs/context.md)
+- [Adaptive Instructions](docs/instructions.md)
+- [Configuration System](docs/configuration.md)
 
 ## Quick Start
 
@@ -271,6 +167,193 @@ conversation = await manager.run_conversation_with_file(
 )
 ```
 
+### Example Configuration
+
+```yaml
+discussion:
+  input_file:
+    path: "./examples/sample_video.mp4"
+    type: "video"
+    max_resolution: "1280x1280"
+  established_facts:
+    video_processing_information:
+      - "The ENTIRE VIDEO CONTENT is sent to models, not just individual frames"
+      - "Videos are processed in chunks to handle size limitations"
+      - "The processed video is resized to a maximum dimension of 1280 pixels"
+      - "The video is processed at a reduced framerate (2 fps) for efficiency"
+```
+
+### Example Usage
+
+```python
+from ai_battle import ConversationManager
+from configdataclasses import FileConfig
+
+# Run video-based conversation
+conversation = await manager.run_conversation_with_file(
+    initial_prompt="Analyze this MRI scan video and describe what you see",
+    human_model="gemini-2.0-flash-exp",
+    ai_model="ollama-llava",
+    file_config=FileConfig(path="./mri_scan.mp4", type="video")
+)
+```
+
+### Configuration
+
+#### API Keys
+
+Store your API keys in environment variables:
+```bash
+export GEMINI_API_KEY="your-gemini-key"
+export CLAUDE_API_KEY="your-claude-key"
+export OPENAI_API_KEY="your-openai-key"
+```
+
+#### Model Configuration
+
+```python
+from ai_battle import ModelConfig
+
+config = ModelConfig(
+    temperature=0.7,
+    max_tokens=2048,
+    stop_sequences=None
+)
+```
+
+#### YAML Configuration
+
+Create a YAML configuration file:
+
+```yaml
+discussion:
+  turns: 3
+  models:
+    model1:
+      type: "claude-3-sonnet"
+      role: "human"
+      persona: "Expert role definition..."
+    model2:
+      type: "gemini-pro-vision"
+      role: "assistant"
+      persona: "Assistant role definition..."
+  input_file:
+    path: "./examples/sample_image.jpg"
+    type: "image"
+    max_resolution: "1024x1024"
+  goal: "Analyze the provided image and discuss its key elements..."
+```
+
+See [Configuration Documentation](docs/configuration.md) for more details.
+
+ ## Features
+
+The framework excels at creating rich, goal-oriented discussions between models while maintaining conversation coherence and knowledge depth.
+
+- **Role Management**
+  - Models are assigned either "human" or "AI" roles
+  - Dynamic conversation flow control and optimised setups for large context LLMs and unfiltered local models
+  - Coherent and on-point AI-AI conversations through upwards of 20 turns
+  - Code-focused autonomous "pair-programmers mode" 
+
+- **Advanced Prompting**
+  - Sophisticated meta-prompt engineering patterns give the "Human" AI a life-like command of the conversation without robotic or mechanical communication patterns
+  - Dynamic strategy adaptation based on subject matter and "AI" responses
+  - Context-aware responses building collaboration and clarifying uncertain points
+  - Thinking tag support for reasoning visualization
+
+- **Output Management**
+  - Formatted HTML conversation exports
+  - Conversation history tracking
+  - Support for code or goal-focused discussions or theoretical deep dives and discussions
+  - Plays nicely with anything from tiny quantized local models all the way up to o1
+
+- **Human Moderator Controls**
+  - Inject messages (via streamlit UI)
+  - Provide initial prompt
+  - Real human moderator intervention support (WIP)
+
+- **Dynamic Role Assignment**
+  - Models can be configured as either "human" prompt engineers or AI assistants
+  - Multiple AI models can participate simultaneously
+  - Streamlit UI for more direct human turn-by-turn guidance and "moderator" interaction
+
+## Advanced Features
+
+- Temperature and parameter control based on model type/modality
+- System instruction management
+- Conversation history tracking, logging and error handling
+- Thinking tag visualization
+
+### Code Focus Mode*
+
+  - Code block extraction
+  - Iterative improvement tracking through multiple rounds
+
+### Advanced Prompting
+
+- **Strategy Patterns**
+  - Systematic analysis prompts
+  - Multi-perspective examination
+  - Socratic questioning
+  - Adversarial challenges
+  - abliterated local models can be specifically orchestrated as unfiltered agents
+
+- **Dynamic Adaptation**
+  - Context-aware prompt modification
+  - Response quality monitoring
+  - Strategy switching based on AI responses and human-mimicing behaviours
+  - Thinking tag visualization
+
+
+```mermaid
+graph TD
+    User[User Input] --> CM[Conversation Manager]
+    CM --> CA[Context Analysis]
+    CM --> AI[Adaptive Instructions]
+    CM --> Models[Model Orchestration]
+    
+    subgraph Analysis
+        CA --> Context[Context Vector]
+        CA --> Metrics[Performance Metrics]
+    end
+    
+    subgraph Learning
+        AI --> Strategy[Strategy Selection]
+        AI --> Feedback[Feedback Loop]
+    end
+    
+    subgraph Execution
+        Models --> Cloud[Cloud Models]
+        Models --> Local[Local Models]
+    end
+    
+    subgraph "New Features"
+        Config[Configuration System] --> CM
+        Files[File Processing] --> CM
+    end
+```
+
+## Performance Insights
+
+### Quantitative improvements of Human-Human mode over Human-AI (both AIs on either case)
+
+Performance analysis (via Claude 3.5 using Anthropic API Console Dashboard) of the 's adaptive instruction system measured improvements in conversation quality:
+- **Conversation Depth**: With two LMs collaborating in "human" personas, it measured a 45% improvement in critical conversation success and relevance metrics
+-  achieved through dynamic turn-by-turn template selection and instruction modification
+-  that's compared to a single highly-effectively prompted "Human" LM, where the improvement is already crazy high.
+- **Topic Coherence**: 50% enhancement via real-time coherence assessment
+- **Information Density**: 40% optimization through balanced content delivery
+- **Engagement Quality**: 35% increase in sustained interaction quality
+
+### Bayesian Strategy Selection Framework
+
+Rated well against the following criteria:
+- Optimizing response patterns based on prior effectiveness
+- Adapting to conversation state changes in real-time
+- Resolving competing conversational priorities
+- Maintaining coherence while exploring new directions
+ 
 ## Key Features
 
 ### 1. Conversation Modes
@@ -363,93 +446,6 @@ The framework now supports comprehensive video analysis with both cloud-based an
 
 - **Gemini Models**: Full video support with gemini-2.0-flash-exp and gemini-2.0-pro models
 - **Local Ollama Models**: Video support for vision-capable models like llava and gemma3
-
-### Example Configuration
-
-```yaml
-discussion:
-  input_file:
-    path: "./examples/sample_video.mp4"
-    type: "video"
-    max_resolution: "1280x1280"
-  established_facts:
-    video_processing_information:
-      - "The ENTIRE VIDEO CONTENT is sent to models, not just individual frames"
-      - "Videos are processed in chunks to handle size limitations"
-      - "The processed video is resized to a maximum dimension of 1280 pixels"
-      - "The video is processed at a reduced framerate (2 fps) for efficiency"
-```
-
-### Example Usage
-
-```python
-from ai_battle import ConversationManager
-from configdataclasses import FileConfig
-
-# Run video-based conversation
-conversation = await manager.run_conversation_with_file(
-    initial_prompt="Analyze this MRI scan video and describe what you see",
-    human_model="gemini-2.0-flash-exp",
-    ai_model="ollama-llava",
-    file_config=FileConfig(path="./mri_scan.mp4", type="video")
-)
-```
-
-## Detailed Documentation
-
-- [Architecture Overview](docs/architecture.md)
-- [Model Integration Guide](docs/models.md)
-- [Context Analysis System](docs/context.md)
-- [Adaptive Instructions](docs/instructions.md)
-- [Configuration System](docs/configuration.md)
-
-## Configuration
-
-### API Keys
-
-Store your API keys in environment variables:
-```bash
-export GEMINI_API_KEY="your-gemini-key"
-export CLAUDE_API_KEY="your-claude-key"
-export OPENAI_API_KEY="your-openai-key"
-```
-
-### Model Configuration
-
-```python
-from ai_battle import ModelConfig
-
-config = ModelConfig(
-    temperature=0.7,
-    max_tokens=2048,
-    stop_sequences=None
-)
-```
-
-### YAML Configuration
-
-Create a YAML configuration file:
-
-```yaml
-discussion:
-  turns: 3
-  models:
-    model1:
-      type: "claude-3-sonnet"
-      role: "human"
-      persona: "Expert role definition..."
-    model2:
-      type: "gemini-pro-vision"
-      role: "assistant"
-      persona: "Assistant role definition..."
-  input_file:
-    path: "./examples/sample_image.jpg"
-    type: "image"
-    max_resolution: "1024x1024"
-  goal: "Analyze the provided image and discuss its key elements..."
-```
-
-See [Configuration Documentation](docs/configuration.md) for more details.
 
 ## Advanced Usage
 
