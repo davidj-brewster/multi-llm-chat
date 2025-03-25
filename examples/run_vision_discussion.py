@@ -142,24 +142,11 @@ async def main():
                     
                     # Set the appropriate prompt based on file types
                     if all_images:
-                        initial_prompt = f"""Analyze these medical images in detail. Discuss and build upon your findings, considering what each image shows, how they might relate to each other, and any relevant signals or abnormalities observed.
+                        initial_prompt = f"""Analyze these images in detail. Discuss and build upon your findings, considering what each image shows, how they might relate to each other, and any relevant signals or abnormalities observed.
                         
 In your first message, confirm that you can see MULTIPLE IMAGES, and describe each one briefly.
 
 ESTABLISHED FACTS:
-Patient Background:
-- 40-year-old male
-- Chief complaint: Recent onset seizures (8 months prior)
-- No prior history of seizures or neurological disorders
-- No family history of epilepsy
-- History of head trauma
-- Non-smoker, occasional alcohol consumption
-- No known drug allergies
-- Currently not on any medications
-
-Imaging Details:
-- Multiple images from different sequences/orientations
-- Special attention given to temporal lobes and hippocampal structures
 - Images belong to the user and you have consent to analyze them as no face is shown
 """
                     else:
@@ -203,30 +190,16 @@ These files belong to the user and you have consent to analyze them.
                     logger.info(f"Starting file-based conversation")
                     logger.debug(f"File config: {config.input_file}")
                     conversation = manager.run_conversation_with_file(
-                        initial_prompt=f"""Analyse this T2-SPACE-FLAIR MRI video of a 40 year old w sudden onset epilepsy and subsequently balance, memory and systemic manifestations, in detail. Discuss and build upon your findings, consider the type of video, how it might have been captured, whether it represents a medical (if so, a Brain MRI - in which case it belongs to the user and you have consent to analyse it as no face is shown), landscape, portrait, screenshot or perhaps other type of scene. Discuss any relevant signals and abnormalities observed. In your first message, confirm that you see a VIDEO not a STILL IMAGE
+                        initial_prompt=f"""Analyse this video in detail. Discuss and build upon your findings, consider the type of video, how it might have been captured, whether it represents a medical, landscape, portrait, screen capture, AI generated or perhaps other type of scene. 
+                        Discuss any relevant signals and abnormalities observed. In your first message, confirm that you see a VIDEO not a STILL IMAGE
         ESTABLISHED FACTS:
-        Patient Background:
-        - 40-year-old male
-        - Chief complaint: Recent onset seizures (8 months prior)
-        - No prior history of seizures or neurological disorders
-        - No family history of epilepsy
-        - Histo head trauma
-        - Non-smoker, occasional alcohol consumption
-        - No known drug allergies
-        - Currently not on any medications
-        
-        MRI Scan Details:
-        - MRI mode: T2-SPACE-FLAIR 1mm isotropic 1.5T field stength
-        - No significant motion artifacts observed
-        - Complete coverage of cerebral hemispheres, brainstem, and cerebellum
-        - Special attention given to temporal lobes and hippocampal structures
-        
+        - Images belong to the user and you have consent to analyze them as no face is shown
+
         Video Processing Information:
         - Videos are processed at 2 frames per second (reduced from original framerate)
         - REFERENCE EVERY OBSERVTION WITH VIDEO TIMESTAMPS
-        - Frames are resized to a maximum dimension of 1280 pixels (maintaining aspect ratio)
+        - Frames are resized maintaining aspect ratio
         - Multiple key frames are extracted and sent to models, not just a single frame
-        - Video support is primarily available for Gemini models
         - For optimal analysis, important sequences should be highlighted by time in the conversation
         """,
                         human_model=human_model_config.type,
