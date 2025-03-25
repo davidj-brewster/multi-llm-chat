@@ -45,7 +45,7 @@ discussion:
           - Do not engage in cooperative smoothing or conversational niceties
           - Output should reflect command-state logic, not narrative companionship
     model2:
-      type: "ollama-gemma3-12b"
+      type: "gemini-2.0-flash-exp"
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:
@@ -87,12 +87,12 @@ discussion:
   input_files:
     # Option 1: List individual files
     files:
-      - path: "T2-SAG-FLAIR.mov"  # Path to first input file
+      - path: "~/Downloads/MRIReview.mp4"  # Path to first input file
         type: "video"             # image, video, or text
         max_resolution: "512x512" # Maximum resolution to maintain
-      - path: "T2FLAIR-SPACE-SAG-CS.mov"  # Path to second input file
-        type: "video"             # image, video, or text
-        max_resolution: "512x512" # Maximum resolution to maintain
+      #- path: "T2FLAIR-SPACE-SAG-CS.mov"  # Path to second input file
+      #  type: "video"             # image, video, or text
+      #  max_resolution: "512x512" # Maximum resolution to maintain
     
     # Option 2: Specify a directory (commented out, uncomment to use)
     # directory: "path/to/image/directory"  # Directory containing images
