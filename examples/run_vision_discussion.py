@@ -111,8 +111,8 @@ async def main():
                     config.input_file = file_configs[0]
                     logger.info(f"Using single file: {config.input_file.path}")
                 else:
-                    # Create a list of files directly
-                    config.input_files = {"files": file_configs}
+                    # Create a proper MultiFileConfig object
+                    config.input_files = MultiFileConfig(files=file_configs)
                     logger.info(f"Using multiple files: {len(file_configs)} files")
                 
                 # For backward compatibility, also set input_file to the first file
@@ -127,7 +127,7 @@ async def main():
                 
                 # Check if input files are specified
                 if config.input_files:
-                    files_list = config.input_files.get("files", [])
+                    files_list = config.input_files.files
                     logger.info(f"Using multiple input files: {len(files_list)} files")
                     
                     # Ensure all input files exist
@@ -138,7 +138,7 @@ async def main():
                         logger.info(f"Verified file exists: {file_config.path} (Type: {file_config.type})")
                     
                     # Determine if all files are images
-                    all_images = all(file.type == "image" for file in config.input_files.files)
+                    all_images = all(file.type == "image" for file in files_list)
                     
                     # Set the appropriate prompt based on file types
                     if all_images:
@@ -176,7 +176,7 @@ These files belong to the user and you have consent to analyze them.
                     logger.debug(f"Multi-file config: {config.input_files}")
                     
                     # Get the list of files
-                    files_list = config.input_files.get("files", [])
+                    files_list = config.input_files.files
                     
                     # Use the first file if there's only one
                     file_config_to_use = files_list[0] if len(files_list) == 1 else config.input_files
@@ -185,7 +185,7 @@ These files belong to the user and you have consent to analyze them.
                         initial_prompt=initial_prompt,
                         human_model=human_model_config.type,
                         ai_model=ai_model_config.type,
-                        mode="ai-ai",  # Use AI-AI mode for both models
+                        mode="human-ai",  # Use AI-AI mode for both models
                         file_config=file_config_to_use,
                         rounds=config.turns
                     )
@@ -254,40 +254,26 @@ These files belong to the user and you have consent to analyze them.
         file_data = None
         
         # Handle multiple files
-        if config.input_files and config.input_files.get("files"):
+        if config.input_files and config.input_files.files:
             logger.info(f"Processing multiple files for HTML output")
             try:
-                # Use the first file for the main file_data
-                first_file = config.input_files["files"][0]
-                if os.path.exists(first_file.path):
-                    logger.debug(f"Reading first file content: {first_file.path}")
-                    with open(first_file.path, 'rb') as f:
-                        file_content = f.read()
-                        file_data = {
-                            "type": first_file.type,
-                            "path": first_file.path,
-                            "base64": base64.b64encode(file_content).decode('utf-8')
-                        }
-                    logger.debug(f"First file data created with type: {file_data['type']}")
+                # Create a list to hold all file data
+                file_data = []
                 
-                # Add additional files as a list in the file_data
-                files_list = config.input_files.get("files", [])
-                if len(files_list) > 1:
-                    additional_files = []
-                    for i, file_config in enumerate(files_list[1:], 1):
-                        if os.path.exists(file_config.path):
-                            logger.debug(f"Reading additional file {i}: {file_config.path}")
-                            with open(file_config.path, 'rb') as f:
-                                additional_file_content = f.read()
-                                additional_files.append({
-                                    "type": file_config.type,
-                                    "path": file_config.path,
-                                    "base64": base64.b64encode(additional_file_content).decode('utf-8')
-                                })
-                    
-                    if additional_files:
-                        file_data["additional_files"] = additional_files
-                        logger.debug(f"Added {len(additional_files)} additional files to file_data")
+                # Process all files
+                files_list = config.input_files.files
+                for i, file_config in enumerate(files_list):
+                    if os.path.exists(file_config.path):
+                        logger.debug(f"Reading file {i+1}: {file_config.path}")
+                        with open(file_config.path, 'rb') as f:
+                            file_content = f.read()
+                            file_data.append({
+                                "type": file_config.type,
+                                "path": file_config.path,
+                                "base64": base64.b64encode(file_content).decode('utf-8')
+                            })
+                
+                logger.debug(f"Created file data list with {len(file_data)} files")
                 
                 logger.info(f"Files processed successfully for HTML output")
             except Exception as e:

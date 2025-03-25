@@ -13,13 +13,12 @@ Key components:
 import os
 import logging
 import mimetypes
-import glob
 from PIL import Image
 from PIL import UnidentifiedImageError
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any, List, Union
+from typing import Dict, Optional, Tuple, Any, List
 from dataclasses import dataclass
-
+import traceback
 logger = logging.getLogger(__name__)
 
 class MediaProcessingError(Exception):
@@ -294,8 +293,8 @@ class ConversationMediaHandler:
                     "error": str(e),
                     "error_type": "processing_error"
                 })
-                logger.error(f"Error processing file: {file_path} - {e}")
-        
+                logger.error(f"Error processing file: {file_path} - {e} {type(e)} {traceback.format_exc()}")
+                raise e
         # Log summary
         logger.info(f"Processed {len(successful_files)} files successfully, {len(failed_files)} files failed")
         
@@ -371,7 +370,7 @@ class ConversationMediaHandler:
             logger.error(f"Out of memory when processing file {file_path}")
             raise MediaProcessingError(f"File too large to process in available memory: {file_path}")
         except Exception as e:
-            logger.exception(f"Unexpected error processing file {file_path}")
+            logger.exception(f"Unexpected error processing file {file_path} {traceback.format_exc()}")
             raise MediaProcessingError(f"Failed to process file {file_path}: {e}")
 
     def prepare_multiple_media_messages(self,

@@ -4,6 +4,7 @@ import logging
 import traceback
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
+from configdataclasses import MultiFileConfig, DiscussionConfig    
 from pathlib import Path
 import json
 
@@ -29,7 +30,7 @@ class SystemInstructionsError(ConfigurationError):
     pass
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.DEBUG)
 # Supported model configurations
 SUPPORTED_MODELS = {
     "claude": ["claude", "haiku"],
@@ -169,12 +170,12 @@ class ModelConfig:
         if self.persona and not isinstance(self.persona, str):
             raise ValueError("Persona must be a string")
 
-@dataclass
-class DiscussionConfig:
+class DiscussionConfigOld:
     turns: int
     models: Dict[str, ModelConfig]
     goal: str
     input_file: Optional[FileConfig] = None
+    input_files: Optional[MultiFileConfig]
     timeouts: Optional[TimeoutConfig] = None
 
     def __post_init__(self):
@@ -274,7 +275,7 @@ def load_config(path: str) -> DiscussionConfig:
 
         return DiscussionConfig(**config_dict["discussion"])
     except (TypeError, ValueError) as e:
-        raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e}")
+        raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e} {traceback.format_exc()}")
 
 def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str, bool]:
     """Detect model capabilities based on type"""

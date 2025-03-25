@@ -13,10 +13,8 @@ import requests
 from adaptive_instructions import AdaptiveInstructionManager
 from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
-import asyncio
 import logging
 from ollama import Client
-import base64
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
@@ -817,7 +815,7 @@ class GeminiClient(BaseClient):
         api_key = os.getenv("GOOGLE_API_KEY")
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         self.model_name = self.model
-        self.role = "human" if role in ["user", "human"] else "model"
+        self.role = "user" if role in ["user", "human"] else "model"
         try:
             self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
         except Exception as e:
@@ -910,12 +908,12 @@ class GeminiClient(BaseClient):
         if mode:
             self.mode = mode
         if role:
-            self.role = "human" if role in ["user", "human"] else "model"
+            self.role = "user" if role in ["user", "human"] else "model"
                          
         if model_config is None:
             model_config = ModelConfig()
         if role == "user":
-            role = "human"
+            role = "user"
         else:
             role = "model"
         if role: #and not self.role:
@@ -924,7 +922,7 @@ class GeminiClient(BaseClient):
         history = history if history else []
         # Update instructions based on conversation history
         if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(history, role="human",domain=self.domain,mode=self.mode)
+            current_instructions = self.adaptive_manager.generate_instructions(history, role="user",domain=self.domain,mode=self.mode)
         else:
             current_instructions = system_instruction if system_instruction and system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are a helpful AI {self.domain}. Think step by step and show reasoning. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed. Limit your output to {MAX_TOKENS} tokens."
 
@@ -951,22 +949,23 @@ class GeminiClient(BaseClient):
                 
                 # Process all files
                 for file_item in file_data:
-                    if file_item["type"] == "image" and "base64" in file_item:
-                        # Add image to parts
-                        image_parts.append({
-                            "inline_data": {
-                                "mime_type": file_item.get("mime_type"),
-                                "data": file_item["base64"]
-                            }
-                        })
-                    elif file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                        # Collect text content
-                        text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item['text_content']}"
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            # Add image to parts
+                            image_parts.append({
+                                "inline_data": {
+                                    "mime_type": file_item.get("mime_type"),
+                                    "data": file_item["base64"]
+                                }
+                            })
+                        elif file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            # Collect text content
+                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item['text_content']}"
                 
                 # Add all images as separate messages
                 for image_part in image_parts:
                     contents.append({
-                        "role": "human",
+                        "role": "user",
                         "parts": [image_part]
                     })
                 
@@ -976,25 +975,27 @@ class GeminiClient(BaseClient):
                         "role": "model",
                         "parts": [{"text": text_content}]
                     })
-            elif file_data["type"] == "image" and "base64" in file_data:
-                # Format image for Gemini (single image case)
-                contents.append({
-                    "role": "human",
-                    "parts": [
-                        {
-                            "inline_data": {
-                                "mime_type": file_data.get("mime_type"),
-                                "data": file_data["base64"]
+            elif isinstance(file_data, dict) and "type" in file_data:
+                if file_data["type"] == "image" and "base64" in file_data:
+                    # Format image for Gemini (single image case)
+                    contents.append({
+                        "role": "human",
+                        "parts": [
+                            {
+                                "inline_data": {
+                                    "mime_type": file_data.get("mime_type"),
+                                    "data": file_data["base64"]
+                                }
                             }
-                        }
-                    ]
-                })
-            elif file_data["type"] == "video":
-                # Handle video content
-                if "video_chunks" in file_data and file_data["video_chunks"]:
-                    # For Gemini, we need to combine all chunks back into a single video
-                    #full_video_content = ''.join(file_data["video_chunks"])
-                    video_file_name = file_data["path"]
+                        ]
+                    })
+            elif isinstance(file_data, dict) and "type" in file_data:
+                if file_data["type"] == "video":
+                    # Handle video content
+                    if "video_chunks" in file_data and file_data["video_chunks"]:
+                        # For Gemini, we need to combine all chunks back into a single video
+                        #full_video_content = ''.join(file_data["video_chunks"])
+                        video_file_name = file_data["path"]
                     # Log information about the video file
                     logger.info(f"Processing video: {video_file_name}")
                     logger.info(f"MIME type: {file_data.get('mime_type', 'video/mp4')}")
@@ -1086,7 +1087,7 @@ class GeminiClient(BaseClient):
                     # Fallback to key frames if available
                     for frame in file_data["key_frames"]:
                         contents.append({
-                            "role": "human",
+                            "role": "user",
                             "parts": [
                                 {
                                     "inline_data": {
@@ -1104,7 +1105,7 @@ class GeminiClient(BaseClient):
                 })
         
         # Add prompt text
-        contents.append({"role": "human", "parts": [{"text": prompt}]})
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
 
         try:
             # Generate final response
@@ -1195,20 +1196,22 @@ class ClaudeClient(BaseClient):
                     
                     # Add all images first
                     for file_item in file_data:
-                        if file_item['type'] == "image" and "base64" in file_item:
-                            message_content.append({
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": file_item.get("mime_type", "image/jpeg"),
-                                    "data": file_item["base64"]
-                                }
-                            })
-                    
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item['type'] == "image" and "base64" in file_item:
+                                message_content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": file_item.get("mime_type", "image/jpeg"),
+                                        "data": file_item["base64"]
+                                    }
+                                })
                     # Add text content from text/code files
                     text_content = prompt
                     for file_item in file_data:
-                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                                text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
                             text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
                     
                     # Add the prompt text
@@ -1225,8 +1228,9 @@ class ClaudeClient(BaseClient):
                     # Model doesn't support vision, use text only with all text files
                     text_content = prompt
                     for file_item in file_data:
-                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                            text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                                text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
                     
                     messages.append({
                         "role": "user",
@@ -1234,17 +1238,18 @@ class ClaudeClient(BaseClient):
                     })
             else:
                 # Handle single file (original implementation)
-                if file_data['type'] == "image" and "base64" in file_data:
-                    # Check if model supports vision
-                    if self.capabilities.get("vision", False):
-                        # Format for Claude's multimodal API
-                        message_content = [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": file_data.get("mime_type", "image/jpeg"),
-                                    "data": file_data["base64"]
+                if isinstance(file_data, dict) and "type" in file_data:
+                    if file_data['type'] == "image" and "base64" in file_data:
+                        # Check if model supports vision
+                        if self.capabilities.get("vision", False):
+                            # Format for Claude's multimodal API
+                            message_content = [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": file_data.get("mime_type", "image/jpeg"),
+                                        "data": file_data["base64"]
                                 }
                             },
                             {
@@ -1370,20 +1375,22 @@ class OpenAIClient(BaseClient):
                     
                     # Add all images
                     for file_item in file_data:
-                        if file_item["type"] == "image" and "base64" in file_item:
-                            content_parts.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{file_item.get('mime_type', 'image/jpeg')};base64,{file_item['base64']}",
-                                    "detail": "high"
-                                }
-                            })
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item["type"] == "image" and "base64" in file_item:
+                                content_parts.append({
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{file_item.get('mime_type', 'image/jpeg')};base64,{file_item['base64']}",
+                                        "detail": "high"
+                                    }
+                                })
                     
                     # Add text content from text/code files to the prompt
                     text_content = prompt
                     for file_item in file_data:
-                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                                text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
                     
                     # Update the text part with combined text content
                     content_parts[0]["text"] = text_content
@@ -1396,29 +1403,31 @@ class OpenAIClient(BaseClient):
                     # Model doesn't support vision, use text only with all text files
                     text_content = prompt
                     for file_item in file_data:
-                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
+                        if isinstance(file_item, dict) and "type" in file_item:
+                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                                text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
                     
                     formatted_messages.append({"role": "user", "content": text_content})
             else:
                 # Handle single file (original implementation)
-                if file_data["type"] == "image" and "base64" in file_data:
-                    # Check if model supports vision
-                    if self.capabilities.get("vision", False):
-                        # Format for OpenAI's vision API
-                        formatted_messages.append({
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
-                                        "detail": "high"
+                if isinstance(file_data, dict) and "type" in file_data:
+                    if file_data["type"] == "image" and "base64" in file_data:
+                        # Check if model supports vision
+                        if self.capabilities.get("vision", False):
+                            # Format for OpenAI's vision API
+                            formatted_messages.append({
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
+                                            "detail": "high"
+                                        }
                                     }
-                                }
-                            ]
-                        })
+                                ]
+                            })
                     else:
                         # Model doesn't support vision, use text only
                         logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
@@ -1722,23 +1731,42 @@ class OllamaClient(BaseClient):
 
         # Handle file data for Ollama (Corrected Image Handling)
         if is_vision_model and file_data:
-            if file_data["type"] == "image" and "base64" in file_data:
-                # Add the image directly to the *last* message in the messages list
-                messages[-1]['images'] = [file_data['base64']] #Correct image format
-
-            elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
-                # --- Key Change: Send *all* sampled frames ---
-                messages[-1]['images'] = [frame["base64"] for frame in file_data["key_frames"]]
-            elif file_data["type"] == "video" and "video_chunks" in file_data:
-                # For Ollama, we can send the entire video content since it's running locally
-                # Combine all chunks into a single video content
-                full_video_content = ''.join(file_data["video_chunks"])
+            if isinstance(file_data, list) and file_data:
+                # Handle multiple files
+                all_images = []
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            all_images.append(file_item["base64"])
+                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
+                            all_images.extend([frame["base64"] for frame in file_item["key_frames"]])
+                        elif file_item["type"] == "video" and "video_chunks" in file_item:
+                            # For Ollama, we can send the entire video content since it's running locally
+                            # Combine all chunks into a single video content
+                            full_video_content = ''.join(file_item["video_chunks"])
+                            logger.info(f"Added full video content to Ollama request ({len(full_video_content)} bytes)")
+                            # Note: Currently, we're not handling video chunks in the multiple files case
                 
-                # Add the video content to the message
-                # Note: This assumes Ollama can handle video content directly
-                # If not, this will need to be modified to extract frames
-                messages[-1]['video'] = full_video_content
-                logger.info(f"Added full video content to Ollama request ({len(full_video_content)} bytes)")
+                if all_images:
+                    messages[-1]['images'] = all_images
+                    logger.info(f"Added {len(all_images)} images to Ollama request")
+            elif isinstance(file_data, dict) and "type" in file_data:
+                if file_data["type"] == "image" and "base64" in file_data:
+                    # Add the image directly to the *last* message in the messages list
+                    messages[-1]['images'] = [file_data['base64']] #Correct image format
+                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                    # --- Key Change: Send *all* sampled frames ---
+                    messages[-1]['images'] = [frame["base64"] for frame in file_data["key_frames"]]
+                elif file_data["type"] == "video" and "video_chunks" in file_data:
+                    # For Ollama, we can send the entire video content since it's running locally
+                    # Combine all chunks into a single video content
+                    full_video_content = ''.join(file_data["video_chunks"])
+                    
+                    # Add the video content to the message
+                    # Note: This assumes Ollama can handle video content directly
+                    # If not, this will need to be modified to extract frames
+                    messages[-1]['video'] = full_video_content
+                    logger.info(f"Added full video content to Ollama request ({len(full_video_content)} bytes)")
 
 
         try:

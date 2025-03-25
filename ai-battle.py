@@ -27,7 +27,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 CONFIG_PATH = "config.yaml"
 TOKENS_PER_TURN = 1280
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('ai_battle.log'),
@@ -333,7 +333,7 @@ class ConversationManager:
                                   human_model: str,
                                   ai_model: str,
                                   mode: str,
-                                  file_config: Union[FileConfig, Dict[str, Any]],
+                                  file_config: Union[FileConfig, Dict[str, Any], 'MultiFileConfig'],
                                   human_system_instruction: str = None,
                                   ai_system_instruction: str = None,
                                   rounds: int = 1) -> List[Dict[str, str]]:
@@ -347,12 +347,67 @@ class ConversationManager:
         # Process file if provided
         file_data = None
         
+        # Handle MultiFileConfig object
+        if hasattr(file_config, 'files') and isinstance(file_config.files, list):
+            # Multiple files case using MultiFileConfig object
+            files_list = file_config.files
+            if not files_list:
+                logger.warning("No files found in MultiFileConfig")
+                return []
+                
+            # Process all files and create a list of file data
+            file_data_list = []
+            for file_config_item in files_list:
+                try:
+                    # Process file
+                    file_metadata = self.media_handler.process_file(file_config_item.path)
+                    
+                    # Create file data dictionary
+                    single_file_data = {
+                        "type": file_metadata.type,
+                        "path": file_config_item.path,
+                        "mime_type": file_metadata.mime_type,
+                        "dimensions": file_metadata.dimensions
+                    }
+                    
+                    # Add type-specific data
+                    if file_metadata.type == "image":
+                        with open(file_config_item.path, 'rb') as f:
+                            single_file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                            single_file_data["type"] = "image"
+                            single_file_data["mime_type"] = file_metadata.mime_type
+                            single_file_data["path"] = file_config_item.path
+                            
+                    elif file_metadata.type in ["text", "code"]:
+                        single_file_data["text_content"] = file_metadata.text_content
+                        
+                    elif file_metadata.type == "video":
+                        # Handle video processing (same as single file case)
+                        single_file_data["duration"] = file_metadata.duration
+                        # Use the entire processed video file
+                        if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
+                            processed_video_path = file_metadata.processed_video["processed_video_path"]
+                            # Set the path to the processed video file, not the original
+                            single_file_data["path"] = processed_video_path
+                            # Set the mime type to video/mp4 for better compatibility
+                            single_file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
+                    
+                    # Add to list
+                    file_data_list.append(single_file_data)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing file {file_config_item.path}: {e}")
+                    # Continue with other files
+            
+            # Pass the entire list of file data to the model client
+            if file_data_list:
+                file_data = file_data_list
         # Handle dictionary format for multiple files
-        if isinstance(file_config, dict) and "files" in file_config:
-            # Multiple files case
+        elif isinstance(file_config, dict) and "files" in file_config:
+            # Multiple files case using dictionary
             files_list = file_config.get("files", [])
             if not files_list:
-                logger.warning("No files found in file_config")
+                logger.warning("No files found in file_config dictionary")
                 return []
                 
             # Process all files and create a list of file data
@@ -401,11 +456,9 @@ class ConversationManager:
                     logger.error(f"Error processing file {file_config_item.path}: {e}")
                     # Continue with other files
             
-            # If we have files, use the first one as the main file_data and add the rest as additional_files
+            # Pass the entire list of file data to the model client
             if file_data_list:
-                file_data = file_data_list[0]
-                if len(file_data_list) > 1:
-                    file_data["additional_files"] = file_data_list[1:]
+                file_data = file_data_list
                     
         # Handle single FileConfig object
         elif file_config:
@@ -671,19 +724,38 @@ async def save_conversation(conversation: List[Dict[str, str]],
 
         # Add file content if present
         if file_data:
-            if file_data["type"] == "image" and "base64" in file_data:
-                # Add image to the conversation
-                mime_type = file_data.get("mime_type", "image/jpeg")
-                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Image")}</h3>'
-                conversation_html += f'<img src="data:{mime_type};base64,{file_data["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
-            elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
-                # Add first frame of video
-                frame = file_data["key_frames"][0]
-                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Video")} (First Frame)</h3>'
-                conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
-            elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
-                # Add text content
-                conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
+            # Handle multiple files (list of file data)
+            if isinstance(file_data, list):
+                for idx, file_item in enumerate(file_data):
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            # Add image to the conversation
+                            mime_type = file_item.get("mime_type", "image/jpeg")
+                            conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Image")}</h3>'
+                            conversation_html += f'<img src="data:{mime_type};base64,{file_item["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
+                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
+                            # Add first frame of video
+                            frame = file_item["key_frames"][0]
+                            conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Video")} (First Frame)</h3>'
+                            conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
+                        elif file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            # Add text content
+                            conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Text")}</h3><pre>{file_item["text_content"]}</pre></div>\n'
+            # Handle single file (original implementation)
+            elif isinstance(file_data, dict) and "type" in file_data:
+                if file_data["type"] == "image" and "base64" in file_data:
+                    # Add image to the conversation
+                    mime_type = file_data.get("mime_type", "image/jpeg")
+                    conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Image")}</h3>'
+                    conversation_html += f'<img src="data:{mime_type};base64,{file_data["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
+                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                    # Add first frame of video
+                    frame = file_data["key_frames"][0]
+                    conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Video")} (First Frame)</h3>'
+                    conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
+                elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                    # Add text content
+                    conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
 
         for msg in conversation:
             role = msg["role"]

@@ -1,14 +1,39 @@
 """Configuration integration module for AI Battle framework"""
 import os
-import glob
-from typing import Dict, List, Optional, Union
-from pathlib import Path
-from dataclasses import dataclass
-
+from typing import Dict, List, Optional
+from dataclasses import dataclass, field
+from logging import getLogger
+import logging
 # Constants referenced in the code but not defined in the snippet
 # These would typically be defined in this file or imported
-SUPPORTED_FILE_TYPES = {}  # Placeholder
-SUPPORTED_MODELS = {}      # Placeholder
+# Supported model configurations
+SUPPORTED_MODELS = {
+    "claude": ["claude", "haiku"],
+    "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning","gemini-2.0-flash-exp", "gemini"],
+    "openai": ["gpt-4-vision", "gpt-4o"],
+    "ollama": ["*"],  # All Ollama models supported
+    "mlx": ["*"]      # All MLX models supported
+}
+
+# File type configurations
+SUPPORTED_FILE_TYPES = {
+    "image": {
+        "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+        "max_size": 20 * 1024 * 1024,  # 20MB
+        "max_resolution": (8192, 8192)
+    },
+    "video": {
+        "extensions": [".mp4", ".mov", ".avi", ".webm"],
+        "max_size": 100 * 1024 * 1024,  # 100MB
+        "max_resolution": (3840, 2160)  # 4K
+    },
+    "text": {
+        "extensions": [".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml"],
+        "max_size": 10 * 1024 * 1024  # 10MB
+    }
+}
+logger = getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 @dataclass
 class TimeoutConfig:
@@ -53,22 +78,23 @@ class TimeoutConfig:
         ...     print(f"Error: {e}")
         'Error: Request timeout must be between 30 and 600 seconds'
     """
-    request: int = 600  # Default 5 minutes
-    retry_count: int = 1
-    notify_on: List[str] = None
-
+    request: int = field(default=600)  # Default 5 minutes
+    retry_count: int = field(default=1)
+    notify_on: List[str] = field(default_factory=list)
+    
     def __post_init__(self):
         if self.request < 30 or self.request > 600:
             raise ValueError("Request timeout must be between 30 and 600 seconds")
         if self.retry_count < 0 or self.retry_count > 5:
             raise ValueError("Retry count must be between 0 and 5")
-        if self.notify_on is None:
+        if not self.notify_on:
             self.notify_on = ["timeout", "retry", "error"]
         valid_events = ["timeout", "retry", "error"]
         invalid_events = [e for e in self.notify_on if e not in valid_events]
         if invalid_events:
             raise ValueError(f"Invalid notification events: {invalid_events}")
 
+@dataclass
 class FileConfig:
     """
     Configuration for file handling and validation.
@@ -137,10 +163,10 @@ class FileConfig:
     """
     path: str
     type: str
-    max_resolution: Optional[str] = None
-    is_directory: bool = False
-    file_pattern: Optional[str] = None
-
+    max_resolution: Optional[str] = field(default=None)
+    is_directory: bool = field(default=False)
+    file_pattern: Optional[str] = field(default=None)
+    
     def __post_init__(self):
         if not os.path.exists(self.path):
             raise ValueError(f"Path not found: {self.path}")
@@ -185,6 +211,7 @@ class FileConfig:
                     raise ValueError(f"Invalid resolution format: {requested_res}")
 
 #@dataclass
+@dataclass
 class MultiFileConfig:
     """
     Configuration for handling multiple files.
@@ -241,17 +268,15 @@ class MultiFileConfig:
         ...     file_pattern="*.jpg"
         ... )
     """
-    def __init__(self, files=None, directory=None, file_pattern=None, max_files=10, max_resolution=None):
-        self.files = files
-        self.directory = directory
-        self.file_pattern = file_pattern
-        self.max_files = max_files
-        self.max_resolution = max_resolution
+    files: List[FileConfig] = field(default_factory=list)
+    directory: Optional[str] = field(default=None)
+    file_pattern: Optional[str] = field(default=None)
+    max_files: int = field(default=10)
+    max_resolution: Optional[str] = field(default=None)
+    
+    def __post_init__(self):
         if not self.files and not self.directory:
             raise ValueError("Either files or directory must be provided")
-        
-        if self.files is None:
-            self.files = []
         
         if self.directory and not os.path.exists(self.directory):
             raise ValueError(f"Directory not found: {self.directory}")
@@ -260,6 +285,7 @@ class MultiFileConfig:
             raise ValueError(f"Path is not a directory: {self.directory}")
 
 
+@dataclass
 class ModelConfig:
     """
     Configuration for AI model settings and behavior.
@@ -310,10 +336,11 @@ class ModelConfig:
         ...     role="assistant"
         ... )
     """
-    def __init__(self, type, role, persona=None):
-        self.type = type
-        self.role = role
-        self.persona = persona
+    type: str
+    role: str
+    persona: Optional[str] = field(default=None)
+    
+    def __post_init__(self):
         # Validate model type
         provider = next((p for p in SUPPORTED_MODELS if self.type.startswith(p)), None)
         if not provider:
@@ -429,10 +456,10 @@ class DiscussionConfig:
     turns: int
     models: Dict[str, ModelConfig]
     goal: str
-    input_file: Optional[FileConfig] = None
-    input_files: Optional[MultiFileConfig] = None
-    timeouts: Optional[TimeoutConfig] = None
-
+    input_file: Optional[FileConfig] = field(default=None)
+    input_files: Optional[MultiFileConfig] = field(default=None)
+    timeouts: Optional[TimeoutConfig] = field(default=None)
+    
     def __post_init__(self):
         if self.turns < 1:
             raise ValueError("Turns must be greater than 0")
@@ -443,47 +470,32 @@ class DiscussionConfig:
         if not self.goal:
             raise ValueError("Goal must be provided")
         
+        logger.info(f"Configuring discussion with {len(self.models)} models for {self.turns} turns")
         # Convert dict models to ModelConfig objects
         if isinstance(self.models, dict):
             self.models = {
                 name: ModelConfig(**config) if isinstance(config, dict) else config
                 for name, config in self.models.items()
             }
+        logger.info(f"Models: {self.models}")
         
         # Convert timeouts dict to TimeoutConfig
         if isinstance(self.timeouts, dict):
             self.timeouts = TimeoutConfig(**self.timeouts)
         elif self.timeouts is None:
             self.timeouts = TimeoutConfig()
-
-
-class DiscussionConfig:
-    turns: int
-    models: Dict[str, ModelConfig]
-    goal: str
-    input_file: Optional[FileConfig] = None
-    input_files: Optional[MultiFileConfig] = None
-    timeouts: Optional[TimeoutConfig] = None
-
-    def __post_init__(self):
-        if self.turns < 1:
-            raise ValueError("Turns must be greater than 0")
-        
-        if len(self.models) < 2:
-            raise ValueError("At least two models must be configured")
-        
-        if not self.goal:
-            raise ValueError("Goal must be provided")
-        
-        # Convert dict models to ModelConfig objects
-        if isinstance(self.models, dict):
-            self.models = {
-                name: ModelConfig(**config) if isinstance(config, dict) else config
-                for name, config in self.models.items()
-            }
-        
-        # Convert timeouts dict to TimeoutConfig
-        if isinstance(self.timeouts, dict):
-            self.timeouts = TimeoutConfig(**self.timeouts)
-        elif self.timeouts is None:
-            self.timeouts = TimeoutConfig()
+            
+        # Convert input_files dict to MultiFileConfig
+        if isinstance(self.input_files, dict):
+            # If the input_files dict has a 'files' key that contains a list of dicts,
+            # convert each dict to a FileConfig object
+            if 'files' in self.input_files and isinstance(self.input_files['files'], list):
+                self.input_files['files'] = [
+                    FileConfig(**file_dict) if isinstance(file_dict, dict) else file_dict
+                    for file_dict in self.input_files['files']
+                ]
+            self.input_files = MultiFileConfig(**self.input_files)
+            
+        # Convert input_file dict to FileConfig
+        if isinstance(self.input_file, dict):
+            self.input_file = FileConfig(**self.input_file)
