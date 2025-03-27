@@ -16,10 +16,13 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
 ### Multi-Model and Multi-modal client API Support!**
   - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support
   - Gemini (Flash/Pro/Thinking) - Multimodal w Video + Image support
+  - Claude Sonnet 3.7 thinking support with configurable thinking tokens
   - OpenAI (GPT 4o/o1/o3/4.5 models) - Multimodal with Image support
-  - Ollama (e.g., llama2-vision, gemma3, phi4) - Multimodal incl. Video
+  - o1 + o3 with reasoning effort configuration support
+  - Ollama (e.g., llama3.2-vision, gemma3, phi4, ...) - Multimodal incl. Video
   - MLX (Local inference on Apple Silicon)
   - Pico client via Ollama API
+  - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
   - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
 
 ### Use-cases
