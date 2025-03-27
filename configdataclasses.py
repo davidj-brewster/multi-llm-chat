@@ -8,9 +8,18 @@ import logging
 # These would typically be defined in this file or imported
 # Supported model configurations
 SUPPORTED_MODELS = {
-    "claude": ["claude", "haiku"],
+    "claude": [
+        "claude", "sonnet", "haiku", 
+        "claude-3-5-sonnet", "claude-3-5-haiku", 
+        "claude-3-7", "claude-3-7-sonnet",
+        "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"
+    ],
     "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning","gemini-2.0-flash-exp", "gemini"],
-    "openai": ["gpt-4-vision", "gpt-4o"],
+    "openai": [
+        "gpt-4-vision", "gpt-4o", "o1", "o3",
+        "o1-reasoning-high", "o1-reasoning-medium", "o1-reasoning-low",
+        "o3-reasoning-high", "o3-reasoning-medium", "o3-reasoning-low"
+    ],
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"]      # All MLX models supported
 }
@@ -19,17 +28,17 @@ SUPPORTED_MODELS = {
 SUPPORTED_FILE_TYPES = {
     "image": {
         "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
-        "max_size": 20 * 1024 * 1024,  # 20MB
+        "max_size": 200 * 1024 * 1024,  # 20MB
         "max_resolution": (8192, 8192)
     },
     "video": {
         "extensions": [".mp4", ".mov", ".avi", ".webm"],
-        "max_size": 100 * 1024 * 1024,  # 100MB
+        "max_size": 3000 * 1024 * 1024,  # 100MB
         "max_resolution": (3840, 2160)  # 4K
     },
     "text": {
         "extensions": [".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml"],
-        "max_size": 10 * 1024 * 1024  # 10MB
+        "max_size": 300 * 1024 * 1024  # 10MB
     }
 }
 logger = getLogger(__name__)

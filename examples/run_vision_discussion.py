@@ -54,7 +54,7 @@ async def main():
 
     logger.info(f"Starting vision discussion with config: {config_path}")
     # Get file paths from command line if provided
-    file_paths = sys.argv[2:] if len(sys.argv) > 2 else []
+    file_paths = sys.argv[2:] if len(sys.argv) >= 2 else sys.argv[1] if len(sys.argv) == 1 else []
     
     # Ensure the configuration file exists
     if not os.path.exists(config_path):
@@ -80,6 +80,31 @@ async def main():
         # Extract model information
         human_model_id, human_model_config = models[0]
         ai_model_id, ai_model_config = models[1]
+        
+        # Check for reasoning capabilities
+        human_model_type = human_model_config.type.lower()
+        ai_model_type = ai_model_config.type.lower()
+        
+        # Log reasoning capabilities
+        if any(r in human_model_type for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]):
+            logger.info(f"Human model supports reasoning: {human_model_type}")
+            
+            # Extract reasoning level from model name if present
+            reasoning_levels = ["high", "medium", "low", "none"]
+            for level in reasoning_levels:
+                if level in human_model_type:
+                    logger.info(f"Human model using reasoning level: {level}")
+                    break
+        
+        if any(r in ai_model_type for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]):
+            logger.info(f"AI model supports reasoning: {ai_model_type}")
+            
+            # Extract reasoning level from model name if present
+            reasoning_levels = ["high", "medium", "low", "none"]
+            for level in reasoning_levels:
+                if level in ai_model_type:
+                    logger.info(f"AI model using reasoning level: {level}")
+                    break
 
         # Override file paths if provided via command line
         if file_paths:

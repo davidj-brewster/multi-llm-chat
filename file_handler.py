@@ -99,7 +99,13 @@ class FileConfig:
             "max_resolution": (8192, 8192),
             "supported_models": {
                 "gemini": ["gemini-pro-vision", "gemini-2-pro", "gemini-2-reasoning", "gemini-2-flash-lite", "gemini-2.0-flash-exp", "gemini"],
-                "claude": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus", "claude-3-7-sonnet", "claude-3-5-haiku"],
+                "claude": [
+                    "claude", "sonnet", "haiku",
+                    "claude-3-sonnet", "claude-3-haiku", "claude-3-opus",
+                    "claude-3-5-sonnet", "claude-3-5-haiku", 
+                    "claude-3-7", "claude-3-7-sonnet",
+                    "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"
+                ],
                 "openai": ["gpt-4-vision", "gpt-4o", "o1", "chatgpt-latest"]
             }
         },
@@ -120,7 +126,7 @@ class FileConfig:
             "max_size": 5 * 1024 * 1024,  # 5MB
             "supported_models": {
                 "gemini": ["gemini-pro", "gemini-pro-vision"],
-                "claude": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus"],
+                "claude": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus", "claude-3-7-sonnet", "claude-3-5-haiku", "claude-3-7", "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"],
                 "openai": ["gpt-4", "gpt-4o"],
                 "ollama": ["llava", "gemma3", "phi4"]
             }
@@ -667,8 +673,8 @@ class ConversationMediaHandler:
                     # Create thumbnail
                     logger.info(f"Creating thumbnail for image {file_path} with original size {img.size}")
 
-                    # Calculate thumbnail size maintaining aspect ratio with longest side = 512px
-                    max_dimension = 1024
+                    # Calculate thumbnail size maintaining aspect ratio with longest side = 768px
+                    max_dimension = 768
                     width, height = img.size
                     if width > height:
                         thumb_size = (max_dimension, int(height * max_dimension / width))
@@ -746,13 +752,13 @@ class ConversationMediaHandler:
             metadata.duration = duration
 
             # Process video at lower framerate and resolution
-            target_fps = 2  # Configurable
+            target_fps = 5  # Configurable
 
             # Use max_dimension from metadata if available
-            max_dimension = 512  # Default to 512 if not specified
+            max_dimension = 768 # Default to 512 if not specified
             if hasattr(metadata, 'max_resolution') and metadata.max_resolution:
                 try:
-                    # Parse max_resolution string (e.g., "512x512")
+                    # Parse max_resolution string 
                     resolution_parts = metadata.max_resolution.split('x')
                     if len(resolution_parts) == 2:
                         # Use the first dimension as max_dimension

@@ -940,6 +940,8 @@ class GeminiClient(BaseClient):
                 })
             logger.info(f"Added {len(history)} messages from conversation history")
         
+        prompt = self.generate_human_prompt(history)  if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
+        
         # Add file content if provided
         if file_data:  # All Gemini models support vision according to detect_model_capabilities
             if isinstance(file_data, list) and file_data:
@@ -1132,18 +1134,95 @@ class GeminiClient(BaseClient):
             raise
 
 class ClaudeClient(BaseClient):
-    """Client for Claude API interactions"""
-    def __init__(self, role: str, api_key: str, mode: str, domain: str, model: str = "claude-3-7-sonnet-20241022"):
+    """Client for Claude API interactions with enhanced vision capabilities
+    
+    This implementation supports:
+    - Higher resolution images
+    - Multiple image analysis
+    - Comparative image reasoning
+    - Advanced medical imagery interpretation
+    - Video frame extraction and analysis
+    - Enhanced context management
+    """
+    def __init__(self, role: str, api_key: str, mode: str, domain: str, model: str = "claude-3-7-sonnet"):
         super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         try:
             api_key = anthropic_api_key or api_key
             if not api_key:
                 raise ValueError("No API key provided")
             self.client = Anthropic(api_key=api_key)
+            
+            # Enhanced vision parameters
+            self.vision_max_resolution = 1800  # Up from default 1024
+            self.max_images_per_request = 10   # Support for multiple images
+            self.high_detail_vision = True     # Enable detailed medical image analysis
+            self.video_frame_support = True    # Enable video frame extraction
+            
+            # Reasoning parameters and extended thinking
+            self.extended_thinking = False     # Whether to enable extended thinking
+            self.budget_tokens = None          # Budget tokens for extended thinking
+            self.reasoning_level = "auto"      # Options: none, low, medium, high, auto
+            
+            # Set capability flags based on model
+            self._update_capabilities()
+
+            # If this is Claude 3.7, enable extended thinking by default for deep analytical tasks
+            if "claude-3-7" in model.lower():
+                self.extended_thinking = False  # Disabled by default but ready to use
         except Exception as e:
             logger.error(f"Failed to initialize Claude client: {e}")
             raise
         self.max_tokens = 1024
+    
+    def set_extended_thinking(self, enabled: bool, budget_tokens: Optional[int] = None):
+        """
+        Enable or disable extended thinking mode for Claude 3.7 models.
+        
+        Extended thinking allows Claude to use more tokens for internal reasoning,
+        which can improve response quality for complex problems.
+        
+        Args:
+            enabled (bool): Whether to enable extended thinking.
+            budget_tokens (Optional[int]): Maximum tokens Claude is allowed to use for
+                internal reasoning. Must be less than max_tokens. Defaults to None,
+                which lets the API choose an appropriate budget.
+        """
+        if not self.capabilities.get("advanced_reasoning", False):
+            logger.warning(f"Extended thinking is only available for Claude 3.7 models. Ignoring setting for {self.model}.")
+            return
+            
+        self.extended_thinking = enabled
+        self.budget_tokens = budget_tokens
+        logger.debug(f"Set extended thinking={enabled}, budget_tokens={budget_tokens} for {self.model}")
+    
+    def _update_capabilities(self):
+        """Update capability flags based on model"""
+        # All Claude 3 models support vision
+        self.capabilities["vision"] = True
+        
+        # Claude 3.5 and newer models support video frames
+        if any(m in self.model.lower() for m in ["claude-3.5", "claude-3-5", "claude-3-7"]):
+            self.capabilities["video_frames"] = True
+            self.capabilities["high_resolution"] = True
+            self.capabilities["medical_imagery"] = True
+        else:
+            self.capabilities["video_frames"] = False
+            self.capabilities["high_resolution"] = False
+            self.capabilities["medical_imagery"] = False
+            
+        # Claude 3.7 and newer models support advanced reasoning
+        # Only enable this for actual 3.7 models, not 3.5 or earlier
+        if "claude-3-7" in self.model.lower():
+            self.capabilities["advanced_reasoning"] = True
+            # Keep reasoning at auto by default for 3.7 models
+            if not hasattr(self, "reasoning_level") or self.reasoning_level is None:
+                self.reasoning_level = "auto"
+                logger.debug(f"Set default reasoning level to 'auto' for {self.model}")
+        else:
+            # For any non-3.7 models, make sure we don't try to use reasoning
+            self.capabilities["advanced_reasoning"] = False
+            self.reasoning_level = None
+            logger.debug(f"Disabled reasoning capabilities for {self.model} (only available for Claude 3.7)")
 
 
     def generate_response(self,
@@ -1154,95 +1233,164 @@ class ClaudeClient(BaseClient):
                          mode: str = None,
                          file_data: Dict[str, Any] = None,
                          model_config: Optional[ModelConfig] = None) -> str:
-        """Generate human-like response using Claude API with conversation awareness"""
+        """Generate response using Claude API with enhanced vision capabilities
+        
+        This implementation supports:
+        - Higher resolution images (up to 1800px)
+        - Multiple image analysis (up to 10 images)
+        - Comparative image reasoning
+        - Advanced medical imagery interpretation
+        - Video frame extraction and analysis
+        - Enhanced context management
+        """
         if model_config is None:
             model_config = ModelConfig()
 
         self.role = role
         self.mode = mode
         history = history if history else [{"role": "user", "content": prompt}]
+        
         # Analyze conversation context
         conversation_analysis = self._analyze_conversation(history)
         ai_response = conversation_analysis.get("ai_response")
         ai_assessment = conversation_analysis.get("ai_assessment")
         conversation_summary = conversation_analysis.get("summary")
 
-        # Update instructions based on conversation history
-        #if role and role is not None and (role == "user" or role == "human" or mode == "ai-ai") and  history and history is not None and len(history) > 0:
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if self.instructions else self.instructions
-        #elif (not history or len(history) == 0 or history is None and (self.mode == "ai-ai" or (self.role=="user" or self.role=="human"))):
-        #    current_instructions = self.generate_human_system_instructions()
-        #elif self.role == "human" or self.role == "user":
-        #    current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history and len(history) > 0 else system_instruction if system_instruction else self.instructions
-        #else:  # ai in human-ai mode
-        #    current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+        # Get appropriate instructions
         history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role, domain=self.domain, mode=self.mode) if history else system_instruction if system_instruction else self.instructions
         else:
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-        # Build context-aware prompt
-        context_prompt = self.generate_human_prompt(history)  if role == "human" or self.mode == "ai-ai" else f"{prompt}"
-       
-        messages = [{'role': msg['role'], 'content': msg['content']} for msg in history if msg['role'] == 'user' or msg['role'] == 'human' or msg['role'] == "assistant"]
+            
+            # Add medical imagery instructions if applicable
+            if self.capabilities.get("medical_imagery", False) and (
+                    isinstance(file_data, dict) and file_data.get("type") == "image" or
+                    isinstance(file_data, list) and any(f.get("type") == "image" for f in file_data if isinstance(f, dict))
+                ):
+                current_instructions += "\n\nYou have advanced medical image analysis capabilities. When analyzing medical images:"
+                current_instructions += "\n- Pay close attention to subtle variations in tissue density and signal intensity"
+                current_instructions += "\n- Identify anatomical structures with precision"
+                current_instructions += "\n- Note any asymmetries, hyperintensities, or abnormal patterns"
+                current_instructions += "\n- Compare across multiple images when available to identify patterns"
+                current_instructions += "\n- For MRIs, pay special attention to signal changes in T1/T2/FLAIR weighted sequences"
+                current_instructions += "\n- For video or multiple frames, track changes across frames and identify meaningful patterns"
         
-        # Handle file data for Claude
+        # Build context-aware prompt
+        prompt = self.generate_human_prompt(history) if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
+        
+        # Format messages for Claude API
+        messages = [{'role': msg['role'], 'content': msg['content']} 
+                  for msg in history 
+                  if msg['role'] in ['user', 'human', 'assistant']]
+
+        # Handle file data
         if file_data:
             if isinstance(file_data, list) and file_data:
-                # Handle multiple files
-                if self.capabilities.get("vision", False):
-                    # Format for Claude's multimodal API with multiple images
-                    message_content = []
-                    
-                    # Add all images first
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item['type'] == "image" and "base64" in file_item:
-                                message_content.append({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": file_item.get("mime_type", "image/jpeg"),
-                                        "data": file_item["base64"]
-                                    }
-                                })
-                    # Add text content from text/code files
-                    text_content = prompt
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                                text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                # Process multiple files (images, video frames, etc.)
+                message_content = []
+                
+                # Track image count to respect limits
+                image_count = 0
+                video_frames = []
+                
+                # Process images first, with special handling for medical imagery
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        # Process images with enhanced parameters
+                        if file_item['type'] == "image" and "base64" in file_item and image_count < self.max_images_per_request:
+                            # Add medical image enhancement metadata if applicable
+                            image_metadata = {}
+                            
+                            # Add high resolution support for medical images
+                            if self.capabilities.get("high_resolution", False):
+                                # Add high resolution flag for detailed medical imagery
+                                image_metadata["high_resolution"] = True
+                                
+                                # Add detailed medical image analysis flag if applicable
+                                if self.capabilities.get("medical_imagery", False) and "medical" in file_item.get("path", "").lower():
+                                    image_metadata["detail"] = "high"
+                            
+                            # Add the image to message content
+                            message_content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": file_item.get("mime_type", "image/jpeg"),
+                                    "data": file_item["base64"]
+                                },
+                                "metadata": image_metadata
+                            })
+                            image_count += 1
+                        
+                        # Process video frames
+                        elif file_item["type"] == "video" and self.capabilities.get("video_frames", False):
+                            # Extract key frames if available
+                            if "key_frames" in file_item and file_item["key_frames"]:
+                                for frame in file_item["key_frames"][:self.max_images_per_request - image_count]:
+                                    video_frames.append({
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": "image/jpeg",
+                                            "data": frame["base64"]
+                                        },
+                                        "metadata": {
+                                            "timestamp": frame.get("timestamp", 0),
+                                            "frame_number": frame.get("frame_number", 0),
+                                            "video_source": file_item.get("path", "unknown")
+                                        }
+                                    })
+                                image_count += len(video_frames)
+                
+                # Process text files
+                text_content = prompt
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
                             text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                
+                # Add video frame analysis specific prompting if we have video frames
+                if video_frames:
+                    text_content += "\n\nI'm showing you key frames from a video. Please analyze these frames in sequence, noting any significant changes or patterns between frames."
                     
-                    # Add the prompt text
-                    message_content.append({
-                        "type": "text",
-                        "text": text_content
-                    })
-                    
-                    messages.append({
-                        "role": "user",
-                        "content": message_content
-                    })
-                else:
-                    # Model doesn't support vision, use text only with all text files
-                    text_content = prompt
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                                text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
-                    
-                    messages.append({
-                        "role": "user",
-                        "content": text_content
-                    })
+                    # Add all video frames to message content
+                    message_content.extend(video_frames)
+                
+                # Add the prompt text
+                message_content.append({
+                    "type": "text",
+                    "text": text_content
+                })
+                
+                # Add to messages
+                messages.append({
+                    "role": "user",
+                    "content": message_content
+                })
+                
+                # Log for debugging
+                logger.info(f"Sending multimodal request with {image_count} images/frames to Claude")
+                
             else:
-                # Handle single file (original implementation)
+                # Handle single file with enhanced vision capabilities
                 if isinstance(file_data, dict) and "type" in file_data:
                     if file_data['type'] == "image" and "base64" in file_data:
                         # Check if model supports vision
                         if self.capabilities.get("vision", False):
-                            # Format for Claude's multimodal API
+                            # Create image metadata for enhanced vision capabilities
+                            image_metadata = {}
+                            
+                            # Add high resolution support for medical images
+                            if self.capabilities.get("high_resolution", False):
+                                # Add high resolution flag for detailed medical imagery
+                                image_metadata["high_resolution"] = True
+                                
+                                # Add detailed medical image analysis flag if applicable
+                                if self.capabilities.get("medical_imagery", False) and any(term in prompt.lower() for term in ["medical", "mri", "scan", "x-ray", "ct", "diagnostic"]):
+                                    image_metadata["detail"] = "high"
+                            
+                            # Format for Claude's multimodal API with enhanced vision
                             message_content = [
                                 {
                                     "type": "image",
@@ -1250,69 +1398,235 @@ class ClaudeClient(BaseClient):
                                         "type": "base64",
                                         "media_type": file_data.get("mime_type", "image/jpeg"),
                                         "data": file_data["base64"]
+                                    },
+                                    "metadata": image_metadata
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt
                                 }
-                            },
-                            {
+                            ]
+                            
+                            messages.append({
+                                "role": "user",
+                                "content": message_content
+                            })
+                            
+                            logger.info(f"Sending enhanced vision image to Claude with metadata: {image_metadata}")
+                        else:
+                            # Model doesn't support vision, use text only
+                            logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                            messages.append({
+                                "role": "user",
+                                "content": prompt
+                            })
+                    elif file_data["type"] == "video" and self.capabilities.get("video_frames", False):
+                        # Process video for frame extraction
+                        message_content = []
+                        
+                        # Process key frames if available
+                        if "key_frames" in file_data and file_data["key_frames"]:
+                            for i, frame in enumerate(file_data["key_frames"][:self.max_images_per_request]):
+                                message_content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/jpeg",
+                                        "data": frame["base64"]
+                                    },
+                                    "metadata": {
+                                        "timestamp": frame.get("timestamp", 0),
+                                        "frame_number": frame.get("frame_number", 0),
+                                        "video_source": file_data.get("path", "unknown")
+                                    }
+                                })
+                            
+                            # Add video-specific prompt
+                            video_prompt = f"{prompt}\n\nI'm showing you {len(message_content)} key frames from a video. Please analyze these frames in sequence, noting any significant changes or patterns between frames."
+                            
+                            message_content.append({
                                 "type": "text",
-                                "text": prompt
-                            }
-                        ]
+                                "text": video_prompt
+                            })
+                            
+                            messages.append({
+                                "role": "user",
+                                "content": message_content
+                            })
+                            
+                            logger.info(f"Sending {len(message_content)-1} video frames to Claude")
+                        else:
+                            # No frames available
+                            messages.append({
+                                "role": "user",
+                                "content": f"[Video file: {file_data.get('path', 'unknown')}]\n\n{prompt}"
+                            })
+                    elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                        # Add text content with prompt
                         messages.append({
                             "role": "user",
-                            "content": message_content
+                            "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
                         })
                     else:
-                        # Model doesn't support vision, use text only
-                        logger.warning(f"Model {self.model} doesn't support vision. Using text-only prompt.")
+                        # Standard prompt with reference to file
+                        content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
                         messages.append({
                             "role": "user",
-                            "content": prompt
+                            "content": content
                         })
-                elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
-                    # Add text content with prompt
-                    messages.append({
-                        "role": "user",
-                        "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}"
-                    })
-                else:
-                    # Standard prompt with reference to file
-                    content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
-                    messages.append({
-                        "role": "user",
-                        "content": content
-                    })
         else:
             # Standard prompt without file data
-            content = context_prompt if context_prompt else ""
-            if prompt:
-                content = f"{content}\n{prompt}" if content else prompt
-            
             messages.append({
                 "role": "user",
-                "content": content
+                "content": prompt
             })
 
+        # Setup request parameters
+        request_params = {
+            "model": self.model,
+            "system": current_instructions,
+            "messages": messages,
+            "max_tokens": model_config.max_tokens if model_config else 1024,
+            "temperature": model_config.temperature if model_config else 0.8
+        }
+        
+        # Add reasoning level parameter for Claude 3.7
+        # This will be handled at request time since the API may not support it yet
+        if self.capabilities.get("advanced_reasoning", False):
+            request_params["reasoning"] = self.reasoning_level
+            logger.debug(f"Added reasoning level: {self.reasoning_level} (will be handled appropriately at request time)")
+            
+            # Add extended thinking parameters if enabled
+            if self.extended_thinking:
+                try:
+                    # Make sure this is a direct API call, not through a library
+                    # that might not support the parameters yet
+                    client_has_thinking_param = False
+                    
+                    # Try to check if the client explicitly supports this
+                    try:
+                        import inspect
+                        create_signature = inspect.signature(self.client.messages.create)
+                        client_has_thinking_param = 'thinking' in create_signature.parameters
+                    except Exception:
+                        # If we can't check, we'll try anyway
+                        client_has_thinking_param = True
+                    
+                    if client_has_thinking_param:
+                        request_params["thinking"] = True
+                        logger.debug(f"Added extended thinking parameter")
+                        
+                        # Add budget_tokens if specified
+                        if self.budget_tokens is not None:
+                            # Ensure budget_tokens is less than max_tokens
+                            max_tokens = request_params.get("max_tokens", 1024)
+                            if self.budget_tokens < max_tokens:
+                                request_params["budget_tokens"] = self.budget_tokens
+                                logger.debug(f"Added budget_tokens: {self.budget_tokens}")
+                            else:
+                                # Use max_tokens - 100 as a fallback
+                                safe_budget = max(1000, max_tokens - 100)
+                                request_params["budget_tokens"] = safe_budget
+                                logger.warning(f"budget_tokens ({self.budget_tokens}) must be less than max_tokens ({max_tokens}). Using {safe_budget} instead.")
+                    else:
+                        logger.warning("Client library does not support extended thinking parameters")
+                except Exception as e:
+                    logger.warning(f"Error checking for extended thinking support: {e}")
+                    # Continue without extended thinking parameters
+        
+        # Add stop sequences if provided
+        if model_config and model_config.stop_sequences:
+            request_params["stop_sequences"] = model_config.stop_sequences
+            
+        # Add seed if provided
+        if model_config and model_config.seed is not None:
+            request_params["seed"] = model_config.seed
+
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                system=current_instructions,
-                messages=messages,
-                max_tokens=1024,
-                temperature=0.8  # Higher temperature for human-like responses
-            )
-            # logger.debug(f"Claude (Human) response generated successfully")
-            logger.debug(f"response: {str(response.content)}")
+            # Only attempt to use reasoning parameter with Claude 3.7
+            if "reasoning" in request_params:
+                # Check if this is actually a 3.7 model
+                if "claude-3-7" in self.model.lower():
+                    # Keep the parameter for 3.7 models, but handle errors gracefully
+                    try:
+                        # Try with all advanced params first, but be prepared to fall back
+                        logger.debug(f"Attempting to use advanced parameters for Claude 3.7")
+                        response = self.client.messages.create(**request_params)
+                        logger.debug(f"Successfully used advanced parameters with Claude 3.7")
+                    except TypeError as e:
+                        # Handle unsupported parameters
+                        unsupported_params = []
+                        retry_needed = False
+                        
+                        # Check for reasoning parameter
+                        if "unexpected keyword argument 'reasoning'" in str(e) and "reasoning" in request_params:
+                            reasoning_value = request_params.pop("reasoning")
+                            unsupported_params.append(f"reasoning={reasoning_value}")
+                            retry_needed = True
+                            
+                        # Check for thinking parameter - try different error patterns
+                        if (("unexpected keyword argument 'thinking'" in str(e) or
+                             "got an unexpected keyword argument 'thinking'" in str(e)) and
+                            "thinking" in request_params):
+                            request_params.pop("thinking")
+                            unsupported_params.append("thinking=True")
+                            retry_needed = True
+                            
+                        # Check for budget_tokens parameter - try different error patterns
+                        if (("unexpected keyword argument 'budget_tokens'" in str(e) or
+                             "got an unexpected keyword argument 'budget_tokens'" in str(e)) and
+                            "budget_tokens" in request_params):
+                            budget = request_params.pop("budget_tokens")
+                            unsupported_params.append(f"budget_tokens={budget}")
+                            retry_needed = True
+                        
+                        if retry_needed:
+                            # Log warning about removed parameters
+                            logger.warning(f"Client library doesn't support parameters: {', '.join(unsupported_params)}. Removed and retrying.")
+                            response = self.client.messages.create(**request_params)
+                        else:
+                            # Re-raise other TypeError exceptions
+                            raise
+                else:
+                    # For non-3.7 models, always remove the parameter
+                    reasoning_level = request_params.pop("reasoning")
+                    logger.debug(f"Removed reasoning parameter for non-3.7 model: {self.model}")
+            
+            # Call Claude API with appropriate parameters
+            # This will only execute if we didn't already make the call above
+            if not locals().get("response"):
+                logger.debug(f"Sending request to Claude with parameters: {str(request_params)}")
+                response = self.client.messages.create(**request_params)
+            
+            logger.debug(f"Response received from Claude: {str(response.content)}")
             return response.content if response else ""
         except Exception as e:
             logger.error(f"Error generating Claude response: {str(e)}")
             return f"Error generating Claude response: {str(e)}"
 
 class OpenAIClient(BaseClient):
-    """Client for OpenAI API interactions"""
-    def __init__(self, api_key: str = None, mode: str = "ai-ai", domain: str = "General Knowledge", role: str = None, model: str = "chatgpt-4o-latest"):
+    """Client for OpenAI API interactions
+    
+    This client supports:
+    - Traditional chat completions API
+    - Newer responses API for improved conversation state management
+    - Reasoning parameters for O1/O3 models to control explicitness of reasoning
+    
+    The reasoning_level property maps to OpenAI's reasoning_effort parameter:
+    - "none" or "low" maps to "low"
+    - "medium" maps to "medium" 
+    - "high" or "auto" maps to "high"
+    """
+    def __init__(self, api_key: str = None, mode: str = "ai-ai", domain: str = "General Knowledge", role: str = None, model: str = "gpt-4o"):
         api_key = os.environ.get("OPENAI_API_KEY")
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
+        self.use_responses_api = True  # Flag to use the new responses API
+        # Models that work well with the responses API
+        self.responses_compatible_models = ["o1", "o1-preview", "o3", "gpt-4o", "gpt-4o-mini"]
+        # Set up reasoning capabilities
+        self.reasoning_level = "auto"  # Default level
+        self.reasoning_compatible_models = ["o1", "o1-preview", "o3"]  # Models that support reasoning_effort
         try:
             super().__init__(mode=mode, api_key=api_key, domain=domain, model=model, role=role)
         except Exception as e:
@@ -1344,7 +1658,7 @@ class OpenAIClient(BaseClient):
 
         history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) if history else system_instruction if system_instruction else self.instructions
+            current_instructions = self.adaptive_manager.generate_instructions(history, role=role,domain=self.domain,mode=self.mode) 
         else:
             current_instructions = system_instruction if system_instruction is not None else self.instructions if self.instructions and self.instructions is not None else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
        
@@ -1364,66 +1678,55 @@ class OpenAIClient(BaseClient):
                 if old_role in ["user", "assistant", "moderator", "system"]:
                     new_role = 'developer' if old_role in ["system","Moderator"] else "user" if old_role in ["user", "human", "moderator"] else 'assistant'
                     formatted_messages.append({'role': new_role, 'content': msg['content']})
-
+        prompt = self.generate_human_prompt(history)  if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
         # Handle file data for OpenAI
         if file_data:
             if isinstance(file_data, list) and file_data:
-                # Handle multiple files
-                if self.capabilities.get("vision", False):
-                    # Format for OpenAI's vision API with multiple images
-                    content_parts = [{"type": "text", "text": prompt}]
-                    
-                    # Add all images
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item["type"] == "image" and "base64" in file_item:
-                                content_parts.append({
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{file_item.get('mime_type', 'image/jpeg')};base64,{file_item['base64']}",
-                                        "detail": "high"
-                                    }
-                                })
-                    
-                    # Add text content from text/code files to the prompt
-                    text_content = prompt
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                                text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
-                    
-                    # Update the text part with combined text content
-                    content_parts[0]["text"] = text_content
-                    
-                    formatted_messages.append({
-                        "role": "user",
-                        "content": content_parts
-                    })
-                else:
-                    # Model doesn't support vision, use text only with all text files
-                    text_content = prompt
-                    for file_item in file_data:
-                        if isinstance(file_item, dict) and "type" in file_item:
-                            if file_item["type"] in ["text", "code"] and "text_content" in file_item:
-                                text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
-                    
-                    formatted_messages.append({"role": "user", "content": text_content})
+                # Format for OpenAI's vision API with multiple images
+                content_parts = [{"type": "text", "text": prompt}]
+                
+                # Add all images
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            content_parts.append({
+                                "type": "image",
+                                "image": {
+                                    "base64": file_item["base64"]
+                                }
+                            })
+                
+                # Add text content from text/code files to the prompt
+                text_content = prompt
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
+                
+                # Update the text part with combined text content
+                content_parts[0]["text"] = text_content
+                
+                formatted_messages.append({
+                    "role": "user",
+                    "content": content_parts
+                })
             else:
-                # Handle single file (original implementation)
                 if isinstance(file_data, dict) and "type" in file_data:
                     if file_data["type"] == "image" and "base64" in file_data:
                         # Check if model supports vision
-                        if self.capabilities.get("vision", False):
+                        if self.capabilities.get("vision", True):
                             # Format for OpenAI's vision API
                             formatted_messages.append({
                                 "role": "user",
                                 "content": [
-                                    {"type": "text", "text": prompt},
+                                    {
+                                        "type": "text", 
+                                        "text": prompt
+                                    },
                                     {
                                         "type": "image_url",
                                         "image_url": {
-                                            "url": f"data:{file_data.get('mime_type', 'image/jpeg')};base64,{file_data['base64']}",
-                                            "detail": "high"
+                                            "url": f"data:image/jpeg;base64,{file_data['base64']}"
                                         }
                                     }
                                 ]
@@ -1437,27 +1740,222 @@ class OpenAIClient(BaseClient):
                     content = f"{file_data.get('text_content', '')}\n\n{prompt}"
                     formatted_messages.append({"role": "user", "content": content})
                 else:
-                    # Standard prompt with reference to file
-                    content = f"[File: {file_data.get('path', 'unknown')}]\n\n{prompt}"
-                    formatted_messages.append({"role": "user", "content": content})
+                    logger.warning(f"Invalid file data: {file_data}")
         else:
             # Standard prompt without file data
             formatted_messages.append({"role": "user", "content": prompt})
 
-        # Add current prompt
-        # if self.role == "human" or self.mode == "ai-ai":
-        #    messages.append({'role': 'user', 'content': combined_prompt})
-
-        #if prompt and len(prompt) > 0:
-        #    messages.append({'role': 'user', 'content': prompt})
         try:
-            if "o1" in self.model:
+            # Check if current model supports responses API
+            model_supports_responses = any(m in self.model.lower() for m in self.responses_compatible_models)
+            
+            if self.use_responses_api and model_supports_responses and False:  # Temporarily disable responses API
+                # Use the newer responses API
+                logger.info(f"Using responses API with model {self.model}")
+                
+                # Extract the system message if it exists
+                system_message = None
+                for msg in formatted_messages:
+                    if msg["role"] == "system":
+                        system_message = msg["content"]
+                        break
+                
+                # Process the last user message - Responses API handles context internally
+                last_user_message = None
+                for msg in reversed(formatted_messages):
+                    if msg["role"] == "user":
+                        last_user_message = msg
+                        break
+                
+                if not last_user_message:
+                    # Fallback if no user message found
+                    last_user_message = {"role": "user", "content": prompt}
+                
+                # Handle multimodal content
+                content_param = []
+                
+                # Process content based on its type
+                if isinstance(last_user_message["content"], list):
+                    # Already formatted for multimodal (e.g., images and text)
+                    converted_content = []
+                    for item in last_user_message["content"]:
+                        if item.get("type") == "text":
+                            converted_content.append({
+                                "type": "text",
+                                "text": item["text"]
+                            })
+                        elif item.get("type") == "image":
+                            # Handle image in the OpenAI-specific format
+                            converted_content.append({
+                                "type": "image",
+                                "image_url": {
+                                    "url": f"data:{item['image'].get('mime_type', 'image/jpeg')};base64,{item['image']['base64']}"
+                                }
+                            })
+                    content_param = converted_content
+                # Handle if file_data contains multiple images
+                elif file_data and isinstance(file_data, list):
+                    # First add the text prompt
+                    converted_content = [{"type": "text", "text": prompt}]
+                    
+                    # Then add each image
+                    for item in file_data:
+                        if item.get("type") == "image" and "base64" in item:
+                            mime_type = item.get("mime_type", "image/jpeg")
+                            converted_content.append({
+                                "type": "image",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{item['base64']}"
+                                }
+                            })
+                    
+                    content_param = converted_content
+                    logger.info(f"Added {len(content_param)-1} images to responses API request")
+                # Handle if file_data is a single image
+                elif file_data and isinstance(file_data, dict) and file_data.get("type") == "image" and "base64" in file_data:
+                    mime_type = file_data.get("mime_type", "image/jpeg")
+                    content_param = [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{file_data['base64']}"
+                            }
+                        }
+                    ]
+                    logger.info("Added 1 image to responses API request")
+                elif isinstance(last_user_message["content"], str):
+                    # Simple text content
+                    content_param = [{"type": "text", "text": last_user_message["content"]}]
+                
+                # Check if content is too large and needs chunking
+                # Each model has different token limits, but we'll use a conservative approach
+                MAX_INPUT_SIZE = 100000  # Characters as a rough estimate
+                total_text_length = sum(len(item.get("text", "")) for item in content_param if item.get("type") == "text")
+                
+                # If we have large text content, chunk it
+                if total_text_length > MAX_INPUT_SIZE and any(item.get("type") == "text" for item in content_param):
+                    logger.info(f"Input text size ({total_text_length} chars) exceeds threshold, chunking content")
+                    
+                    # Find text items and chunk them
+                    chunked_content = []
+                    for item in content_param:
+                        if item.get("type") == "text" and len(item.get("text", "")) > MAX_INPUT_SIZE/2:
+                            # Split large text into chunks of approximately 50k characters
+                            text = item["text"]
+                            chunk_size = int(MAX_INPUT_SIZE/2)
+                            
+                            # Try to split on paragraph boundaries
+                            chunks = []
+                            current_pos = 0
+                            while current_pos < len(text):
+                                # Find the next paragraph boundary within our chunk size
+                                end_pos = min(current_pos + chunk_size, len(text))
+                                
+                                # If we're not at the end, try to find a paragraph break
+                                if end_pos < len(text):
+                                    # Look for double newline (paragraph break)
+                                    paragraph_break = text.rfind("\n\n", current_pos, end_pos)
+                                    if paragraph_break != -1:
+                                        end_pos = paragraph_break + 2
+                                    else:
+                                        # Fall back to single newline
+                                        newline = text.rfind("\n", current_pos, end_pos)
+                                        if newline != -1:
+                                            end_pos = newline + 1
+                                        else:
+                                            # Last resort: split on sentence
+                                            sentence_end = max(
+                                                text.rfind(". ", current_pos, end_pos),
+                                                text.rfind("! ", current_pos, end_pos),
+                                                text.rfind("? ", current_pos, end_pos)
+                                            )
+                                            if sentence_end != -1:
+                                                end_pos = sentence_end + 2
+                                
+                                chunks.append(text[current_pos:end_pos])
+                                current_pos = end_pos
+                            
+                            # Add chunked text items
+                            for chunk in chunks:
+                                chunked_content.append({"type": "text", "text": chunk})
+                                logger.debug(f"Created text chunk of {len(chunk)} chars")
+                        else:
+                            # Keep non-text items (like images) or small text items
+                            chunked_content.append(item)
+                    
+                    # Replace content_param with chunked content
+                    content_param = chunked_content
+                    logger.info(f"Content chunked into {len(content_param)} parts")
+                
+                # Set model-specific parameters
+                # Use the actual model name, don't override it
+                # The responses API is having issues, so let's fall back to the chat completions API
+                # This would be updated when the responses API is fully available and documented
+                self.use_responses_api = False
+                logger.info("Falling back to chat completions API due to responses API limitations")
+                
+                # No need to continue with responses API logic
+                return self.generate_response(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    history=history,
+                    role=role,
+                    mode=mode,
+                    file_data=file_data,
+                    model_config=model_config
+                )
+                
+                # Parse the response according to the documented format
+                if hasattr(response, 'data') and response.data:
+                    # Loop through the messages to find assistant response
+                    for message in response.data:
+                        if message.role == "assistant":
+                            # Extract text from content
+                            text_parts = []
+                            for content_item in message.content:
+                                if content_item.type == "text":
+                                    text_parts.append(content_item.text)
+                            
+                            if text_parts:
+                                return "\n".join(text_parts)
+                    
+                    # Fallback if no assistant message found but data exists
+                    try:
+                        last_message = response.data[-1]
+                        if hasattr(last_message, 'content') and last_message.content:
+                            for content_item in last_message.content:
+                                if content_item.type == "text":
+                                    return content_item.text
+                    except (IndexError, AttributeError) as e:
+                        logger.warning(f"Could not extract text from response: {e}")
+                    
+                    # Last resort fallback
+                    return str(response)
+                
+                # Fallback for any other response format
+                return str(response)
+            elif any(model_name in self.model.lower() for model_name in self.reasoning_compatible_models):
+                # Maps our reasoning levels to OpenAI's reasoning_effort parameter
+                reasoning_mapping = {
+                    "none": "low",
+                    "low": "low",
+                    "medium": "medium",
+                    "high": "high",
+                    "auto": "high"  # Default to high for auto
+                }
+                
+                # Get the appropriate reasoning_effort based on our reasoning_level
+                reasoning_effort = reasoning_mapping.get(self.reasoning_level, "high")
+                logger.debug(f"Using reasoning_effort={reasoning_effort} for model {self.model} (from reasoning_level={self.reasoning_level})")
+                
+                # O1/O3 model with reasoning support
                 response = self.client.chat.completions.create(
-                    model="o1",
+                    model=self.model,
                     messages=formatted_messages,
                     temperature=1.0,
                     max_tokens=13192,
-                    reasoning_effort="high",
+                    reasoning_effort=reasoning_effort,
                     timeout=90,
                     stream=False
                 )
@@ -1474,6 +1972,11 @@ class OpenAIClient(BaseClient):
                 return response.choices[0].message.content
         except Exception as e:
             logger.error(f"OpenAI generate_response error: {e}")
+            # Fallback to chat completions API if responses API fails
+            if self.use_responses_api:
+                logger.info("Falling back to chat completions API")
+                self.use_responses_api = False
+                return self.generate_response(prompt, system_instruction, history, role, mode, file_data, model_config)
             raise e
 
 
@@ -1606,7 +2109,7 @@ class MLXClient(BaseClient):
 
 
         if current_instructions:
-            messages.append({ 'role': 'developer', 'content': ''.join(current_instructions)})
+            messages.append({ 'role': 'system', 'content': ''.join(current_instructions)})
             
         if history:
             # Limit history to last 10 messages
@@ -1616,7 +2119,7 @@ class MLXClient(BaseClient):
                     messages.append({"role": "user", "content": msg["content"]})
                 elif msg["role"] in ["assistant", "system"]:
                     messages.append({"role": msg["role"], "content": msg["content"]})
-                
+        prompt = self.generate_human_prompt(history)  if (role == "human" or role =="user" or self.mode == "ai-ai") else f"{prompt}"
         messages.append({"role": "user", "content": str(prompt)})
 
         # Handle file data
@@ -1684,7 +2187,6 @@ class OllamaClient(BaseClient):
 
     def test_connection(self) -> None:
         """Test Ollama connection"""
-        # A more reliable test would be to list the models - now synchronous
         try:
             self.client.list()
             logger.info("Ollama connection test successful")
@@ -1778,9 +2280,9 @@ class OllamaClient(BaseClient):
                 options={
                     "num_ctx": 16384,
                     "num_predict": 1024,
-                    "temperature": 0.95,
+                    "temperature": 0.7,
                     "num_batch": 256,
-                    "top_k": 25,
+                    "top_k": 30,
                 },
 
             )

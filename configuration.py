@@ -33,9 +33,18 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # Supported model configurations
 SUPPORTED_MODELS = {
-    "claude": ["claude", "haiku"],
+    "claude": [
+        "claude", "sonnet", "haiku", 
+        "claude-3-5-sonnet", "claude-3-5-haiku", 
+        "claude-3-7", "claude-3-7-sonnet",
+        "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"
+    ],
     "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning","gemini-2.0-flash-exp", "gemini"],
-    "openai": ["gpt-4-vision", "gpt-4o"],
+    "openai": [
+        "gpt-4-vision", "gpt-4o", "o1", "o3",
+        "o1-reasoning-high", "o1-reasoning-medium", "o1-reasoning-low",
+        "o3-reasoning-high", "o3-reasoning-medium", "o3-reasoning-low"
+    ],
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"]      # All MLX models supported
 }
@@ -49,7 +58,7 @@ SUPPORTED_FILE_TYPES = {
     },
     "video": {
         "extensions": [".mp4", ".mov", ".avi", ".webm"],
-        "max_size": 100 * 1024 * 1024,  # 100MB
+        "max_size": 300 * 1024 * 1024,  # 100MB
         "max_resolution": (3840, 2160)  # 4K
     },
     "text": {
@@ -283,7 +292,8 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
         "vision": True,
         "streaming": False,
         "function_calling": False,
-        "code_understanding": False
+        "code_understanding": False,
+        "advanced_reasoning": False
     }
 
     # Extract model type from ModelConfig or use string directly
@@ -334,6 +344,18 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
         # Function calling capability
         if "gpt-4" in model_type or "claude" in model_type:
             capabilities["function_calling"] = True
+            
+        # Advanced reasoning capability for Claude 3.7
+        if "claude-3-7" in model_type:
+            capabilities["advanced_reasoning"] = True
+            
+        # Advanced reasoning for OpenAI O1/O3 models
+        if any(model_name in model_type.lower() for model_name in ["o1", "o1-preview", "o3"]):
+            capabilities["advanced_reasoning"] = True
+            
+        # Explicitly check for reasoning variants
+        if any(variant in model_type for variant in ["claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"]):
+            capabilities["advanced_reasoning"] = True
 
         return capabilities
     except Exception as e:

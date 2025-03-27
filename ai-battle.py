@@ -37,6 +37,51 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Model templates for accessing different model versions with reasoning levels
+OPENAI_MODELS = {
+    # Base models (text-only with reasoning support)
+    "o1": {"model": "o1", "reasoning_level": "auto", "multimodal": False},
+    "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": False},
+    
+    # O1 with reasoning levels (text-only)
+    "o1-reasoning-high": {"model": "o1", "reasoning_level": "high", "multimodal": False},
+    "o1-reasoning-medium": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
+    "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": False},
+    
+    # O3 with reasoning levels (text-only)
+    "o3-reasoning-high": {"model": "o3", "reasoning_level": "high", "multimodal": False},
+    "o3-reasoning-medium": {"model": "o3", "reasoning_level": "medium", "multimodal": False},
+    "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": False},
+    
+    # Multimodal models without reasoning parameter
+    "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
+    "gpt-4o-mini": {"model": "gpt-4o-mini", "reasoning_level": None, "multimodal": True},
+}
+
+CLAUDE_MODELS = {
+    # Base models (newest versions)
+    "claude": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
+    "sonnet": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
+    "haiku": {"model": "claude-3-5-haiku", "reasoning_level": None, "extended_thinking": False},
+    
+    # Specific versions
+    "claude-3-5-sonnet": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
+    "claude-3-5-haiku": {"model": "claude-3-5-haiku", "reasoning_level": None, "extended_thinking": False},
+    "claude-3-7": {"model": "claude-3-7-sonnet", "reasoning_level": "auto", "extended_thinking": False},
+    "claude-3-7-sonnet": {"model": "claude-3-7-sonnet", "reasoning_level": "auto", "extended_thinking": False},
+    
+    # Claude 3.7 with reasoning levels
+    "claude-3-7-reasoning": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": False},
+    "claude-3-7-reasoning-high": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": False},
+    "claude-3-7-reasoning-medium": {"model": "claude-3-7-sonnet", "reasoning_level": "medium", "extended_thinking": False},
+    "claude-3-7-reasoning-low": {"model": "claude-3-7-sonnet", "reasoning_level": "low", "extended_thinking": False},
+    "claude-3-7-reasoning-none": {"model": "claude-3-7-sonnet", "reasoning_level": "none", "extended_thinking": False},
+    
+    # Claude 3.7 with extended thinking
+    "claude-3-7-extended": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": True, "budget_tokens": 8000},
+    "claude-3-7-extended-deep": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": True, "budget_tokens": 16000},
+}
+
 @dataclass
 class ModelConfig:
     """Configuration for AI model parameters"""
@@ -87,7 +132,6 @@ class ConversationManager:
         return self._media_handler
 
     def _get_client(self, model_name: str) -> Optional[BaseClient]:
-        """Get or create a client instance."""
         """
         Get an existing client instance or create a new one for the specified model.
 
@@ -104,16 +148,49 @@ class ConversationManager:
         """
         if model_name not in self._initialized_clients:
             try:
-                if model_name == "claude":
-                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-7-sonnet-latest")
-                elif model_name == "haiku":
-                    client = ClaudeClient(role=None, api_key=self.claude_api_key, mode=self.mode, domain=self.domain, model="claude-3-5-haiku")
+                # Handle Claude models using templates
+                if model_name in CLAUDE_MODELS:
+                    model_config = CLAUDE_MODELS[model_name]
+                    client = ClaudeClient(
+                        role=None, 
+                        api_key=self.claude_api_key, 
+                        mode=self.mode, 
+                        domain=self.domain, 
+                        model=model_config["model"]
+                    )
+                    
+                    # Set reasoning level if specified
+                    if model_config["reasoning_level"] is not None:
+                        client.reasoning_level = model_config["reasoning_level"]
+                        logger.debug(f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}")
+                    
+                    # Set extended thinking if enabled
+                    if model_config.get("extended_thinking", False):
+                        budget_tokens = model_config.get("budget_tokens", None)
+                        client.set_extended_thinking(True, budget_tokens)
+                        logger.debug(f"Enabled extended thinking with budget_tokens={budget_tokens} for {model_name}")
+                
+                # Handle OpenAI models using templates
+                elif model_name in OPENAI_MODELS:
+                    model_config = OPENAI_MODELS[model_name]
+                    client = OpenAIClient(
+                        api_key=self.openai_api_key, 
+                        role=None, 
+                        mode=self.mode, 
+                        domain=self.domain, 
+                        model=model_config["model"]
+                    )
+                    
+                    # Set reasoning level if specified
+                    if model_config["reasoning_level"] is not None:
+                        client.reasoning_level = model_config["reasoning_level"]
+                        logger.debug(f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}")
+                
+                # Handle other model types
                 elif model_name == "gpt-4o":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="chatgpt-latest")
                 elif model_name == "gpt-4o-mini":
                     client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-mini")
-                elif model_name == "o1":
-                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="o1")
                 elif model_name == "gemini":
                     client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
                 elif model_name == "gemini-2-reasoning":
@@ -545,11 +622,27 @@ class ConversationManager:
                 return []
 
         # Extract core topic from initial prompt
-        core_topic = initial_prompt
-        if "Topic:" in initial_prompt:
-            core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
-        elif "GOAL" in initial_prompt:
-            core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
+        core_topic = initial_prompt.strip()
+        try:
+            if "Topic:" in initial_prompt:
+                core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+            elif "GOAL:" in initial_prompt:
+                # Try to extract goal with more robust parsing
+                goal_parts = initial_prompt.split("GOAL:")[1].strip()
+                if "(" in goal_parts and ")" in goal_parts:
+                    # Extract content between parentheses if present
+                    try:
+                        core_topic = "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                    except IndexError:
+                        # If extraction fails, use the whole goal part
+                        core_topic = "GOAL: " + goal_parts
+                else:
+                    # Just use what comes after "GOAL:"
+                    core_topic = "GOAL: " + goal_parts.split("\n")[0].strip()
+        except (IndexError, Exception) as e:
+            # If parsing fails, use the full prompt
+            logger.warning(f"Failed to extract core topic from prompt: {e}")
+            core_topic = initial_prompt.strip()
 
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
 
@@ -574,10 +667,26 @@ class ConversationManager:
 
         # Extract core topic from initial prompt
         core_topic = initial_prompt.strip()
-        if "Topic:" in initial_prompt:
-            core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
-        elif "GOAL" in initial_prompt:
-            core_topic = "GOAL: " + initial_prompt.split("GOAL:")[1].split("(")[1].split(")")[0].strip()
+        try:
+            if "Topic:" in initial_prompt:
+                core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+            elif "GOAL:" in initial_prompt:
+                # Try to extract goal with more robust parsing
+                goal_parts = initial_prompt.split("GOAL:")[1].strip()
+                if "(" in goal_parts and ")" in goal_parts:
+                    # Extract content between parentheses if present
+                    try:
+                        core_topic = "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                    except IndexError:
+                        # If extraction fails, use the whole goal part
+                        core_topic = "GOAL: " + goal_parts
+                else:
+                    # Just use what comes after "GOAL:"
+                    core_topic = "GOAL: " + goal_parts.split("\n")[0].strip()
+        except (IndexError, Exception) as e:
+            # If parsing fails, use the full prompt
+            logger.warning(f"Failed to extract core topic from prompt: {e}")
+            core_topic = initial_prompt.strip()
 
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
 
