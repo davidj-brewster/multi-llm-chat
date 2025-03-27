@@ -15,41 +15,47 @@ from typing import Dict, List, Tuple
 
 # File mapping: source file -> destination directory
 FILE_MAPPING = {
-    'ai-battle.py': 'src/core',
-    'adaptive_instructions.py': 'src/core',
-    'configuration.py': 'src/configuration',
-    'configdataclasses.py': 'src/configuration',
-    'config_integration.py': 'src/configuration',
-    'model_clients.py': 'src/model_clients',
-    'file_handler.py': 'src/file_handling',
-    'metrics_analyzer.py': 'src/metrics',
-    'arbiter_v4.py': 'src/arbiter',
-    'shared_resources.py': 'src/utilities',
-    'context_analysis.py': 'src/metrics',
+    "ai-battle.py": "src/core",
+    "adaptive_instructions.py": "src/core",
+    "configuration.py": "src/configuration",
+    "configdataclasses.py": "src/configuration",
+    "config_integration.py": "src/configuration",
+    "model_clients.py": "src/model_clients",
+    "file_handler.py": "src/file_handling",
+    "metrics_analyzer.py": "src/metrics",
+    "arbiter_v4.py": "src/arbiter",
+    "shared_resources.py": "src/utilities",
+    "context_analysis.py": "src/metrics",
 }
 
 # Create __init__.py files in these directories
 INIT_DIRS = [
-    'src',
-    'src/core',
-    'src/configuration',
-    'src/model_clients',
-    'src/file_handling',
-    'src/metrics',
-    'src/arbiter',
-    'src/utilities',
+    "src",
+    "src/core",
+    "src/configuration",
+    "src/model_clients",
+    "src/file_handling",
+    "src/metrics",
+    "src/arbiter",
+    "src/utilities",
 ]
 
 # Rename files during migration
 RENAME_FILES = {
-    'ai-battle.py': 'conversation_manager.py',
-    'arbiter_v4.py': 'arbiter.py',
+    "ai-battle.py": "conversation_manager.py",
+    "arbiter_v4.py": "arbiter.py",
 }
 
 # Import patterns to update
 IMPORT_PATTERNS = [
-    (r'from (adaptive_instructions|configuration|configdataclasses|config_integration|model_clients|file_handler|metrics_analyzer|arbiter_v4|shared_resources|context_analysis) import', r'from src.\1 import'),
-    (r'import (adaptive_instructions|configuration|configdataclasses|config_integration|model_clients|file_handler|metrics_analyzer|arbiter_v4|shared_resources|context_analysis)', r'import src.\1'),
+    (
+        r"from (adaptive_instructions|configuration|configdataclasses|config_integration|model_clients|file_handler|metrics_analyzer|arbiter_v4|shared_resources|context_analysis) import",
+        r"from src.\1 import",
+    ),
+    (
+        r"import (adaptive_instructions|configuration|configdataclasses|config_integration|model_clients|file_handler|metrics_analyzer|arbiter_v4|shared_resources|context_analysis)",
+        r"import src.\1",
+    ),
 ]
 
 
@@ -60,10 +66,12 @@ def create_directories() -> None:
         os.makedirs(directory, exist_ok=True)
 
     for directory in INIT_DIRS:
-        init_file = os.path.join(directory, '__init__.py')
+        init_file = os.path.join(directory, "__init__.py")
         if not os.path.exists(init_file):
-            with open(init_file, 'w') as f:
-                f.write(f'"""{os.path.basename(directory)} module for AI Battle framework."""\n')
+            with open(init_file, "w") as f:
+                f.write(
+                    f'"""{os.path.basename(directory)} module for AI Battle framework."""\n'
+                )
             print(f"Created {init_file}")
 
 
@@ -96,7 +104,7 @@ def update_imports() -> None:
     for _, dest_dir in FILE_MAPPING.items():
         for root, _, files in os.walk(dest_dir):
             for file in files:
-                if not file.endswith('.py'):
+                if not file.endswith(".py"):
                     continue
 
                 file_path = os.path.join(root, file)
@@ -105,7 +113,7 @@ def update_imports() -> None:
 
 def update_file_imports(file_path: str) -> None:
     """Update imports in a single file."""
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         content = f.read()
 
     original_content = content
@@ -113,7 +121,7 @@ def update_file_imports(file_path: str) -> None:
         content = re.sub(pattern, replacement, content)
 
     if content != original_content:
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             f.write(content)
         print(f"Updated imports in {file_path}")
 
@@ -136,5 +144,5 @@ def main() -> None:
     print("You can delete them after verifying that everything works correctly.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

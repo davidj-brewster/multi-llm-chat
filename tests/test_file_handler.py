@@ -1,4 +1,5 @@
 """Unit tests for file_handler module."""
+
 import os
 import pytest
 from pathlib import Path
@@ -10,42 +11,48 @@ from file_handler import (
     ConversationMediaHandler,
     MediaProcessingError,
     UnsupportedMediaTypeError,
-    MediaValidationError
+    MediaValidationError,
 )
+
 
 @pytest.fixture
 def test_output_dir(tmp_path):
     """Create temporary directory for test outputs."""
     return tmp_path / "test_output"
 
+
 @pytest.fixture
 def media_handler(test_output_dir):
     """Create ConversationMediaHandler instance for testing."""
     return ConversationMediaHandler(str(test_output_dir))
 
+
 @pytest.fixture
 def test_image(tmp_path):
     """Create a test image file."""
     image_path = tmp_path / "test.jpg"
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     img.save(image_path)
     return image_path
+
 
 @pytest.fixture
 def test_text_file(tmp_path):
     """Create a test text file."""
     text_path = tmp_path / "test.txt"
-    with open(text_path, 'w', encoding='utf-8') as f:
+    with open(text_path, "w", encoding="utf-8") as f:
         f.write("Test content")
     return text_path
+
 
 @pytest.fixture
 def large_image(tmp_path):
     """Create a test image that exceeds size limits."""
     image_path = tmp_path / "large.jpg"
-    img = Image.new('RGB', (10000, 10000), color='blue')
+    img = Image.new("RGB", (10000, 10000), color="blue")
     img.save(image_path)
     return image_path
+
 
 class TestFileConfig:
     """Tests for FileConfig class."""
@@ -65,6 +72,7 @@ class TestFileConfig:
         assert FileConfig.can_handle_media("gemini-pro-vision", "image") is True
         assert FileConfig.can_handle_media("claude-3-sonnet", "image") is True
         assert FileConfig.can_handle_media("gpt-4", "video") is False
+
 
 class TestConversationMediaHandler:
     """Tests for ConversationMediaHandler class."""
@@ -105,9 +113,7 @@ class TestConversationMediaHandler:
     def test_prepare_media_message(self, media_handler, test_image):
         """Test preparation of media message."""
         message = media_handler.prepare_media_message(
-            str(test_image),
-            conversation_context="Test context",
-            role="user"
+            str(test_image), conversation_context="Test context", role="user"
         )
         assert message is not None
         assert message["role"] == "user"
@@ -119,13 +125,12 @@ class TestConversationMediaHandler:
         """Test creation of media analysis prompt."""
         metadata = media_handler.process_file(str(test_image))
         prompt = media_handler.create_media_prompt(
-            metadata,
-            context="Test analysis",
-            task="analyze"
+            metadata, context="Test analysis", task="analyze"
         )
         assert "Test analysis" in prompt
         assert "100x100 pixels" in prompt
         assert "analyze" in prompt.lower()
+
 
 def test_file_metadata_creation():
     """Test FileMetadata dataclass."""
@@ -134,7 +139,7 @@ def test_file_metadata_creation():
         type="image",
         size=1000,
         mime_type="image/jpeg",
-        dimensions=(100, 100)
+        dimensions=(100, 100),
     )
     assert metadata.path == "test.jpg"
     assert metadata.type == "image"

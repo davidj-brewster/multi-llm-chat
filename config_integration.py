@@ -1,4 +1,5 @@
 """Configuration integration module for AI Battle framework"""
+
 import os
 import yaml
 import logging
@@ -10,26 +11,37 @@ from typing import Dict, List, Optional, Union
 from pathlib import Path
 import json
 
+
 # Custom exception classes for better error handling
 class ConfigIntegrationError(Exception):
     """Base exception for configuration integration errors."""
+
     pass
+
 
 class ConfigFileNotFoundError(ConfigIntegrationError):
     """Raised when a configuration file is not found."""
+
     pass
+
 
 class InvalidConfigFormatError(ConfigIntegrationError):
     """Raised when the configuration format is invalid."""
+
     pass
+
 
 class ModelConfigurationError(ConfigIntegrationError):
     """Raised when there's an error in model configuration."""
+
     pass
+
 
 class SystemInstructionsError(ConfigIntegrationError):
     """Raised when there's an error loading system instructions."""
+
     pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +51,7 @@ SUPPORTED_MODELS = {
     "gemini": ["gemini-pro", "gemini-pro-vision"],
     "openai": ["gpt-4-vision", "gpt-4"],
     "ollama": ["*"],  # All Ollama models supported
-    "mlx": ["*"]      # All MLX models supported
+    "mlx": ["*"],  # All MLX models supported
 }
 
 # File type configurations
@@ -47,18 +59,29 @@ SUPPORTED_FILE_TYPES = {
     "image": {
         "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
         "max_size": 20 * 1024 * 1024,  # 20MB
-        "max_resolution": (8192, 8192)
+        "max_resolution": (8192, 8192),
     },
     "video": {
         "extensions": [".mp4", ".mov", ".avi", ".webm", ".mkv"],
         "max_size": 200 * 1024 * 1024,  # 200MB
-        "max_resolution": (3840, 2160)  # 4K
+        "max_resolution": (3840, 2160),  # 4K
     },
     "text": {
-        "extensions": [".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml"],
-        "max_size": 100 * 1024 * 1024  # 10M0B
-    }
+        "extensions": [
+            ".txt",
+            ".md",
+            ".py",
+            ".js",
+            ".html",
+            ".css",
+            ".json",
+            ".yaml",
+            ".yml",
+        ],
+        "max_size": 100 * 1024 * 1024,  # 10M0B
+    },
 }
+
 
 @dataclass
 class TimeoutConfig:
@@ -96,6 +119,7 @@ class TimeoutConfig:
         ...     notify_on=["timeout", "error"]
         ... )
     """
+
     request: int = 600  # Default 10 minutes
     retry_count: int = 1
     notify_on: List[str] = None
@@ -115,10 +139,13 @@ class TimeoutConfig:
             valid_events = ["timeout", "retry", "error"]
             invalid_events = [e for e in self.notify_on if e not in valid_events]
             if invalid_events:
-                raise InvalidConfigFormatError(f"Invalid notification events: {invalid_events}. Valid events are: {', '.join(valid_events)}")
+                raise InvalidConfigFormatError(
+                    f"Invalid notification events: {invalid_events}. Valid events are: {', '.join(valid_events)}"
+                )
         except Exception as e:
             logger.error(f"Error validating TimeoutConfig: {e}")
             raise
+
 
 @dataclass
 class FileConfig:
@@ -168,6 +195,7 @@ class FileConfig:
         ...     type="text"
         ... )
     """
+
     path: str
     type: str
     max_resolution: Optional[str] = None
@@ -187,7 +215,9 @@ class FileConfig:
             # Validate file type
             if self.type not in SUPPORTED_FILE_TYPES:
                 supported_types = ", ".join(SUPPORTED_FILE_TYPES.keys())
-                raise InvalidConfigFormatError(f"Unsupported file type: {self.type}. Supported types: {supported_types}")
+                raise InvalidConfigFormatError(
+                    f"Unsupported file type: {self.type}. Supported types: {supported_types}"
+                )
 
             type_config = SUPPORTED_FILE_TYPES[self.type]
 
@@ -212,21 +242,30 @@ class FileConfig:
                 requested_res = self.max_resolution.upper()
                 if requested_res == "4K":
                     if self.type != "video":
-                        raise InvalidConfigFormatError("4K resolution only supported for video files")
+                        raise InvalidConfigFormatError(
+                            "4K resolution only supported for video files"
+                        )
                 elif "X" in requested_res:
                     try:
                         width, height = map(int, requested_res.split("X"))
                         if width > max_width or height > max_height:
-                            raise InvalidConfigFormatError(f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}")
+                            raise InvalidConfigFormatError(
+                                f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}"
+                            )
                     except ValueError:
-                        raise InvalidConfigFormatError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT")
+                        raise InvalidConfigFormatError(
+                            f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT"
+                        )
         except ConfigIntegrationError:
             # Re-raise specific configuration errors
             raise
         except Exception as e:
             logger.error(f"Unexpected error validating file config: {e}")
             logger.debug(traceback.format_exc())
-            raise ConfigIntegrationError(f"Unexpected error validating file configuration: {e}")
+            raise ConfigIntegrationError(
+                f"Unexpected error validating file configuration: {e}"
+            )
+
 
 @dataclass
 class ModelConfig:
@@ -279,6 +318,7 @@ class ModelConfig:
         ...     role="assistant"
         ... )
     """
+
     type: str
     role: str
     persona: Optional[str] = None
@@ -295,11 +335,14 @@ class ModelConfig:
 
         # Validate role
         if self.role not in ["human", "assistant"]:
-            raise ValueError(f"Invalid role: {self.role}. Must be 'human' or 'assistant'")
+            raise ValueError(
+                f"Invalid role: {self.role}. Must be 'human' or 'assistant'"
+            )
 
         # Validate persona if provided
         if self.persona and not isinstance(self.persona, str):
             raise ValueError("Persona must be a string")
+
 
 @dataclass
 class DiscussionConfig:
@@ -359,6 +402,7 @@ class DiscussionConfig:
         ...     timeouts=TimeoutConfig(request=300, retry_count=2)
         ... )
     """
+
     turns: int
     models: Dict[str, ModelConfig]
     goal: str
@@ -387,6 +431,7 @@ class DiscussionConfig:
             self.timeouts = TimeoutConfig(**self.timeouts)
         elif self.timeouts is None:
             self.timeouts = TimeoutConfig()
+
 
 def load_system_instructions() -> Dict:
     """
@@ -425,7 +470,9 @@ def load_system_instructions() -> Dict:
     """
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
-        raise SystemInstructionsError("System instructions file not found at docs/system_instructions.md")
+        raise SystemInstructionsError(
+            "System instructions file not found at docs/system_instructions.md"
+        )
 
     content = instructions_path.read_text()
 
@@ -458,6 +505,7 @@ def load_system_instructions() -> Dict:
             continue
 
     return instructions
+
 
 def load_config(path: str) -> DiscussionConfig:
     """
@@ -523,7 +571,9 @@ def load_config(path: str) -> DiscussionConfig:
                     # Replace template parameters
                     instruction_text = json.dumps(template)
                     for key, value in params.items():
-                        instruction_text = instruction_text.replace(f"{{{key}}}", str(value))
+                        instruction_text = instruction_text.replace(
+                            f"{{{key}}}", str(value)
+                        )
 
                     model_config["persona"] = json.loads(instruction_text)
 
@@ -531,6 +581,7 @@ def load_config(path: str) -> DiscussionConfig:
     except (TypeError, ValueError, KeyError) as e:
         logger.error(f"Error processing configuration: {e}")
         raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e}")
+
 
 def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
     """
@@ -574,14 +625,10 @@ def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
         - Streaming capability is determined by model provider (Claude, GPT)
         - Function calling capability is limited to specific models
     """
-    capabilities = {
-        "vision": False,
-        "streaming": False,
-        "function_calling": False
-    }
+    capabilities = {"vision": False, "streaming": False, "function_calling": False}
 
     try:
-        if not hasattr(model_config, 'type') or not model_config.type:
+        if not hasattr(model_config, "type") or not model_config.type:
             logger.warning("Invalid model_config provided to detect_model_capabilities")
             return capabilities
 
@@ -597,6 +644,7 @@ def detect_model_capabilities(model_config: ModelConfig) -> Dict[str, bool]:
         logger.error(f"Error detecting model capabilities: {e}")
         # Return default capabilities on error
     return capabilities
+
 
 def run_from_config(config_path: str) -> None:
     """
@@ -656,43 +704,61 @@ def run_from_config(config_path: str) -> None:
             from ai_battle import ConversationManager
         except ImportError as e:
             logger.error(f"Failed to import ConversationManager: {e}")
-            raise ImportError(f"Failed to import ConversationManager: {e}. Make sure ai_battle.py is in the current directory.")
+            raise ImportError(
+                f"Failed to import ConversationManager: {e}. Make sure ai_battle.py is in the current directory."
+            )
 
         # Create manager
         manager = ConversationManager(
             domain=config.goal,
             mode="ai-ai",  # Default to ai-ai mode for config-based initialization
             human_delay=20.0,
-            min_delay=10
+            min_delay=10,
         )
 
         # Get model names
         try:
-            human_model = next(name for name, model in config.models.items()
-                              if model.role == "human")
-            ai_model = next(name for name, model in config.models.items()
-                           if model.role == "assistant")
+            human_model = next(
+                name for name, model in config.models.items() if model.role == "human"
+            )
+            ai_model = next(
+                name
+                for name, model in config.models.items()
+                if model.role == "assistant"
+            )
         except StopIteration:
-            logger.error("Configuration must include both a human and an assistant model")
-            raise InvalidConfigFormatError("Configuration must include both a human model (role='human') and an assistant model (role='assistant')")
+            logger.error(
+                "Configuration must include both a human and an assistant model"
+            )
+            raise InvalidConfigFormatError(
+                "Configuration must include both a human model (role='human') and an assistant model (role='assistant')"
+            )
 
         # Run conversation
         try:
-            conversation = asyncio.run(manager.run_conversation(
-                initial_prompt=config.goal,
-                human_model=human_model,
-                ai_model=ai_model,
-                mode="ai-ai",
-                human_system_instruction=config.models[human_model].persona,
-                ai_system_instruction=config.models[ai_model].persona,
-                rounds=config.turns
-            ))
+            conversation = asyncio.run(
+                manager.run_conversation(
+                    initial_prompt=config.goal,
+                    human_model=human_model,
+                    ai_model=ai_model,
+                    mode="ai-ai",
+                    human_system_instruction=config.models[human_model].persona,
+                    ai_system_instruction=config.models[ai_model].persona,
+                    rounds=config.turns,
+                )
+            )
 
             # Save conversation
             safe_prompt = manager._sanitize_filename_part(config.goal)
             time_stamp = datetime.datetime.now().strftime("%m%d-%H%M")
             filename = f"conversation-config_{safe_prompt}_{time_stamp}.html"
-            manager.save_conversation(conversation, filename=filename, human_model=human_model, ai_model=ai_model, mode="ai-ai")
+            manager.save_conversation(
+                conversation,
+                filename=filename,
+                human_model=human_model,
+                ai_model=ai_model,
+                mode="ai-ai",
+            )
         except Exception as e:
             logger.error(f"Error running conversation: {e}")
             logger.debug(traceback.format_exc())

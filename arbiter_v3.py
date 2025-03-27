@@ -1,4 +1,5 @@
 """Enhanced arbiter module combining functionality from v1 and v2"""
+
 import json
 import logging
 import datetime
@@ -14,36 +15,40 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 MODEL_CONFIG = ConfigDict(
     arbitrary_types_allowed=True,
-    extra='allow',
+    extra="allow",
     json_schema_extra={
         "additionalProperties": True,
         "type": "object",
         "properties": {
             "conversation_quality": {
                 "type": "object",
-                "additionalProperties": {"type": "number"}
+                "additionalProperties": {"type": "number"},
             },
             "participant_analysis": {
                 "type": "object",
                 "additionalProperties": {
                     "type": "object",
-                    "additionalProperties": {"type": "number"}
-                }
-            }
-        }
-    }
+                    "additionalProperties": {"type": "number"},
+                },
+            },
+        },
+    },
 )
+
 
 # Base class with global config
 class ConfiguredModel(BaseModel):
     model_config = MODEL_CONFIG
 
+
 # Define the model configuration
-ExtraValues = Literal['allow']
+ExtraValues = Literal["allow"]
 # Keep the enhanced model classes from v2
+
 
 class NLPAnalysis(ConfiguredModel):
     """Advanced NLP analysis results"""
+
     entities: Dict[str, List[str]] = Field(default_factory=dict)
     key_phrases: List[str] = Field(default_factory=list)
     argument_structure: Dict[str, List[str]] = Field(default_factory=dict)
@@ -53,8 +58,10 @@ class NLPAnalysis(ConfiguredModel):
     discourse_markers: Dict[str, int] = Field(default_factory=dict)
     reference_chains: List[List[str]] = Field(default_factory=list)
 
+
 class ConversationMetrics(ConfiguredModel):
     """Metrics for conversation quality assessment"""
+
     coherence: float = Field(default=0.0, ge=0.0, le=1.0)
     relevance: float = Field(default=0.0, ge=0.0, le=1.0)
     depth: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -64,8 +71,10 @@ class ConversationMetrics(ConfiguredModel):
     goal_progress: float = Field(default=0.0, ge=0.0, le=1.0)
     strategy_effectiveness: float = Field(default=0.0, ge=0.0, le=1.0)
 
+
 class ParticipantMetrics(ConfiguredModel):
     """Metrics for individual participant performance"""
+
     response_quality: float = Field(default=0.0, ge=0.0, le=1.0)
     knowledge_accuracy: float = Field(default=0.0, ge=0.0, le=1.0)
     reasoning_depth: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -73,14 +82,18 @@ class ParticipantMetrics(ConfiguredModel):
     strategy_adherence: float = Field(default=0.0, ge=0.0, le=1.0)
     adaptation: float = Field(default=0.0, ge=0.0, le=1.0)
 
+
 class AssertionEvidence(ConfiguredModel):
     """Evidence supporting a grounded assertion"""
+
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     sources: List[Dict[str, str]] = Field(default_factory=list)
     verification_method: str = "search"
 
+
 class ArbiterResult(ConfiguredModel):
     """Complete results of conversation arbitration"""
+
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
     participant_metrics: Dict[str, Dict[str, ParticipantMetrics]]
@@ -91,9 +104,11 @@ class ArbiterResult(ConfiguredModel):
     execution_timestamp: str
     conversation_ids: Dict[str, str]
 
+
 # Add the Gemini model response schema
 class AssessmentSchema(ConfiguredModel):
     """Schema for Gemini model response validation"""
+
     conversation_quality: Dict[str, float] = Field(
         default_factory=dict,
         description="Quality metrics for the conversation",
@@ -115,21 +130,23 @@ class AssessmentSchema(ConfiguredModel):
         description="Suggestions for improvement",
     )
 
+
 class AssertionGrounder:
     """Verifies and grounds assertions using search and NLP"""
-    #model_config = MODEL_CONFIG
+
+    # model_config = MODEL_CONFIG
     def __init__(self, search_client: Any):
         self.model_config = MODEL_CONFIG
         self.search_client = search_client
         try:
-            self.nlp = spacy.load('en_core_web_trf')
+            self.nlp = spacy.load("en_core_web_trf")
         except Exception as e:
             logger.warning(f"Could not load spaCy model: {e}")
             self.nlp = None
 
-    def _calculate_confidence(self,
-                            sources: List[Dict[str, str]],
-                            assertion: str) -> float:
+    def _calculate_confidence(
+        self, sources: List[Dict[str, str]], assertion: str
+    ) -> float:
         """Calculate confidence score using improved metrics"""
         if not sources:
             return 0.0
@@ -138,11 +155,14 @@ class AssertionGrounder:
         source_score = min(len(sources) / 3.0, 1.0)
 
         # Authority scoring (from v1)
-        authority_score = sum(0.2 if ".edu" in s["url"] or
-                                   ".gov" in s["url"] or
-                                   ".org" in s["url"]
-                            else 0.1
-                            for s in sources) / len(sources)
+        authority_score = sum(
+            (
+                0.2
+                if ".edu" in s["url"] or ".gov" in s["url"] or ".org" in s["url"]
+                else 0.1
+            )
+            for s in sources
+        ) / len(sources)
 
         # Enhanced consistency scoring (from v2)
         try:
@@ -157,44 +177,54 @@ class AssertionGrounder:
             else:
                 # Fallback to basic SequenceMatcher (from v1)
                 from difflib import SequenceMatcher
+
                 consistency_scores = []
                 for i, s1 in enumerate(sources):
-                    for s2 in sources[i+1:]:
-                        ratio = SequenceMatcher(None,
-                                              s1["excerpt"],
-                                              s2["excerpt"]).ratio()
+                    for s2 in sources[i + 1 :]:
+                        ratio = SequenceMatcher(
+                            None, s1["excerpt"], s2["excerpt"]
+                        ).ratio()
                         consistency_scores.append(ratio)
-                consistency_score = sum(consistency_scores) / len(consistency_scores) if consistency_scores else 0.5
+                consistency_score = (
+                    sum(consistency_scores) / len(consistency_scores)
+                    if consistency_scores
+                    else 0.5
+                )
         except Exception as e:
             logger.error(f"Error in consistency calculation: {e}")
             consistency_score = 0.5
 
         # Combined scoring with weights
         final_score = (
-            source_score * 0.3 +
-            authority_score * 0.3 +
-            consistency_score * 0.4
+            source_score * 0.3 + authority_score * 0.3 + consistency_score * 0.4
         )
 
         return min(final_score, 1.0)
 
+
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
-    #model_config=MODEL_CONFIG
-    def __init__(self, api_key: str,
-                 model: str = "gemini-exp-1206",
-                 search_client: Optional[Any] = None):
+
+    # model_config=MODEL_CONFIG
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-exp-1206",
+        search_client: Optional[Any] = None,
+    ):
         self.model_config = MODEL_CONFIG
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.grounder = AssertionGrounder(search_client) if search_client else None
         try:
-            self.nlp = spacy.load('en_core_web_trf')
+            self.nlp = spacy.load("en_core_web_trf")
         except Exception as e:
             logger.warning(f"Could not load spaCy model: {e}")
             self.nlp = None
 
-    async def analyze_conversation_flow(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    async def analyze_conversation_flow(
+        self, messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Analyze conversation flow patterns and transitions"""
         try:
             # Use spaCy for linguistic analysis if available
@@ -211,14 +241,16 @@ class ConversationArbiter:
                 # Calculate topic coherence
                 topic_shifts = 0
                 for i in range(1, len(topics)):
-                    if not any(self._text_similarity(topics[i], prev) > 0.3
-                             for prev in topics[max(0, i-3):i]):
+                    if not any(
+                        self._text_similarity(topics[i], prev) > 0.3
+                        for prev in topics[max(0, i - 3) : i]
+                    ):
                         topic_shifts += 1
 
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / len(messages)),
                     "topic_depth": len(set(topics)) / len(messages),
-                    "topic_distribution": self._calculate_topic_distribution(topics)
+                    "topic_distribution": self._calculate_topic_distribution(topics),
                 }
 
             else:
@@ -229,7 +261,11 @@ class ConversationArbiter:
 
         except Exception as e:
             logger.error(f"Error analyzing conversation flow: {e}")
-            return {"topic_coherence": 0.5, "topic_depth": 0.5, "topic_distribution": {}}
+            return {
+                "topic_coherence": 0.5,
+                "topic_depth": 0.5,
+                "topic_distribution": {},
+            }
 
     def _text_similarity(self, text1: str, text2: str) -> float:
         """Calculate semantic similarity between two texts"""
@@ -245,20 +281,25 @@ class ConversationArbiter:
         """Calculate normalized topic frequencies"""
         counts = Counter(topics)
         total = sum(counts.values())
-        return {topic: count/total for topic, count in counts.items()}
+        return {topic: count / total for topic, count in counts.items()}
 
-    def _compare_conversations(self,
-                             ai_ai_analysis: Dict,
-                             human_ai_analysis: Dict) -> Tuple[str, List[str]]:
+    def _compare_conversations(
+        self, ai_ai_analysis: Dict, human_ai_analysis: Dict
+    ) -> Tuple[str, List[str]]:
         """Compare analyses to determine winner"""
 
         # Calculate overall scores with grounding bonus
         def calc_score(analysis: Dict) -> float:
-            base_score = sum([
-                analysis["conversation_quality"]["coherence"],
-                analysis["conversation_quality"]["depth"],
-                analysis["conversation_quality"]["goal_progress"]
-            ]) / 3
+            base_score = (
+                sum(
+                    [
+                        analysis["conversation_quality"]["coherence"],
+                        analysis["conversation_quality"]["depth"],
+                        analysis["conversation_quality"]["goal_progress"],
+                    ]
+                )
+                / 3
+            )
 
             # Bonus for grounded assertions
             grounding_score = len(analysis.get("grounded_assertions", {})) * 0.05
@@ -275,12 +316,16 @@ class ConversationArbiter:
         differences = []
         metrics = ["coherence", "depth", "goal_progress", "grounded_assertions"]
         for metric in metrics:
-            ai_ai_val = (ai_ai_analysis["conversation_quality"].get(metric, 0)
-                        if metric != "grounded_assertions"
-                        else len(ai_ai_analysis.get("grounded_assertions", {})))
-            human_ai_val = (human_ai_analysis["conversation_quality"].get(metric, 0)
-                          if metric != "grounded_assertions"
-                          else len(human_ai_analysis.get("grounded_assertions", {})))
+            ai_ai_val = (
+                ai_ai_analysis["conversation_quality"].get(metric, 0)
+                if metric != "grounded_assertions"
+                else len(ai_ai_analysis.get("grounded_assertions", {}))
+            )
+            human_ai_val = (
+                human_ai_analysis["conversation_quality"].get(metric, 0)
+                if metric != "grounded_assertions"
+                else len(human_ai_analysis.get("grounded_assertions", {}))
+            )
 
             diff = abs(ai_ai_val - human_ai_val)
             if diff > 0.1 or (metric == "grounded_assertions" and diff > 0):
@@ -305,21 +350,17 @@ class ConversationArbiter:
                 "goal_progress": 0.0,
                 "strategy_effectiveness": 0.0,
                 "grounded_assertions": 0,
-                "unverified_claims": 0
+                "unverified_claims": 0,
             },
             "participant_analysis": {},
             "assertions": [],
-            "key_insights": [
-                "Analysis failed - insufficient data"
-            ],
-            "improvement_suggestions": [
-                "Retry analysis with valid conversation data"
-            ]
+            "key_insights": ["Analysis failed - insufficient data"],
+            "improvement_suggestions": ["Retry analysis with valid conversation data"],
         }
 
-
-    def _create_evaluation_prompt(self, conversation: List[Dict[str, str]],
-                                goal: str, mode: str) -> str:
+    def _create_evaluation_prompt(
+        self, conversation: List[Dict[str, str]], goal: str, mode: str
+    ) -> str:
         """Create detailed prompt for conversation evaluation"""
         return f"""
         Analyze this conversation and return a structured evaluation in JSON format.
@@ -415,8 +456,9 @@ class ConversationArbiter:
         - Ground factual claims in the conversation content
         """
 
-    def _analyze_conversation(self, conversation: List[Dict[str, str]],
-                            goal: str, mode: str) -> Dict:
+    def _analyze_conversation(
+        self, conversation: List[Dict[str, str]], goal: str, mode: str
+    ) -> Dict:
         """Analyze a single conversation with assertion grounding"""
         analysis = None
         prompt = self._create_evaluation_prompt(conversation, goal, mode)
@@ -427,24 +469,28 @@ class ConversationArbiter:
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type='application/json',
+                    response_mime_type="application/json",
                     response_schema=AssessmentSchema,
                     temperature=0.1,
                     maxOutputTokens=4096,
                     candidateCount=1,
-                    tools=[types.Tool(
-                        google_search=types.GoogleSearchRetrieval(
-                            dynamic_retrieval_config=types.DynamicRetrievalConfig(
-                                dynamic_threshold=0.6))
-                    )]
-                )
+                    tools=[
+                        types.Tool(
+                            google_search=types.GoogleSearchRetrieval(
+                                dynamic_retrieval_config=types.DynamicRetrievalConfig(
+                                    dynamic_threshold=0.6
+                                )
+                            )
+                        )
+                    ],
+                ),
             )
             try:
-                print (response.content)
+                print(response.content)
             except Exception as e:
-                print (response)
+                print(response)
             except Exception as e:
-                print (e)
+                print(e)
 
             try:
                 analysis = response.parsed
@@ -452,7 +498,8 @@ class ConversationArbiter:
                 logger.error(f"Failed to parse Gemini response as JSON: {parse_error}")
                 # Attempt to extract JSON from text response
                 import re
-                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+
+                json_match = re.search(r"\{.*\}", response.text, re.DOTALL)
                 analysis = json.loads(json_match.group(0)) if json_match else None
 
             # Ground assertions if grounder available
@@ -465,32 +512,32 @@ class ConversationArbiter:
                 analysis["grounded_assertions"] = grounded_assertions
 
             if not analysis:
-                raise ValueError("Failed to parse model response into valid analysis format")
+                raise ValueError(
+                    "Failed to parse model response into valid analysis format"
+                )
 
             return analysis
 
         except Exception as e:
             logger.error(f"Error analyzing conversation: {e}")
             raise
-            #return self._create_empty_analysis()
+            # return self._create_empty_analysis()
 
-    def evaluate_conversations(self,
-                             ai_ai_conversation: List[Dict[str, str]],
-                             human_ai_conversation: List[Dict[str, str]],
-                             goal: str) -> ArbiterResult:
+    def evaluate_conversations(
+        self,
+        ai_ai_conversation: List[Dict[str, str]],
+        human_ai_conversation: List[Dict[str, str]],
+        goal: str,
+    ) -> ArbiterResult:
         """Evaluate and compare two conversations"""
 
         # Generate unique IDs for conversations
         from uuid import uuid4
-        conversation_ids = {
-            "ai-ai": str(uuid4()),
-            "human-ai": str(uuid4())
-        }
+
+        conversation_ids = {"ai-ai": str(uuid4()), "human-ai": str(uuid4())}
 
         # Analyze each conversation
-        ai_ai_analysis = self._analyze_conversation(
-            ai_ai_conversation, goal, "ai-ai"
-        )
+        ai_ai_analysis = self._analyze_conversation(ai_ai_conversation, goal, "ai-ai")
         human_ai_analysis = self._analyze_conversation(
             human_ai_conversation, goal, "human-ai"
         )
@@ -503,14 +550,16 @@ class ConversationArbiter:
         # Extract strategy scores with fallback
         strategy_analysis = {
             "ai-ai": ai_ai_analysis["conversation_quality"].get("strategy", 0.0),
-            "human-ai": human_ai_analysis["conversation_quality"].get("strategy", 0.0)
+            "human-ai": human_ai_analysis["conversation_quality"].get("strategy", 0.0),
         }
 
         result = ArbiterResult(
             winner=winner,
             conversation_metrics={
                 "ai-ai": ConversationMetrics(**ai_ai_analysis["conversation_quality"]),
-                "human-ai": ConversationMetrics(**human_ai_analysis["conversation_quality"])
+                "human-ai": ConversationMetrics(
+                    **human_ai_analysis["conversation_quality"]
+                ),
             },
             participant_metrics={
                 "ai-ai": {
@@ -519,21 +568,23 @@ class ConversationArbiter:
                 },
                 "human-ai": {
                     role: ParticipantMetrics(**metrics)
-                    for role, metrics in human_ai_analysis["participant_analysis"].items()
-                }
+                    for role, metrics in human_ai_analysis[
+                        "participant_analysis"
+                    ].items()
+                },
             },
-            key_insights=key_differences +
-                        ai_ai_analysis["key_insights"] +
-                        human_ai_analysis["key_insights"],
-            improvement_suggestions=ai_ai_analysis["improvement_suggestions"] +
-                                  human_ai_analysis["improvement_suggestions"],
+            key_insights=key_differences
+            + ai_ai_analysis["key_insights"]
+            + human_ai_analysis["key_insights"],
+            improvement_suggestions=ai_ai_analysis["improvement_suggestions"]
+            + human_ai_analysis["improvement_suggestions"],
             strategy_analysis=strategy_analysis,
             grounded_assertions={
                 "ai-ai": ai_ai_analysis.get("grounded_assertions", {}),
-                "human-ai": human_ai_analysis.get("grounded_assertions", {})
+                "human-ai": human_ai_analysis.get("grounded_assertions", {}),
             },
             execution_timestamp=datetime.datetime.now().isoformat(),
-            conversation_ids=conversation_ids
+            conversation_ids=conversation_ids,
         )
 
         # Save metrics to JSON
@@ -556,32 +607,33 @@ class ConversationArbiter:
             metrics_history = []
 
         # Add new metrics
-        metrics_history.append({
-            "timestamp": result.execution_timestamp,
-            "conversation_ids": result.conversation_ids,
-            "winner": result.winner,
-            "metrics": {
-                "ai-ai": asdict(result.conversation_metrics["ai-ai"]),
-                "human-ai": asdict(result.conversation_metrics["human-ai"])
-            },
-            "participant_metrics": {
-                mode: {
-                    role: asdict(metrics)
-                    for role, metrics in role_metrics.items()
-                }
-                for mode, role_metrics in result.participant_metrics.items()
-            },
-            "grounded_assertions": {
-                mode: {
-                    assertion: asdict(evidence)
-                    for assertion, evidence in assertions.items()
-                }
-                for mode, assertions in result.grounded_assertions.items()
+        metrics_history.append(
+            {
+                "timestamp": result.execution_timestamp,
+                "conversation_ids": result.conversation_ids,
+                "winner": result.winner,
+                "metrics": {
+                    "ai-ai": asdict(result.conversation_metrics["ai-ai"]),
+                    "human-ai": asdict(result.conversation_metrics["human-ai"]),
+                },
+                "participant_metrics": {
+                    mode: {
+                        role: asdict(metrics) for role, metrics in role_metrics.items()
+                    }
+                    for mode, role_metrics in result.participant_metrics.items()
+                },
+                "grounded_assertions": {
+                    mode: {
+                        assertion: asdict(evidence)
+                        for assertion, evidence in assertions.items()
+                    }
+                    for mode, assertions in result.grounded_assertions.items()
+                },
             }
-        })
+        )
 
         # Save updated metrics
-        with open(metrics_file, 'w') as f:
+        with open(metrics_file, "w") as f:
             json.dump(metrics_history, f, indent=2)
 
     def generate_report(self, result: ArbiterResult) -> str:
@@ -676,7 +728,8 @@ class ConversationArbiter:
 
         html = ["<div class='assertions-list'>"]
         for assertion, evidence in assertions.items():
-            html.append(f"""
+            html.append(
+                f"""
                 <div class='assertion-item'>
                     <p class='assertion-text'>{assertion}</p>
                     <div class='evidence-section'>
@@ -692,11 +745,14 @@ class ConversationArbiter:
                         </div>
                     </div>
                 </div>
-            """)
+            """
+            )
         html.append("</div>")
-        return '\n'.join(html)
+        return "\n".join(html)
 
-    def _extract_reasoning_patterns(self, messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    def _extract_reasoning_patterns(
+        self, messages: List[Dict[str, str]]
+    ) -> List[Dict[str, Any]]:
         """Extract and analyze reasoning patterns in messages"""
         patterns = []
         reasoning_markers = {
@@ -704,7 +760,7 @@ class ConversationArbiter:
             "comparative": ["however", "whereas", "while", "in contrast"],
             "evidence": ["evidence shows", "research indicates", "according to"],
             "logical": ["if...then", "consequently", "it follows that"],
-            "analytical": ["analyze", "consider", "examine", "evaluate"]
+            "analytical": ["analyze", "consider", "examine", "evaluate"],
         }
 
         for msg in messages:
@@ -717,19 +773,23 @@ class ConversationArbiter:
                         found_patterns[pattern_type] += 1
 
             if found_patterns:
-                patterns.append({
-                    "message_index": messages.index(msg),
-                    "patterns": dict(found_patterns)
-                })
+                patterns.append(
+                    {
+                        "message_index": messages.index(msg),
+                        "patterns": dict(found_patterns),
+                    }
+                )
 
         return patterns
 
-    def _assess_knowledge_integration(self, messages: List[Dict[str, str]]) -> Dict[str, float]:
+    def _assess_knowledge_integration(
+        self, messages: List[Dict[str, str]]
+    ) -> Dict[str, float]:
         """Assess how well knowledge is integrated and built upon"""
         knowledge_metrics = {
             "build_on_previous": 0.0,
             "fact_density": 0.0,
-            "knowledge_depth": 0.0
+            "knowledge_depth": 0.0,
         }
 
         try:
@@ -740,28 +800,58 @@ class ConversationArbiter:
             for i, msg in enumerate(messages):
                 # Count potential fact statements
                 sentences = msg["content"].split(". ")
-                facts = len([s for s in sentences if any(marker in s.lower()
-                    for marker in ["is", "are", "was", "were", "research", "study", "evidence"])])
+                facts = len(
+                    [
+                        s
+                        for s in sentences
+                        if any(
+                            marker in s.lower()
+                            for marker in [
+                                "is",
+                                "are",
+                                "was",
+                                "were",
+                                "research",
+                                "study",
+                                "evidence",
+                            ]
+                        )
+                    ]
+                )
                 total_facts += facts
 
                 # Look for references to previous messages
                 if i > 0:
-                    prev_content = " ".join(m["content"] for m in messages[max(0, i-3):i])
-                    references = sum(1 for word in msg["content"].split()
-                                  if word in prev_content)
+                    prev_content = " ".join(
+                        m["content"] for m in messages[max(0, i - 3) : i]
+                    )
+                    references = sum(
+                        1 for word in msg["content"].split() if word in prev_content
+                    )
                     knowledge_connections += references / len(msg["content"].split())
 
             # Calculate final metrics
             if len(messages) > 0:
-                knowledge_metrics["fact_density"] = min(1.0, total_facts / len(messages))
-                knowledge_metrics["build_on_previous"] = min(1.0, knowledge_connections / len(messages))
-                knowledge_metrics["knowledge_depth"] = min(1.0, (knowledge_metrics["fact_density"] +
-                                                               knowledge_metrics["build_on_previous"]) / 2)
+                knowledge_metrics["fact_density"] = min(
+                    1.0, total_facts / len(messages)
+                )
+                knowledge_metrics["build_on_previous"] = min(
+                    1.0, knowledge_connections / len(messages)
+                )
+                knowledge_metrics["knowledge_depth"] = min(
+                    1.0,
+                    (
+                        knowledge_metrics["fact_density"]
+                        + knowledge_metrics["build_on_previous"]
+                    )
+                    / 2,
+                )
 
         except Exception as e:
             logger.error(f"Error in knowledge integration assessment: {e}")
 
         return knowledge_metrics
+
 
 class VisualizationGenerator:
     """Generates visualizations for conversation analysis"""
@@ -769,6 +859,7 @@ class VisualizationGenerator:
     def __init__(self):
         try:
             import plotly.graph_objects as go
+
             self.plotly = go
         except ImportError:
             logger.warning("Plotly not available - visualizations will be limited")
@@ -781,18 +872,22 @@ class VisualizationGenerator:
 
         # Extract metrics for comparison
         metrics = ["coherence", "depth", "engagement", "reasoning", "knowledge"]
-        ai_ai_values = [getattr(result.conversation_metrics["ai-ai"], m) for m in metrics]
-        human_ai_values = [getattr(result.conversation_metrics["human-ai"], m) for m in metrics]
+        ai_ai_values = [
+            getattr(result.conversation_metrics["ai-ai"], m) for m in metrics
+        ]
+        human_ai_values = [
+            getattr(result.conversation_metrics["human-ai"], m) for m in metrics
+        ]
 
-        fig = self.plotly.Figure(data=[
-            self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
-            self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values)
-        ])
+        fig = self.plotly.Figure(
+            data=[
+                self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
+                self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values),
+            ]
+        )
 
         fig.update_layout(
-            title="Conversation Metrics Comparison",
-            barmode="group",
-            yaxis_range=[0, 1]
+            title="Conversation Metrics Comparison", barmode="group", yaxis_range=[0, 1]
         )
 
         return fig.to_html(full_html=False)
@@ -806,32 +901,33 @@ class VisualizationGenerator:
         ai_ai_assertions = list(result.grounded_assertions["ai-ai"].keys())
         human_ai_assertions = list(result.grounded_assertions["human-ai"].keys())
 
-        fig = self.plotly.Figure([
-            self.plotly.Scatter(
-                x=list(range(len(ai_ai_assertions))),
-                y=[1] * len(ai_ai_assertions),
-                mode="markers+text",
-                name="AI-AI Assertions",
-                text=ai_ai_assertions,
-                textposition="top center"
-            ),
-            self.plotly.Scatter(
-                x=list(range(len(human_ai_assertions))),
-                y=[0] * len(human_ai_assertions),
-                mode="markers+text",
-                name="Human-AI Assertions",
-                text=human_ai_assertions,
-                textposition="bottom center"
-            )
-        ])
+        fig = self.plotly.Figure(
+            [
+                self.plotly.Scatter(
+                    x=list(range(len(ai_ai_assertions))),
+                    y=[1] * len(ai_ai_assertions),
+                    mode="markers+text",
+                    name="AI-AI Assertions",
+                    text=ai_ai_assertions,
+                    textposition="top center",
+                ),
+                self.plotly.Scatter(
+                    x=list(range(len(human_ai_assertions))),
+                    y=[0] * len(human_ai_assertions),
+                    mode="markers+text",
+                    name="Human-AI Assertions",
+                    text=human_ai_assertions,
+                    textposition="bottom center",
+                ),
+            ]
+        )
 
         fig.update_layout(
-            title="Conversation Timeline",
-            showlegend=True,
-            yaxis_visible=False
+            title="Conversation Timeline", showlegend=True, yaxis_visible=False
         )
 
         return fig.to_html(full_html=False)
+
 
 class ReportGenerator:
     """Generates detailed HTML reports with visualizations"""
@@ -892,12 +988,14 @@ class ReportGenerator:
         """Create HTML table for conversation metrics"""
         rows = []
         for field, value in metrics:
-            rows.append(f"""
+            rows.append(
+                f"""
             <tr>
                 <td>{field.title()}</td>
                 <td>{value:.2f}</td>
             </tr>
-            """)
+            """
+            )
 
         return f"""
         <table class="metrics-table">
@@ -912,11 +1010,15 @@ class ReportGenerator:
             </tbody>
         </table>
         """
-def evaluate_conversations(ai_ai_conversation: List[Dict[str, str]],
-                         human_ai_conversation: List[Dict[str, str]],
-                         goal: str,
-                         gemini_api_key: str,
-                         search_client: Optional[Any] = None) -> Tuple[str, str]:
+
+
+def evaluate_conversations(
+    ai_ai_conversation: List[Dict[str, str]],
+    human_ai_conversation: List[Dict[str, str]],
+    goal: str,
+    gemini_api_key: str,
+    search_client: Optional[Any] = None,
+) -> Tuple[str, str]:
     """
     Evaluate two conversations and return winner with report
 
@@ -930,16 +1032,15 @@ def evaluate_conversations(ai_ai_conversation: List[Dict[str, str]],
     Returns:
         Tuple of (winner, HTML report)
     """
-    #model_config = MODEL_CONFIG
+    # model_config = MODEL_CONFIG
     try:
         arbiter = ConversationArbiter(
-            api_key=gemini_api_key,
-            search_client=search_client
+            api_key=gemini_api_key, search_client=search_client
         )
         result = arbiter.evaluate_conversations(
             ai_ai_conversation=ai_ai_conversation,
             human_ai_conversation=human_ai_conversation,
-            goal=goal
+            goal=goal,
         )
         report = arbiter.generate_report(result)
         return result.winner, report

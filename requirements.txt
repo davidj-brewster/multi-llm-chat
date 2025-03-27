@@ -9,6 +9,7 @@ anthropic==0.46.0
 anyio==4.8.0
 attrs==24.3.0
 beautifulsoup4==4.12.3
+black>=24.0.0
 blinker==1.9.0
 blis==1.2.0
 cachetools==5.5.0
@@ -16,7 +17,7 @@ catalogue==2.0.10
 certifi==2024.12.14
 charset-normalizer==3.4.1
 click==8.1.8
-cloudpathlib==0.20.0
+cloudpathlib==0.21.0
 colorama==0.4.6 ; sys_platform == 'win32'
 confection==0.1.5
 cymem==2.0.11
@@ -54,7 +55,7 @@ narwhals==1.23.0
 networkx==3.4.2
 numpy==2.2.2
 ollama==0.4.7
-openai==1.63.2
+openai==1.68.2
 packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
@@ -84,7 +85,7 @@ safetensors==0.5.2
 scikit-learn==1.5.0
 scipy==1.15.2
 sentencepiece==0.2.0
-setuptools==75.8.0
+setuptools==77.0.3
 shellingham==1.5.4
 six==1.17.0
 smart-open==7.1.0
@@ -98,13 +99,13 @@ srsly==2.5.1
 streamlit==1.41.1
 tenacity==9.0.0
 thinc==8.3.4
-threadpoolctl==3.5.0
+threadpoolctl==3.6.0
 tokenizers==0.21.0
 toml==0.10.2
 tornado==6.4.2
 tqdm==4.67.1
 transformers==4.48.1
-typer==0.15.1
+typer==0.15.2
 typing-extensions==4.12.2
 tzdata==2025.1
 urllib3==2.3.0

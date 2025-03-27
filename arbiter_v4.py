@@ -16,17 +16,18 @@ from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 # Third-party imports
 from google import genai
 import plotly.graph_objects as go
-google_search_tool = Tool(
-    google_search = GoogleSearch()
-)
+
+google_search_tool = Tool(google_search=GoogleSearch())
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class ConversationMetrics:
     """Metrics for conversation quality assessment"""
+
     coherence: float = 0.0
     relevance: float = 0.0
     depth: float = 0.0
@@ -36,9 +37,11 @@ class ConversationMetrics:
     goal_progress: float = 0.0
     strategy_effectiveness: float = 0.0
 
+
 @dataclass
 class ParticipantMetrics:
     """Metrics for individual participant performance"""
+
     response_quality: float = 0.0
     knowledge_accuracy: float = 0.0
     reasoning_depth: float = 0.0
@@ -46,9 +49,11 @@ class ParticipantMetrics:
     strategy_adherence: float = 0.0
     adaptation: float = 0.0
 
+
 @dataclass
 class AssertionEvidence:
     """Evidence supporting a grounded assertion"""
+
     confidence: float = 0.0
     sources: List[Dict[str, str]] = None
     verification_method: str = "search"
@@ -57,9 +62,11 @@ class AssertionEvidence:
         if self.sources is None:
             self.sources = []
 
+
 @dataclass
 class ArbiterResult:
     """Complete results of conversation arbitration"""
+
     winner: str
     conversation_metrics: Dict[str, ConversationMetrics]
     participant_metrics: Dict[str, Dict[str, ParticipantMetrics]]
@@ -74,18 +81,30 @@ class ArbiterResult:
         if self.conversation_ids is None:
             self.conversation_ids = {}
 
+
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+
 
 class AssertionGrounder:
     """Grounds assertions using Gemini with Google Search integration"""
 
-    def __init__(self, api_key: str = os.environ.get("GEMINI_API_KEY"), model: str = "gemini-2.0-pro-exp-02-05"):
-        key=os.environ.get("GEMINI_API_KEY")
+    def __init__(
+        self,
+        api_key: str = os.environ.get("GEMINI_API_KEY"),
+        model: str = "gemini-2.0-pro-exp-02-05",
+    ):
+        key = os.environ.get("GEMINI_API_KEY")
         self.client = genai.Client(api_key=key)
-        self.model = 'gemini-2.0-pro-exp-02-05'
+        self.model = "gemini-2.0-pro-exp-02-05"
         self.search_tool = Tool(google_search=GoogleSearch())
 
-    def ground_assertions(self, aiai_conversation: str, humanai_conversation, default_conversation, topic:str): #ssertionEvidence:
+    def ground_assertions(
+        self,
+        aiai_conversation: str,
+        humanai_conversation,
+        default_conversation,
+        topic: str,
+    ):  # ssertionEvidence:
         """Ground an assertion using Gemini with search capability"""
         try:
             response_full = ""
@@ -94,7 +113,7 @@ class AssertionGrounder:
                 config=GenerateContentConfig(
                     tools=[google_search_tool],
                     response_modalities=["TEXT"],
-                    temperature=0.1
+                    temperature=0.1,
                 ),
                 contents=f"""INSTRUCTIONS:
 OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
@@ -147,34 +166,44 @@ CONVERSATION 3:
         """Extract domain from URL"""
         try:
             from urllib.parse import urlparse
+
             return urlparse(url).netloc
         except Exception:
             return url
 
-    def _calculate_confidence(self, sources: List[Dict[str, str]], assertion: str) -> float:
+    def _calculate_confidence(
+        self, sources: List[Dict[str, str]], assertion: str
+    ) -> float:
         """Calculate confidence based on source quality and quantity"""
         if not sources:
             return 0.0
 
         source_score = min(len(sources) / 3.0, 1.0)
-        authority_score = sum(0.2 if any(d in s["domain"] for d in [".edu", ".gov", ".org"])
-                            else 0.1 for s in sources) / len(sources)
+        authority_score = sum(
+            0.2 if any(d in s["domain"] for d in [".edu", ".gov", ".org"]) else 0.1
+            for s in sources
+        ) / len(sources)
 
         return min((source_score * 0.5) + (authority_score * 0.5), 1.0)
+
 
 class ConversationArbiter:
     """Evaluates and compares conversations using Gemini model with enhanced analysis"""
 
-    def __init__(self,
-                 model: str = "gemini-2.0-pro-exp-02-05",
-                 api_key=os.environ.get("GEMINI_API_KEY")):
+    def __init__(
+        self,
+        model: str = "gemini-2.0-pro-exp-02-05",
+        api_key=os.environ.get("GEMINI_API_KEY"),
+    ):
         self.client = genai.Client(api_key=api_key)
 
         self.model = model
         self.grounder = AssertionGrounder(api_key=api_key)
-        self.nlp = spacy.load('en_core_web_lg') #has vectors
+        self.nlp = spacy.load("en_core_web_lg")  # has vectors
 
-    def analyze_conversation_flow(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    def analyze_conversation_flow(
+        self, messages: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
         """Analyze conversation flow patterns and transitions"""
         """
         Analyze conversation flow patterns and topic transitions.
@@ -201,14 +230,16 @@ class ConversationArbiter:
 
                 topic_shifts = 0
                 for i in range(1, len(topics)):
-                    if not any(self._text_similarity(topics[i], prev) > 0.3
-                             for prev in topics[max(0, i-3):i]):
+                    if not any(
+                        self._text_similarity(topics[i], prev) > 0.3
+                        for prev in topics[max(0, i - 3) : i]
+                    ):
                         topic_shifts += 1
 
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / len(messages)),
                     "topic_depth": len(set(topics)) / len(messages),
-                    "topic_distribution": self._calculate_topic_distribution(topics)
+                    "topic_distribution": self._calculate_topic_distribution(topics),
                 }
             else:
                 # Fallback to basic analysis
@@ -218,7 +249,11 @@ class ConversationArbiter:
 
         except Exception as e:
             logger.error(f"Error analyzing conversation flow: {e}")
-            return {"topic_coherence": 0.5, "topic_depth": 0.5, "topic_distribution": {}}
+            return {
+                "topic_coherence": 0.5,
+                "topic_depth": 0.5,
+                "topic_distribution": {},
+            }
 
     def _text_similarity(self, text1: str, text2: str) -> float:
         """Calculate semantic similarity between two texts"""
@@ -257,7 +292,7 @@ class ConversationArbiter:
         """
         counts = Counter(topics)
         total = sum(counts.values())
-        return {topic: count/total for topic, count in counts.items()}
+        return {topic: count / total for topic, count in counts.items()}
 
     def _format_gemini_prompt(self, messages: List[Dict[str, str]]) -> str:
         """Format conversation for Gemini model input"""
@@ -266,22 +301,19 @@ class ConversationArbiter:
                 "metadata": {
                     "conversation_type": "human-AI",
                     "number_of_exchanges": len(messages),
-                    "models_used": []
+                    "models_used": [],
                 },
                 "conversation_quality_metrics": {
                     "structural_coherence": {},
                     "intellectual_depth": {},
-                    "interaction_dynamics": {}
+                    "interaction_dynamics": {},
                 },
                 "actor_specific_analysis": {},
-                "thematic_analysis": {
-                    "primary_themes": [],
-                    "theme_development": {}
-                },
+                "thematic_analysis": {"primary_themes": [], "theme_development": {}},
                 "conversation_effectiveness": {
                     "key_strengths": [],
-                    "areas_for_improvement": []
-                }
+                    "areas_for_improvement": [],
+                },
             }
         }
 
@@ -300,9 +332,7 @@ class ConversationArbiter:
             response = self.client.models.generate_content(
                 model=self.model,
                 contents=conversation,
-                config=genai.types.GenerateContentConfig(
-                    response_modalities=["JSON"]
-                )
+                config=genai.types.GenerateContentConfig(response_modalities=["JSON"]),
             )
             print(response.text)
 
@@ -317,9 +347,9 @@ class ConversationArbiter:
             logger.error(f"Error getting Gemini analysis: {e}")
             raise
 
-    def _determine_winner(self,
-                         ai_ai_metrics: Dict[str, float],
-                         human_ai_metrics: Dict[str, float]) -> str:
+    def _determine_winner(
+        self, ai_ai_metrics: Dict[str, float], human_ai_metrics: Dict[str, float]
+    ) -> str:
         """Determine conversation winner based on metrics"""
         # Calculate weighted scores
         weights = {
@@ -328,7 +358,7 @@ class ConversationArbiter:
             "engagement": 0.15,
             "reasoning": 0.15,
             "knowledge": 0.15,
-            "goal_progress": 0.15
+            "goal_progress": 0.15,
         }
 
         ai_ai_score = sum(
@@ -359,9 +389,9 @@ class ConversationArbiter:
 
         return all_insights
 
-    def _gemini_search(self,
-                               ai_ai_analysis: Dict[str, Any],
-                               human_ai_analysis: Dict[str, Any]) -> Any: #Dict[str, Dict[str, AssertionEvidence]]:
+    def _gemini_search(
+        self, ai_ai_analysis: Dict[str, Any], human_ai_analysis: Dict[str, Any]
+    ) -> Any:  # Dict[str, Dict[str, AssertionEvidence]]:
         """Ground assertions from both conversations"""
 
         grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)
@@ -377,23 +407,29 @@ class VisualizationGenerator:
     def generate_metrics_chart(self, result: ArbiterResult) -> str:
         """Generate comparison chart of conversation metrics"""
         metrics = ["coherence", "depth", "engagement", "reasoning", "knowledge"]
-        ai_ai_values = [getattr(result.conversation_metrics["ai-ai"], m) for m in metrics]
-        human_ai_values = [getattr(result.conversation_metrics["human-ai"], m) for m in metrics]
+        ai_ai_values = [
+            getattr(result.conversation_metrics["ai-ai"], m) for m in metrics
+        ]
+        human_ai_values = [
+            getattr(result.conversation_metrics["human-ai"], m) for m in metrics
+        ]
 
-        fig = self.plotly.Figure(data=[
-            self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
-            self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values)
-        ])
+        fig = self.plotly.Figure(
+            data=[
+                self.plotly.Bar(name="AI-AI", x=metrics, y=ai_ai_values),
+                self.plotly.Bar(name="Human-AI", x=metrics, y=human_ai_values),
+            ]
+        )
 
         fig.update_layout(
-            title="Conversation Metrics Comparison",
-            barmode="group",
-            yaxis_range=[0, 1]
+            title="Conversation Metrics Comparison", barmode="group", yaxis_range=[0, 1]
         )
 
         return fig.to_html(full_html=False)
 
-    def generate_timeline(self, assertions: Dict[str, Dict[str, AssertionEvidence]]) -> str:
+    def generate_timeline(
+        self, assertions: Dict[str, Dict[str, AssertionEvidence]]
+    ) -> str:
         """Generate timeline visualization of grounded assertions"""
         """
         Generate a timeline visualization of grounded assertions from both conversations.
@@ -410,38 +446,45 @@ class VisualizationGenerator:
         ai_ai_assertions = list(assertions["ai-ai"].keys())
         human_ai_assertions = list(assertions["human-ai"].keys())
 
-        fig = self.plotly.Figure([
-            self.plotly.Scatter(
-                x=list(range(len(ai_ai_assertions))),
-                y=[1] * len(ai_ai_assertions),
-                mode="markers+text",
-                name="AI-AI Assertions",
-                text=[a[:30] + "..." if len(a) > 30 else a for a in ai_ai_assertions],
-                textposition="top center"
-            ),
-            self.plotly.Scatter(
-                x=list(range(len(human_ai_assertions))),
-                y=[0] * len(human_ai_assertions),
-                mode="markers+text",
-                name="Human-AI Assertions",
-                text=[a[:30] + "..." if len(a) > 30 else a for a in human_ai_assertions],
-                textposition="bottom center"
-            )
-        ])
+        fig = self.plotly.Figure(
+            [
+                self.plotly.Scatter(
+                    x=list(range(len(ai_ai_assertions))),
+                    y=[1] * len(ai_ai_assertions),
+                    mode="markers+text",
+                    name="AI-AI Assertions",
+                    text=[
+                        a[:30] + "..." if len(a) > 30 else a for a in ai_ai_assertions
+                    ],
+                    textposition="top center",
+                ),
+                self.plotly.Scatter(
+                    x=list(range(len(human_ai_assertions))),
+                    y=[0] * len(human_ai_assertions),
+                    mode="markers+text",
+                    name="Human-AI Assertions",
+                    text=[
+                        a[:30] + "..." if len(a) > 30 else a
+                        for a in human_ai_assertions
+                    ],
+                    textposition="bottom center",
+                ),
+            ]
+        )
 
         fig.update_layout(
-            title="Conversation Timeline",
-            showlegend=True,
-            yaxis_visible=False
+            title="Conversation Timeline", showlegend=True, yaxis_visible=False
         )
 
         return fig.to_html(full_html=False)
 
+
 def evaluate_conversations(
-                                ai_ai_convo: List[Dict[str, str]],
-                                human_ai_convo: List[Dict[str, str]],
-                                default_convo: List[Dict[str, str]],
-                                goal:str) -> ArbiterResult:
+    ai_ai_convo: List[Dict[str, str]],
+    human_ai_convo: List[Dict[str, str]],
+    default_convo: List[Dict[str, str]],
+    goal: str,
+) -> ArbiterResult:
     """Compare and evaluate three conversation modes"""
     """
     Compare and evaluate three conversation modes: AI-AI, Human-AI, and default.
@@ -462,31 +505,42 @@ def evaluate_conversations(
     try:
         # Analyze conversation flows
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
-        convmetrics = ConversationMetrics()
-        arbiter = ConversationArbiter(api_key=gemini_api_key)
-        ai_ai_flow =  arbiter.analyze_conversation_flow(ai_ai_convo)
-        human_ai_flow =  arbiter.analyze_conversation_flow(human_ai_convo)
-        default_flow =  arbiter.analyze_conversation_flow(default_convo)
-
+        try:
+            convmetrics = ConversationMetrics()
+            arbiter = ConversationArbiter(api_key=gemini_api_key)
+        except Exception as e:
+            logger.error(f"Error in conversation evaluation: {e}")
+            raise
+    
+        try:
+            if ai_ai_convo: # Check if ai_ai_convo is not empty
+                ai_ai_flow = arbiter.analyze_conversation_flow(ai_ai_convo)
+            if human_ai_convo: # Check if human_ai_convo is not empty
+                human_ai_flow = arbiter.analyze_conversation_flow(human_ai_convo)
+            #default_flow = arbiter.analyze_conversation_flow(default_convo)
+        except Exception as e:
+            logger.error(f"Error analyzing conversation flow: {e}")
         # Generate prompts for Gemini analysis
-        #ai_ai_prompt = arbiter._format_gemini_prompt(ai_ai_convo)
-        #human_ai_prompt = arbiter._format_gemini_prompt(human_ai_convo)
+        # ai_ai_prompt = arbiter._format_gemini_prompt(ai_ai_convo)
+        # human_ai_prompt = arbiter._format_gemini_prompt(human_ai_convo)
 
         # Get Gemini analysis
-        #ai_ai_analysis = arbiter._get_gemini_analysis(ai_ai_convo)
+        # ai_ai_analysis = arbiter._get_gemini_analysis(ai_ai_convo)
 
-        #print(ai_ai_analysis)
-        #human_ai_analysis = arbiter._get_gemini_analysis(human_ai_convo)
-        #print(human_ai_analysis)
+        # print(ai_ai_analysis)
+        # human_ai_analysis = arbiter._get_gemini_analysis(human_ai_convo)
+        # print(human_ai_analysis)
         # Search for grounded assertions
         grounder = AssertionGrounder(api_key=os.environ.get("GEMINI_API_KEY"))
-        result = grounder.ground_assertions(ai_ai_convo, human_ai_convo, default_convo, goal)
+        result = grounder.ground_assertions(
+            ai_ai_convo, human_ai_convo, default_convo, goal
+        )
         return result
 
         # Compare and determine winner
-        #winner = self._determine_winner(ai_ai_analysis, human_ai_analysis)
+        # winner = self._determine_winner(ai_ai_analysis, human_ai_analysis)
 
-        #return ArbiterResult(
+        # return ArbiterResult(
         #    winner=None,
         #    conversation_metrics=None,
         #    participant_metrics=None,
@@ -512,8 +566,7 @@ def evaluate_conversations(
         #    grounded_assertions=grounder.ground_assertions(
         #        ai_ai_convo, human_ai_convo
         #    ),
-        #execution_timestamp=datetime.datetime.now().isoformat()
-
+        # execution_timestamp=datetime.datetime.now().isoformat()
 
     except Exception as e:
         logger.error(f"Error in conversation evaluation: {e}")

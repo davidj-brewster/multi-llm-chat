@@ -4,49 +4,80 @@ import logging
 import traceback
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
-from configdataclasses import MultiFileConfig, DiscussionConfig    
+from configdataclasses import MultiFileConfig, DiscussionConfig
 from pathlib import Path
 import json
+
 
 # Custom exception classes for better error handling
 class ConfigurationError(Exception):
     """Base exception for configuration-related errors."""
+
     pass
+
 
 class ConfigFileNotFoundError(ConfigurationError):
     """Raised when a configuration file is not found."""
+
     pass
+
 
 class InvalidConfigFormatError(ConfigurationError):
     """Raised when the configuration format is invalid."""
+
     pass
+
 
 class ModelConfigurationError(ConfigurationError):
     """Raised when there's an error in model configuration."""
+
     pass
+
 
 class SystemInstructionsError(ConfigurationError):
     """Raised when there's an error loading system instructions."""
+
     pass
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # Supported model configurations
 SUPPORTED_MODELS = {
     "claude": [
-        "claude", "sonnet", "haiku", 
-        "claude-3-5-sonnet", "claude-3-5-haiku", 
-        "claude-3-7", "claude-3-7-sonnet",
-        "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"
+        "claude",
+        "sonnet",
+        "haiku",
+        "claude-3-5-sonnet",
+        "claude-3-5-haiku",
+        "claude-3-7",
+        "claude-3-7-sonnet",
+        "claude-3-7-reasoning",
+        "claude-3-7-reasoning-medium",
+        "claude-3-7-reasoning-low",
+        "claude-3-7-reasoning-none",
     ],
-    "gemini": ["gemini-2-flash-lite", "gemini-2-pro","gemini-2-reasoning","gemini-2.0-flash-exp", "gemini"],
+    "gemini": [
+        "gemini-2-flash-lite",
+        "gemini-2-pro",
+        "gemini-2-reasoning",
+        "gemini-2.0-flash-exp",
+        "gemini",
+    ],
     "openai": [
-        "gpt-4-vision", "gpt-4o", "o1", "o3",
-        "o1-reasoning-high", "o1-reasoning-medium", "o1-reasoning-low",
-        "o3-reasoning-high", "o3-reasoning-medium", "o3-reasoning-low"
+        "gpt-4-vision",
+        "gpt-4o",
+        "o1",
+        "o3",
+        "o1-reasoning-high",
+        "o1-reasoning-medium",
+        "o1-reasoning-low",
+        "o3-reasoning-high",
+        "o3-reasoning-medium",
+        "o3-reasoning-low",
     ],
     "ollama": ["*"],  # All Ollama models supported
-    "mlx": ["*"]      # All MLX models supported
+    "mlx": ["*"],  # All MLX models supported
 }
 
 # File type configurations
@@ -54,18 +85,29 @@ SUPPORTED_FILE_TYPES = {
     "image": {
         "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
         "max_size": 20 * 1024 * 1024,  # 20MB
-        "max_resolution": (8192, 8192)
+        "max_resolution": (8192, 8192),
     },
     "video": {
         "extensions": [".mp4", ".mov", ".avi", ".webm"],
         "max_size": 300 * 1024 * 1024,  # 100MB
-        "max_resolution": (3840, 2160)  # 4K
+        "max_resolution": (3840, 2160),  # 4K
     },
     "text": {
-        "extensions": [".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml"],
-        "max_size": 10 * 1024 * 1024  # 10MB
-    }
+        "extensions": [
+            ".txt",
+            ".md",
+            ".py",
+            ".js",
+            ".html",
+            ".css",
+            ".json",
+            ".yaml",
+            ".yml",
+        ],
+        "max_size": 10 * 1024 * 1024,  # 10MB
+    },
 }
+
 
 @dataclass
 class TimeoutConfig:
@@ -84,6 +126,7 @@ class TimeoutConfig:
         invalid_events = [e for e in self.notify_on if e not in valid_events]
         if invalid_events:
             raise ValueError(f"Invalid notification events: {invalid_events}")
+
 
 @dataclass
 class FileConfig:
@@ -136,7 +179,9 @@ class FileConfig:
             # Catch any other unexpected errors
             logger.error(f"Unexpected error validating file config: {e}")
             logger.debug(traceback.format_exc())
-            raise ConfigurationError(f"Unexpected error validating file configuration: {e}")
+            raise ConfigurationError(
+                f"Unexpected error validating file configuration: {e}"
+            )
 
         # Validate resolution for image/video
         if self.type in ["image", "video"] and self.max_resolution:
@@ -144,7 +189,9 @@ class FileConfig:
             requested_res = self.max_resolution.upper()
             if requested_res == "4K":
                 if self.type != "video":
-                    raise InvalidConfigFormatError("4K resolution only supported for video files")
+                    raise InvalidConfigFormatError(
+                        "4K resolution only supported for video files"
+                    )
             elif "X" in requested_res:
                 try:
                     width, height = map(int, requested_res.split("X"))
@@ -153,7 +200,10 @@ class FileConfig:
                             f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}"
                         )
                 except ValueError:
-                    raise InvalidConfigFormatError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT")
+                    raise InvalidConfigFormatError(
+                        f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT"
+                    )
+
 
 @dataclass
 class ModelConfig:
@@ -165,19 +215,26 @@ class ModelConfig:
         # Validate model type
         provider = next((p for p in SUPPORTED_MODELS if self.type.startswith(p)), None)
         if not provider:
-            raise ModelConfigurationError(f"Unsupported model type: {self.type}. Supported providers: {', '.join(SUPPORTED_MODELS.keys())}")
+            raise ModelConfigurationError(
+                f"Unsupported model type: {self.type}. Supported providers: {', '.join(SUPPORTED_MODELS.keys())}"
+            )
 
         if provider not in ["ollama", "mlx"]:  # Local models support any variant
             if self.type not in SUPPORTED_MODELS[provider]:
-                raise ModelConfigurationError(f"Unsupported model variant: {self.type}. Supported variants: {', '.join(SUPPORTED_MODELS[provider])}")
+                raise ModelConfigurationError(
+                    f"Unsupported model variant: {self.type}. Supported variants: {', '.join(SUPPORTED_MODELS[provider])}"
+                )
 
         # Validate role
         if self.role not in ["human", "assistant"]:
-            raise ModelConfigurationError(f"Invalid role: {self.role}. Must be 'human' or 'assistant'")
+            raise ModelConfigurationError(
+                f"Invalid role: {self.role}. Must be 'human' or 'assistant'"
+            )
 
         # Validate persona if provided
         if self.persona and not isinstance(self.persona, str):
             raise ValueError("Persona must be a string")
+
 
 class DiscussionConfigOld:
     turns: int
@@ -210,11 +267,14 @@ class DiscussionConfigOld:
         elif self.timeouts is None:
             self.timeouts = TimeoutConfig()
 
+
 def load_system_instructions() -> Dict:
     """Load system instructions from docs/system_instructions.md"""
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
-        raise SystemInstructionsError("System instructions file not found at docs/system_instructions.md")
+        raise SystemInstructionsError(
+            "System instructions file not found at docs/system_instructions.md"
+        )
 
     content = instructions_path.read_text()
 
@@ -248,6 +308,7 @@ def load_system_instructions() -> Dict:
 
     return instructions
 
+
 def load_config(path: str) -> DiscussionConfig:
     """Load and validate YAML configuration file"""
     if not os.path.exists(path):
@@ -278,13 +339,18 @@ def load_config(path: str) -> DiscussionConfig:
                     # Replace template parameters
                     instruction_text = json.dumps(template)
                     for key, value in params.items():
-                        instruction_text = instruction_text.replace(f"{{{key}}}", str(value))
+                        instruction_text = instruction_text.replace(
+                            f"{{{key}}}", str(value)
+                        )
 
                     model_config["persona"] = json.loads(instruction_text)
 
         return DiscussionConfig(**config_dict["discussion"])
     except (TypeError, ValueError) as e:
-        raise InvalidConfigFormatError(f"Invalid configuration format in {path}: {e} {traceback.format_exc()}")
+        raise InvalidConfigFormatError(
+            f"Invalid configuration format in {path}: {e} {traceback.format_exc()}"
+        )
+
 
 def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str, bool]:
     """Detect model capabilities based on type"""
@@ -293,12 +359,14 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
         "streaming": False,
         "function_calling": False,
         "code_understanding": False,
-        "advanced_reasoning": False
+        "advanced_reasoning": False,
     }
 
     # Extract model type from ModelConfig or use string directly
     try:
-        model_type = model_config.type if isinstance(model_config, ModelConfig) else model_config
+        model_type = (
+            model_config.type if isinstance(model_config, ModelConfig) else model_config
+        )
 
         if not model_type:
             logger.warning("Empty model type provided to detect_model_capabilities")
@@ -315,12 +383,18 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
             "gemini-2-flash-lite",
             "gemini-2.0-flash-exp",
             "chatgpt-latest",
-            "gemini"
+            "gemini",
         ]
 
         # Ollama vision-capable models
         ollama_vision_models = [
-            "gemma3", "llava", "bakllava", "moondream", "llava-phi3", "gpt", "chatgpt"
+            "gemma3",
+            "llava",
+            "bakllava",
+            "moondream",
+            "llava-phi3",
+            "gpt",
+            "chatgpt",
         ]
 
         # Check if it's an Ollama model with vision support
@@ -337,24 +411,37 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
                     break
 
         # Streaming capability
-        if model_type.startswith(("claude", "gpt", "chatgpt", "gemini", "gemma","gemini-2.0-flash-exp")):
+        if model_type.startswith(
+            ("claude", "gpt", "chatgpt", "gemini", "gemma", "gemini-2.0-flash-exp")
+        ):
             capabilities["vision"] = True
             capabilities["streaming"] = True
 
         # Function calling capability
         if "gpt-4" in model_type or "claude" in model_type:
             capabilities["function_calling"] = True
-            
+
         # Advanced reasoning capability for Claude 3.7
         if "claude-3-7" in model_type:
             capabilities["advanced_reasoning"] = True
-            
+
         # Advanced reasoning for OpenAI O1/O3 models
-        if any(model_name in model_type.lower() for model_name in ["o1", "o1-preview", "o3"]):
+        if any(
+            model_name in model_type.lower()
+            for model_name in ["o1", "o1-preview", "o3"]
+        ):
             capabilities["advanced_reasoning"] = True
-            
+
         # Explicitly check for reasoning variants
-        if any(variant in model_type for variant in ["claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low", "claude-3-7-reasoning-none"]):
+        if any(
+            variant in model_type
+            for variant in [
+                "claude-3-7-reasoning",
+                "claude-3-7-reasoning-medium",
+                "claude-3-7-reasoning-low",
+                "claude-3-7-reasoning-none",
+            ]
+        ):
             capabilities["advanced_reasoning"] = True
 
         return capabilities

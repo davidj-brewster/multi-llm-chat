@@ -1,4 +1,5 @@
 """AI model conversation manager with memory optimizations."""
+
 import json
 import os
 import datetime
@@ -12,27 +13,43 @@ from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
 import io
 import asyncio
+
 # Local imports
 from configuration import load_config, DiscussionConfig, detect_model_capabilities
 from configdataclasses import FileConfig, DiscussionConfig
 from arbiter_v4 import evaluate_conversations, VisualizationGenerator
 from file_handler import ConversationMediaHandler
-from model_clients import BaseClient, OpenAIClient, ClaudeClient, GeminiClient, MLXClient, OllamaClient, PicoClient
+from model_clients import (
+    BaseClient,
+    OpenAIClient,
+    ClaudeClient,
+    GeminiClient,
+    MLXClient,
+    OllamaClient,
+    PicoClient,
+)
+# move these into model_clients or separate everything..?
+from lmstudio_client import LMStudioClient
+from claude_reasoning_config import ClaudeReasoningConfig
 from shared_resources import MemoryManager
 from metrics_analyzer import analyze_conversations
 
-T = TypeVar('T')
+T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+
+
+# Models to use in default mode
+# these must match the model names below not necessary the exact actual model name
+AI_MODEL = "gemini-2.5-pro-exp"
+HUMAN_MODEL = "gemini-2.0-flash-thinking-exp"
+
 CONFIG_PATH = "config.yaml"
 TOKENS_PER_TURN = 1280
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('ai_battle.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)
@@ -42,69 +59,148 @@ OPENAI_MODELS = {
     # Base models (text-only with reasoning support)
     "o1": {"model": "o1", "reasoning_level": "auto", "multimodal": False},
     "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": False},
-    
     # O1 with reasoning levels (text-only)
-    "o1-reasoning-high": {"model": "o1", "reasoning_level": "high", "multimodal": False},
-    "o1-reasoning-medium": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
+    "o1-reasoning-high": {
+        "model": "o1",
+        "reasoning_level": "high",
+        "multimodal": False,
+    },
+    "o1-reasoning-medium": {
+        "model": "o1",
+        "reasoning_level": "medium",
+        "multimodal": False,
+    },
     "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": False},
-    
     # O3 with reasoning levels (text-only)
-    "o3-reasoning-high": {"model": "o3", "reasoning_level": "high", "multimodal": False},
-    "o3-reasoning-medium": {"model": "o3", "reasoning_level": "medium", "multimodal": False},
+    "o3-reasoning-high": {
+        "model": "o3",
+        "reasoning_level": "high",
+        "multimodal": False,
+    },
+    "o3-reasoning-medium": {
+        "model": "o3",
+        "reasoning_level": "medium",
+        "multimodal": False,
+    },
     "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": False},
-    
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
-    "gpt-4o-mini": {"model": "gpt-4o-mini", "reasoning_level": None, "multimodal": True},
+    "gpt-4o-mini": {
+        "model": "gpt-4o-mini",
+        "reasoning_level": None,
+        "multimodal": True,
+    },
 }
 
 CLAUDE_MODELS = {
     # Base models (newest versions)
-    "claude": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
-    "sonnet": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
-    "haiku": {"model": "claude-3-5-haiku", "reasoning_level": None, "extended_thinking": False},
-    
+    "claude": {
+        "model": "claude-3-5-sonnet",
+        "reasoning_level": None,
+        "extended_thinking": False,
+    },
+    "sonnet": {
+        "model": "claude-3-5-sonnet",
+        "reasoning_level": None,
+        "extended_thinking": False,
+    },
+    "haiku": {
+        "model": "claude-3-5-haiku",
+        "reasoning_level": None,
+        "extended_thinking": False,
+    },
     # Specific versions
-    "claude-3-5-sonnet": {"model": "claude-3-5-sonnet", "reasoning_level": None, "extended_thinking": False},
-    "claude-3-5-haiku": {"model": "claude-3-5-haiku", "reasoning_level": None, "extended_thinking": False},
-    "claude-3-7": {"model": "claude-3-7-sonnet", "reasoning_level": "auto", "extended_thinking": False},
-    "claude-3-7-sonnet": {"model": "claude-3-7-sonnet", "reasoning_level": "auto", "extended_thinking": False},
-    
+    "claude-3-5-sonnet": {
+        "model": "claude-3-5-sonnet",
+        "reasoning_level": None,
+        "extended_thinking": False,
+    },
+    "claude-3-5-haiku": {
+        "model": "claude-3-5-haiku",
+        "reasoning_level": None,
+        "extended_thinking": False,
+    },
+    "claude-3-7": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "auto",
+        "extended_thinking": False,
+    },
+    "claude-3-7-sonnet": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "auto",
+        "extended_thinking": False,
+    },
     # Claude 3.7 with reasoning levels
-    "claude-3-7-reasoning": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": False},
-    "claude-3-7-reasoning-high": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": False},
-    "claude-3-7-reasoning-medium": {"model": "claude-3-7-sonnet", "reasoning_level": "medium", "extended_thinking": False},
-    "claude-3-7-reasoning-low": {"model": "claude-3-7-sonnet", "reasoning_level": "low", "extended_thinking": False},
-    "claude-3-7-reasoning-none": {"model": "claude-3-7-sonnet", "reasoning_level": "none", "extended_thinking": False},
-    
+    "claude-3-7-reasoning": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "high",
+        "extended_thinking": False,
+    },
+    "claude-3-7-reasoning-high": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "high",
+        "extended_thinking": False,
+    },
+    "claude-3-7-reasoning-medium": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "medium",
+        "extended_thinking": False,
+    },
+    "claude-3-7-reasoning-low": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "low",
+        "extended_thinking": False,
+    },
+    "claude-3-7-reasoning-none": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "none",
+        "extended_thinking": False,
+    },
     # Claude 3.7 with extended thinking
-    "claude-3-7-extended": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": True, "budget_tokens": 8000},
-    "claude-3-7-extended-deep": {"model": "claude-3-7-sonnet", "reasoning_level": "high", "extended_thinking": True, "budget_tokens": 16000},
+    "claude-3-7-extended": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "high",
+        "extended_thinking": True,
+        "budget_tokens": 8000,
+    },
+    "claude-3-7-extended-deep": {
+        "model": "claude-3-7-sonnet",
+        "reasoning_level": "high",
+        "extended_thinking": True,
+        "budget_tokens": 16000,
+    },
 }
+
 
 @dataclass
 class ModelConfig:
     """Configuration for AI model parameters"""
+
     temperature: float = 0.8
     max_tokens: int = 1280
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
+    human_delay: float = 4.0
+
 
 @dataclass
 class ConversationManager:
     """Manages conversations between AI models with memory optimization."""
 
-    def __init__(self,
-                 config: DiscussionConfig   = None,
-                 domain: str = "General knowledge",
-                 human_delay: float = 4.0,
-                 mode: str = None,
-                 min_delay: float = 2,
-                 gemini_api_key: Optional[str] = None,
-                 claude_api_key: Optional[str] = None,
-                 openai_api_key: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        config: DiscussionConfig = None,
+        domain: str = "General knowledge",
+        human_delay: float = 4.0,
+        mode: str = None,
+        min_delay: float = 2,
+        gemini_api_key: Optional[str] = None,
+        claude_api_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
+    ):
         self.config = config
         self.domain = config.goal if config else domain
+
         self.human_delay = human_delay
         self.mode = mode  # "human-aiai" or "ai-ai"
         self._media_handler = None  # Lazy initialization
@@ -144,7 +240,7 @@ class ConversationManager:
 
         Returns:
             Optional[BaseClient]: Client instance if successful, None if the model
-                                 is unknown or client creation fails
+                         is unknown or client creation fails
         """
         if model_name not in self._initialized_clients:
             try:
@@ -152,91 +248,251 @@ class ConversationManager:
                 if model_name in CLAUDE_MODELS:
                     model_config = CLAUDE_MODELS[model_name]
                     client = ClaudeClient(
-                        role=None, 
-                        api_key=self.claude_api_key, 
-                        mode=self.mode, 
-                        domain=self.domain, 
-                        model=model_config["model"]
+                        role=None,
+                        api_key=self.claude_api_key,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model=model_config["model"],
                     )
-                    
+
                     # Set reasoning level if specified
                     if model_config["reasoning_level"] is not None:
                         client.reasoning_level = model_config["reasoning_level"]
-                        logger.debug(f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}")
-                    
+                        logger.debug(
+                            f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}"
+                        )
+
                     # Set extended thinking if enabled
                     if model_config.get("extended_thinking", False):
                         budget_tokens = model_config.get("budget_tokens", None)
                         client.set_extended_thinking(True, budget_tokens)
-                        logger.debug(f"Enabled extended thinking with budget_tokens={budget_tokens} for {model_name}")
-                
+                        logger.debug(
+                            f"Enabled extended thinking with budget_tokens={budget_tokens} for {model_name}"
+                        )
+
                 # Handle OpenAI models using templates
                 elif model_name in OPENAI_MODELS:
                     model_config = OPENAI_MODELS[model_name]
                     client = OpenAIClient(
-                        api_key=self.openai_api_key, 
-                        role=None, 
-                        mode=self.mode, 
-                        domain=self.domain, 
-                        model=model_config["model"]
+                        api_key=self.openai_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model=model_config["model"],
                     )
-                    
+
                     # Set reasoning level if specified
                     if model_config["reasoning_level"] is not None:
                         client.reasoning_level = model_config["reasoning_level"]
-                        logger.debug(f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}")
-                
+                        logger.debug(
+                            f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}"
+                        )
+
                 # Handle other model types
                 elif model_name == "gpt-4o":
-                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="chatgpt-latest")
+                    client = OpenAIClient(
+                        api_key=self.openai_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="chatgpt-latest",
+                    )
                 elif model_name == "gpt-4o-mini":
-                    client = OpenAIClient(api_key=self.openai_api_key, role=None, mode=self.mode, domain=self.domain, model="gpt-4o-mini")
-                elif model_name == "gemini":
-                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
-                elif model_name == "gemini-2-reasoning":
-                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-thinking-exp-01-21")
+                    client = OpenAIClient(
+                        api_key=self.openai_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gpt-4o-mini",
+                    )
                 elif model_name == "gemini-2.0-flash-exp":
-                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-exp")
-                elif model_name == "gemini-2-pro":
-                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-pro-exp-02-05")
-                elif model_name == "gemini-2-flash-lite":
-                    client = GeminiClient(api_key=self.gemini_api_key, role=None, mode=self.mode, domain=self.domain, model="gemini-2.0-flash-lite-preview-02-05")
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-flash-exp",
+                    )
+                elif model_name == "gemini-2.0-flash-thinking-exp-01-21":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-flash-thinking-exp-01-21",
+                    )
+                elif model_name == "gemini-2.0-flash-exp":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-flash-exp",
+                    )
+                elif model_name == "gemini-2.0-flash-thinking-exp":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-flash-thinking-exp",
+                    )
+                elif model_name == "gemini-2.0-pro":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-pro-exp-02-05",
+                    )
+                elif model_name == "gemini-2.5-pro-exp":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.5-pro-exp-03-25",
+                    )
+                elif model_name == "gemini-2.0-flash-lite":
+                    client = GeminiClient(
+                        api_key=self.gemini_api_key,
+                        role=None,
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="gemini-2.0-flash-lite-preview-02-05",
+                    )
                 elif model_name == "mlx-qwq":
-                    client = MLXClient(mode=self.mode, domain=self.domain, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
-                elif model_name == "mlx-abliterated":
-                    client = MLXClient(mode=self.mode, domain=self.domain, model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit")
+                    client = MLXClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
+                    )
+                elif model_name == "mlx-llama-3.1-abb":
+                    client = MLXClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
+                    )
+                elif model_name == "lmstudio-QwQ-32B-8bit-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/QwQ-32B-8bit",
+                    )
+                elif model_name == "lmstudio-QwQ-32B-6bit-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/QwQ-32B-8bit",
+                    )
+                elif model_name == "lmstudio-gemma3-27b-bf16-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/gemma3-27b-it-bf16",
+                    )
+                elif model_name == "lmstudio-gemma3-27b-8bit-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/gemma3-27b-it-8bit",
+                    )
+                elif model_name == "lmstudio-phi4-bf16-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mlx-community/phi-4-bf16",
+                    )
+                elif model_name == "lmstudio-gemma3-27b-unc-MLX":
+                     client = LMStudioClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="TheCluster/gemma-3-27b-it-uncensored-mlx",
+                    )
                 elif model_name == "pico-r1-14":
-                    client = PicoClient(mode=self.mode, domain=self.domain, model="DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx")
-                elif model_name == "pico-r1-8":
-                    client = PicoClient(mode=self.mode, domain=self.domain, model="DeepSeek-R1-Distill-Llama-8B-8bit-mlx")
-                elif model_name == "pico-phi4":
-                    client = PicoClient(mode=self.mode, domain=self.domain, model="phi-4-abliterated-3bit")
+                    client = PicoClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx",
+                    )
+                elif model_name == "pico-r1-llama8b":
+                    client = PicoClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="DeepSeek-R1-Distill-Llama-8B-8bit-mlx",
+                    )
+                elif model_name == "pico-phi4-abb":
+                    client = PicoClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="phi-4-abliterated-3bit",
+                    )
                 elif model_name == "ollama":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mannix/llama3.1-8b-lexi:latest",
+                    )
                 elif model_name == "ollama-phi4":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="phi4:latest")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="phi4:latest"
+                    )
                 elif model_name == "ollama-lexi":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-lexi:latest")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mannix/llama3.1-8b-lexi:latest",
+                    )
                 elif model_name == "ollama-instruct":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2:3b-instruct-q5_K_S")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="llama3.2:3b-instruct-q5_K_S",
+                    )
                 elif model_name == "ollama-qwen32-r1":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest",
+                    )
                 elif model_name == "ollama-gemma3-1b":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:1b-it-q8_0")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="gemma3:1b-it-q8_0"
+                    )
                 elif model_name == "ollama-gemma3-4b":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:4b-it-q8_0")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="gemma3:4b-it-q8_0"
+                    )
                 elif model_name == "ollama-gemma3-12b":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:12b-it-q4_K_M")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="gemma3:12b-it-q4_K_M"
+                    )
                 elif model_name == "ollama-gemma3-27b":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="gemma3:27b-it-fp16")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="gemma3:27b-it-fp16"
+                    )
                 elif model_name == "ollama-llama3.2-11b":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="llama3.2-vision:11b-instruct-q4_K_M")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="llama3.2-vision:11b-instruct-q4_K_M",
+                    )
                 elif model_name == "ollama-abliterated":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="mannix/llama3.1-8b-abliterated:latest")
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="mannix/llama3.1-8b-abliterated:latest",
+                    )
                 elif model_name == "ollama-zephyr":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="zephyr:latest")
-                elif model_name == "ollama-r1-deepseek":
-                    client = OllamaClient(mode=self.mode, domain=self.domain, model="tom_himanen/deepseek-r1-roo-cline-tools:8b")
+                    client = OllamaClient(
+                        mode=self.mode, domain=self.domain, model="zephyr:latest"
+                    )
+                elif model_name == "ollama-new-model-template":
+                    client = OllamaClient(
+                        mode=self.mode,
+                        domain=self.domain,
+                        model="full-name-of-ollama-model",
+                    )
                 else:
                     logger.error(f"Unknown model: {model_name}")
                     return None
@@ -253,7 +509,6 @@ class ConversationManager:
         return self.model_map.get(model_name)
 
     def cleanup_unused_clients(self):
-        """Clean up clients that haven't been used recently."""
         """
         Clean up clients that haven't been used recently to free up resources.
 
@@ -266,14 +521,13 @@ class ConversationManager:
             if model_name not in self.model_map:
                 continue
             client = self.model_map[model_name]
-            if hasattr(client, '__del__'):
+            if hasattr(client, "__del__"):
                 client.__del__()
             del self.model_map[model_name]
             self._initialized_clients.remove(model_name)
         logger.debug(MemoryManager.get_memory_usage())
 
     def validate_connections(self, required_models: List[str] = None) -> bool:
-        """Validate required model connections."""
         """
         Validate that required model connections are available and working.
 
@@ -283,14 +537,17 @@ class ConversationManager:
 
         Args:
             required_models: List of model names to validate. If None, validates
-                           all models in the model map except "ollama" and "mlx".
+                   all models in the model map except "ollama" and "mlx".
 
         Returns:
             bool: True if all required connections are valid, False otherwise.
         """
         if required_models is None:
-            required_models = [name for name, client in self.model_map.items()
-                           if client and name not in ["ollama", "mlx"]]
+            required_models = [
+                name
+                for name, client in self.model_map.items()
+                if client and name not in ["ollama", "mlx"]
+            ]
 
         if not required_models:
             logger.info("No models require validation")
@@ -300,7 +557,6 @@ class ConversationManager:
         return True
 
     def rate_limited_request(self):
-        """Apply rate limiting to requests."""
         """
         Apply rate limiting to requests to avoid overwhelming API services.
 
@@ -316,15 +572,16 @@ class ConversationManager:
                 io.sleep(self.min_delay)
             self.last_request_time = time.time()
 
-    def run_conversation_turn(self,
-                            prompt: str,
-                            model_type: str,
-                            client: BaseClient,
-                            mode: str,
-                            role: str,
-                            file_data: Dict[str, Any] = None,
-                            system_instruction: str=None) -> str:
-        """Single conversation turn with specified model and role."""
+    def run_conversation_turn(
+        self,
+        prompt: str,
+        model_type: str,
+        client: BaseClient,
+        mode: str,
+        role: str,
+        file_data: Dict[str, Any] = None,
+        system_instruction: str = None,
+    ) -> str:
         """
         Execute a single conversation turn with the specified model and role.
 
@@ -345,10 +602,20 @@ class ConversationManager:
             str: Generated response text
         """
         self.mode = mode
-        mapped_role = "user" if (role == "human" or role == "HUMAN" or role == "user") else "assistant"
-        prompt_level = "no-meta-prompting" if mode == "no-meta-prompting" or mode =="default" else mapped_role
+        mapped_role = (
+            "user"
+            if (role == "human" or role == "HUMAN" or role == "user")
+            else "assistant"
+        )
+        prompt_level = (
+            "no-meta-prompting"
+            if mode == "no-meta-prompting" or mode == "default"
+            else mapped_role
+        )
         if not self.conversation_history:
-            self.conversation_history.append({"role": "system", "content": f"{system_instruction}!"})
+            self.conversation_history.append(
+                {"role": "system", "content": f"{system_instruction}!"}
+            )
 
         try:
             if prompt_level == "no-meta-prompting":
@@ -356,47 +623,76 @@ class ConversationManager:
                     prompt=prompt,
                     system_instruction=f"You are a helpful assistant. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens",
                     history=self.conversation_history.copy(),  # Limit history
-                    role="assistant", #even if its the user role, it should get no instructions
-                    file_data=file_data
+                    role="assistant",  # even if its the user role, it should get no instructions
+                    file_data=file_data,
                 )
                 if isinstance(response, list) and len(response) > 0:
-                    response = response[0].text if hasattr(response[0], 'text') else str(response[0])
+                    response = (
+                        response[0].text
+                        if hasattr(response[0], "text")
+                        else str(response[0])
+                    )
                 self.conversation_history.append({"role": role, "content": response})
-            elif (mapped_role == "user" or mapped_role == "human" or mode == "human-aiai"):
+            elif (
+                mapped_role == "user" or mapped_role == "human" or mode == "human-aiai"
+            ):
                 reversed_history = []
                 for msg in self.conversation_history:  # Limit history
                     if msg["role"] == "assistant":
-                        reversed_history.append({"role": "user", "content": msg["content"]})
+                        reversed_history.append(
+                            {"role": "user", "content": msg["content"]}
+                        )
                     elif msg["role"] == "user":
-                        reversed_history.append({"role": "assistant", "content": msg["content"]})
+                        reversed_history.append(
+                            {"role": "assistant", "content": msg["content"]}
+                        )
                     else:
                         reversed_history.append(msg)
                 if mode == "human-aiai" and role == "assistant":
                     reversed_history = self.conversation_history.copy()
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client.adaptive_manager.generate_instructions(history = reversed_history, mode=mode, role=role,domain=self.domain),
+                    system_instruction=client.adaptive_manager.generate_instructions(
+                        history=reversed_history,
+                        mode=mode,
+                        role=role,
+                        domain=self.domain,
+                    ),
                     history=reversed_history,  # Limit history
                     role=role,
-                    file_data=file_data
+                    file_data=file_data,
                 )
                 if isinstance(response, list) and len(response) > 0:
-                    response = response[0].text if hasattr(response[0], 'text') else str(response[0])
+                    response = (
+                        response[0].text
+                        if hasattr(response[0], "text")
+                        else str(response[0])
+                    )
 
                 self.conversation_history.append({"role": role, "content": response})
             else:
-
                 response = client.generate_response(
                     prompt=prompt,
-                    system_instruction=client.adaptive_manager.generate_instructions(history = self.conversation_history, mode=mode, role="assistant",domain=self.domain),
+                    system_instruction=client.adaptive_manager.generate_instructions(
+                        history=self.conversation_history,
+                        mode=mode,
+                        role="assistant",
+                        domain=self.domain,
+                    ),
                     history=self.conversation_history.copy(),
                     role="assistant",
-                    file_data=file_data
+                    file_data=file_data,
                 )
                 if isinstance(response, list) and len(response) > 0:
-                    response = response[0].text if hasattr(response[0], 'text') else str(response[0])
-                self.conversation_history.append({"role": "assistant", "content": response})
-            print (f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
+                    response = (
+                        response[0].text
+                        if hasattr(response[0], "text")
+                        else str(response[0])
+                    )
+                self.conversation_history.append(
+                    {"role": "assistant", "content": response}
+                )
+            print(f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
 
         except Exception as e:
             logger.error(f"Error generating response: {e} (role: {mapped_role})")
@@ -405,15 +701,17 @@ class ConversationManager:
 
         return response
 
-    def run_conversation_with_file(self,
-                                  initial_prompt: str,
-                                  human_model: str,
-                                  ai_model: str,
-                                  mode: str,
-                                  file_config: Union[FileConfig, Dict[str, Any], 'MultiFileConfig'],
-                                  human_system_instruction: str = None,
-                                  ai_system_instruction: str = None,
-                                  rounds: int = 1) -> List[Dict[str, str]]:
+    def run_conversation_with_file(
+        self,
+        initial_prompt: str,
+        human_model: str,
+        ai_model: str,
+        mode: str,
+        file_config: Union[FileConfig, Dict[str, Any], "MultiFileConfig"],
+        human_system_instruction: str = None,
+        ai_system_instruction: str = None,
+        rounds: int = 1,
+    ) -> List[Dict[str, str]]:
         """Run conversation with file input."""
         # Clear history and set up initial state
         self.conversation_history = []
@@ -423,59 +721,72 @@ class ConversationManager:
 
         # Process file if provided
         file_data = None
-        
+
         # Handle MultiFileConfig object
-        if hasattr(file_config, 'files') and isinstance(file_config.files, list):
+        if hasattr(file_config, "files") and isinstance(file_config.files, list):
             # Multiple files case using MultiFileConfig object
             files_list = file_config.files
             if not files_list:
                 logger.warning("No files found in MultiFileConfig")
                 return []
-                
+
             # Process all files and create a list of file data
             file_data_list = []
             for file_config_item in files_list:
                 try:
                     # Process file
-                    file_metadata = self.media_handler.process_file(file_config_item.path)
-                    
+                    file_metadata = self.media_handler.process_file(
+                        file_config_item.path
+                    )
+
                     # Create file data dictionary
                     single_file_data = {
                         "type": file_metadata.type,
                         "path": file_config_item.path,
                         "mime_type": file_metadata.mime_type,
-                        "dimensions": file_metadata.dimensions
+                        "dimensions": file_metadata.dimensions,
                     }
-                    
+
                     # Add type-specific data
                     if file_metadata.type == "image":
-                        with open(file_config_item.path, 'rb') as f:
-                            single_file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                        with open(file_config_item.path, "rb") as f:
+                            single_file_data["base64"] = base64.b64encode(
+                                f.read()
+                            ).decode("utf-8")
                             single_file_data["type"] = "image"
                             single_file_data["mime_type"] = file_metadata.mime_type
                             single_file_data["path"] = file_config_item.path
-                            
+
                     elif file_metadata.type in ["text", "code"]:
                         single_file_data["text_content"] = file_metadata.text_content
-                        
+
                     elif file_metadata.type == "video":
                         # Handle video processing (same as single file case)
                         single_file_data["duration"] = file_metadata.duration
                         # Use the entire processed video file
-                        if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
-                            processed_video_path = file_metadata.processed_video["processed_video_path"]
+                        if (
+                            file_metadata.processed_video
+                            and "processed_video_path" in file_metadata.processed_video
+                        ):
+                            processed_video_path = file_metadata.processed_video[
+                                "processed_video_path"
+                            ]
                             # Set the path to the processed video file, not the original
                             single_file_data["path"] = processed_video_path
                             # Set the mime type to video/mp4 for better compatibility
-                            single_file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
-                    
+                            single_file_data["mime_type"] = (
+                                file_metadata.processed_video.get(
+                                    "mime_type", "video/mp4"
+                                )
+                            )
+
                     # Add to list
                     file_data_list.append(single_file_data)
-                    
+
                 except Exception as e:
                     logger.error(f"Error processing file {file_config_item.path}: {e}")
                     # Continue with other files
-            
+
             # Pass the entire list of file data to the model client
             if file_data_list:
                 file_data = file_data_list
@@ -486,57 +797,70 @@ class ConversationManager:
             if not files_list:
                 logger.warning("No files found in file_config dictionary")
                 return []
-                
+
             # Process all files and create a list of file data
             file_data_list = []
             for file_config_item in files_list:
                 try:
                     # Process file
-                    file_metadata = self.media_handler.process_file(file_config_item.path)
-                    
+                    file_metadata = self.media_handler.process_file(
+                        file_config_item.path
+                    )
+
                     # Create file data dictionary
                     single_file_data = {
                         "type": file_metadata.type,
                         "path": file_config_item.path,
                         "mime_type": file_metadata.mime_type,
-                        "dimensions": file_metadata.dimensions
+                        "dimensions": file_metadata.dimensions,
                     }
-                    
+
                     # Add type-specific data
                     if file_metadata.type == "image":
-                        with open(file_config_item.path, 'rb') as f:
-                            single_file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                        with open(file_config_item.path, "rb") as f:
+                            single_file_data["base64"] = base64.b64encode(
+                                f.read()
+                            ).decode("utf-8")
                             single_file_data["type"] = "image"
                             single_file_data["mime_type"] = file_metadata.mime_type
                             single_file_data["path"] = file_config_item.path
-                            
+
                     elif file_metadata.type in ["text", "code"]:
                         single_file_data["text_content"] = file_metadata.text_content
-                        
+
                     elif file_metadata.type == "video":
                         # Handle video processing (same as single file case)
                         single_file_data["duration"] = file_metadata.duration
                         # Use the entire processed video file
-                        if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
-                            processed_video_path = file_metadata.processed_video["processed_video_path"]
+                        if (
+                            file_metadata.processed_video
+                            and "processed_video_path" in file_metadata.processed_video
+                        ):
+                            processed_video_path = file_metadata.processed_video[
+                                "processed_video_path"
+                            ]
                             # Set the path to the processed video file, not the original
                             single_file_data["path"] = processed_video_path
                             # Set the mime type to video/mp4 for better compatibility
-                            single_file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
+                            single_file_data["mime_type"] = (
+                                file_metadata.processed_video.get(
+                                    "mime_type", "video/mp4"
+                                )
+                            )
                             # Process video chunks (same as single file case)
                             # ... (video processing code)
-                            
+
                     # Add to list
                     file_data_list.append(single_file_data)
-                    
+
                 except Exception as e:
                     logger.error(f"Error processing file {file_config_item.path}: {e}")
                     # Continue with other files
-            
+
             # Pass the entire list of file data to the model client
             if file_data_list:
                 file_data = file_data_list
-                    
+
         # Handle single FileConfig object
         elif file_config:
             try:
@@ -548,13 +872,13 @@ class ConversationManager:
                     "type": file_metadata.type,
                     "path": file_config.path,
                     "mime_type": file_metadata.mime_type,
-                    "dimensions": file_metadata.dimensions
+                    "dimensions": file_metadata.dimensions,
                 }
 
                 # Add type-specific data
                 if file_metadata.type == "image":
-                    with open(file_config.path, 'rb') as f:
-                        file_data["base64"] = base64.b64encode(f.read()).decode('utf-8')
+                    with open(file_config.path, "rb") as f:
+                        file_data["base64"] = base64.b64encode(f.read()).decode("utf-8")
                         file_data["type"] = "image"
                         file_data["mime_type"] = file_metadata.mime_type
                         file_data["path"] = file_config.path
@@ -564,15 +888,22 @@ class ConversationManager:
                     # For video, we need to extract frames
                     file_data["duration"] = file_metadata.duration
                     # Use the entire processed video file
-                    if file_metadata.processed_video and "processed_video_path" in file_metadata.processed_video:
-                        processed_video_path = file_metadata.processed_video["processed_video_path"]
+                    if (
+                        file_metadata.processed_video
+                        and "processed_video_path" in file_metadata.processed_video
+                    ):
+                        processed_video_path = file_metadata.processed_video[
+                            "processed_video_path"
+                        ]
                         # Set the path to the processed video file, not the original
                         file_data["path"] = processed_video_path
                         # Set the mime type to video/mp4 for better compatibility
-                        file_data["mime_type"] = file_metadata.processed_video.get("mime_type", "video/mp4")
+                        file_data["mime_type"] = file_metadata.processed_video.get(
+                            "mime_type", "video/mp4"
+                        )
                         chunk_size = 1024 * 1024  # 1MB chunks
                         try:
-                            with open(processed_video_path, 'rb') as f:
+                            with open(processed_video_path, "rb") as f:
                                 video_content = f.read()
                                 # Calculate number of chunks
                                 total_size = len(video_content)
@@ -584,31 +915,53 @@ class ConversationManager:
                                     start = i * chunk_size
                                     end = min(start + chunk_size, total_size)
                                     chunk = video_content[start:end]
-                                    chunks.append(base64.b64encode(chunk).decode('utf-8'))
+                                    chunks.append(
+                                        base64.b64encode(chunk).decode("utf-8")
+                                    )
 
                                 file_data["video_chunks"] = chunks
                                 file_data["num_chunks"] = num_chunks
                                 file_data["video_path"] = processed_video_path
-                                file_data["fps"] = file_metadata.processed_video.get("fps", 2)
-                                file_data["resolution"] = file_metadata.processed_video.get("resolution", (0, 0))
-                                logger.info(f"Chunked video from {processed_video_path} into {num_chunks} chunks")
+                                file_data["fps"] = file_metadata.processed_video.get(
+                                    "fps", 2
+                                )
+                                file_data["resolution"] = (
+                                    file_metadata.processed_video.get(
+                                        "resolution", (0, 0)
+                                    )
+                                )
+                                logger.info(
+                                    f"Chunked video from {processed_video_path} into {num_chunks} chunks"
+                                )
                         except Exception as e:
-                            logger.error(f"Error reading processed video from {processed_video_path}: {e}")
+                            logger.error(
+                                f"Error reading processed video from {processed_video_path}: {e}"
+                            )
 
                             # Fallback to thumbnail if available
                             if file_metadata.thumbnail_path:
                                 try:
-                                    with open(file_metadata.thumbnail_path, 'rb') as f:
-                                        file_data["key_frames"] = [{
-                                            "timestamp": 0,
-                                            "base64": base64.b64encode(f.read()).decode('utf-8')
-                                        }]
-                                        logger.info(f"Fallback: Added thumbnail as single frame")
+                                    with open(file_metadata.thumbnail_path, "rb") as f:
+                                        file_data["key_frames"] = [
+                                            {
+                                                "timestamp": 0,
+                                                "base64": base64.b64encode(
+                                                    f.read()
+                                                ).decode("utf-8"),
+                                            }
+                                        ]
+                                        logger.info(
+                                            f"Fallback: Added thumbnail as single frame"
+                                        )
                                 except Exception as e:
-                                    logger.error(f"Error reading thumbnail from {file_metadata.thumbnail_path}: {e}")
+                                    logger.error(
+                                        f"Error reading thumbnail from {file_metadata.thumbnail_path}: {e}"
+                                    )
 
                 # Add file context to prompt
-                file_context = f"Analyzing {file_metadata.type} file: {file_config.path}"
+                file_context = (
+                    f"Analyzing {file_metadata.type} file: {file_config.path}"
+                )
                 if file_metadata.dimensions:
                     file_context += f" ({file_metadata.dimensions[0]}x{file_metadata.dimensions[1]})"
                 if file_metadata.type == "video" and "video_chunks" in file_data:
@@ -625,14 +978,19 @@ class ConversationManager:
         core_topic = initial_prompt.strip()
         try:
             if "Topic:" in initial_prompt:
-                core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+                core_topic = (
+                    "Discuss: "
+                    + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+                )
             elif "GOAL:" in initial_prompt:
                 # Try to extract goal with more robust parsing
                 goal_parts = initial_prompt.split("GOAL:")[1].strip()
                 if "(" in goal_parts and ")" in goal_parts:
                     # Extract content between parentheses if present
                     try:
-                        core_topic = "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                        core_topic = (
+                            "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                        )
                     except IndexError:
                         # If extraction fails, use the whole goal part
                         core_topic = "GOAL: " + goal_parts
@@ -647,16 +1005,27 @@ class ConversationManager:
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
 
         # Continue with standard conversation flow, but pass file_data to the first turn
-        return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, file_data, human_system_instruction, ai_system_instruction, rounds)
+        return self._run_conversation_with_file_data(
+            core_topic,
+            human_model,
+            ai_model,
+            mode,
+            file_data,
+            human_system_instruction,
+            ai_system_instruction,
+            rounds,
+        )
 
-    def run_conversation(self,
-                        initial_prompt: str,
-                        human_model: str,
-                        ai_model: str,
-                        mode: str,
-                        human_system_instruction: str=None,
-                        ai_system_instruction: str=None,
-                        rounds: int = 1) -> List[Dict[str, str]]:
+    def run_conversation(
+        self,
+        initial_prompt: str,
+        human_model: str,
+        ai_model: str,
+        mode: str,
+        human_system_instruction: str = None,
+        ai_system_instruction: str = None,
+        rounds: int = 1,
+    ) -> List[Dict[str, str]]:
         """Run conversation ensuring proper role assignment and history maintenance."""
 
         # Clear history and set up initial state
@@ -669,14 +1038,19 @@ class ConversationManager:
         core_topic = initial_prompt.strip()
         try:
             if "Topic:" in initial_prompt:
-                core_topic = "Discuss: " + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+                core_topic = (
+                    "Discuss: "
+                    + initial_prompt.split("Topic:")[1].split("\\n")[0].strip()
+                )
             elif "GOAL:" in initial_prompt:
                 # Try to extract goal with more robust parsing
                 goal_parts = initial_prompt.split("GOAL:")[1].strip()
                 if "(" in goal_parts and ")" in goal_parts:
                     # Extract content between parentheses if present
                     try:
-                        core_topic = "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                        core_topic = (
+                            "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
+                        )
                     except IndexError:
                         # If extraction fails, use the whole goal part
                         core_topic = "GOAL: " + goal_parts
@@ -697,29 +1071,44 @@ class ConversationManager:
         ai_client = self._get_client(ai_model)
 
         if not human_client or not ai_client:
-            logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
+            logger.error(
+                f"Could not initialize required clients: {human_model}, {ai_model}"
+            )
             return []
 
-        return self._run_conversation_with_file_data(core_topic, human_model, ai_model, mode, None, human_system_instruction, ai_system_instruction, rounds)
+        return self._run_conversation_with_file_data(
+            core_topic,
+            human_model,
+            ai_model,
+            mode,
+            None,
+            human_system_instruction,
+            ai_system_instruction,
+            rounds,
+        )
 
-    def _run_conversation_with_file_data(self,
-                                       core_topic: str,
-                                       human_model: str,
-                                       ai_model: str,
-                                       mode: str,
-                                       file_data: Dict[str, Any] = None,
-                                       human_system_instruction: str = None,
-                                       ai_system_instruction: str = None,
-                                       rounds: int = 5) -> List[Dict[str, str]]:
+    def _run_conversation_with_file_data(
+        self,
+        core_topic: str,
+        human_model: str,
+        ai_model: str,
+        mode: str,
+        file_data: Dict[str, Any] = None,
+        human_system_instruction: str = None,
+        ai_system_instruction: str = None,
+        rounds: int = 5,
+    ) -> List[Dict[str, str]]:
         """Internal method to run conversation with optional file data."""
         logger.info(f"Starting conversation with topic: {core_topic}")
-        self.mode="human-ai"
+        self.mode = "human-ai"
         # Get client instances
         human_client = self._get_client(human_model)
         ai_client = self._get_client(ai_model)
 
         if not human_client or not ai_client:
-            logger.error(f"Could not initialize required clients: {human_model}, {ai_model}")
+            logger.error(
+                f"Could not initialize required clients: {human_model}, {ai_model}"
+            )
             return []
 
         # Check if models support vision if file is image/video
@@ -727,18 +1116,23 @@ class ConversationManager:
             human_capabilities = detect_model_capabilities(human_model)
             ai_capabilities = detect_model_capabilities(ai_model)
 
-            if not human_capabilities.get("vision", False) or not ai_capabilities.get("vision", False):
+            if not human_capabilities.get("vision", False) or not ai_capabilities.get(
+                "vision", False
+            ):
                 logger.warning("One or both models do not support vision capabilities")
                 # We'll continue but log a warning
 
                 # If AI model doesn't support vision, we'll convert image to text description
-                if not ai_capabilities.get("vision", False) and file_data["type"] == "image":
+                if (
+                    not ai_capabilities.get("vision", False)
+                    and file_data["type"] == "image"
+                ):
                     # Add a note that this is an image description
                     dimensions = file_data.get("dimensions", (0, 0))
                     file_data = {
                         "type": "text",
                         "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
-                        "path": file_data.get("path", "")
+                        "path": file_data.get("path", ""),
                     }
 
         ai_response = core_topic
@@ -748,29 +1142,52 @@ class ConversationManager:
                 # Human turn
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
-                    system_instruction=f"{core_topic}. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="user",history=self.conversation_history,domain=self.domain),
+                    system_instruction=(
+                        f"{core_topic}. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens"
+                        if mode == "no-meta-prompting"
+                        else human_client.adaptive_manager.generate_instructions(
+                            mode=mode,
+                            role="user",
+                            history=self.conversation_history,
+                            domain=self.domain,
+                        )
+                    ),
                     role="user",
                     mode=self.mode,
                     model_type=human_model,
                     file_data=file_data,  # Only pass file data on first turn
-                    client=human_client
+                    client=human_client,
                 )
-                #print(f"\n\n\nHUMAN: ({human_model.upper()}): {human_response}\n\n")
 
                 # AI turn
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
-                    system_instruction=f"{core_topic}. You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens" if mode == "no-meta-prompting" else human_client.adaptive_manager.generate_instructions(mode=mode, role="assistant",history=self.conversation_history,domain=self.domain) if mode=="human-aiai" else ai_system_instruction,
+                    system_instruction=(
+                        f"{core_topic}. You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens"
+                        if mode == "no-meta-prompting"
+                        else (
+                            human_client.adaptive_manager.generate_instructions(
+                                mode=mode,
+                                role="assistant",
+                                history=self.conversation_history,
+                                domain=self.domain,
+                            )
+                            if mode == "human-aiai"
+                            else ai_system_instruction
+                        )
+                    ),
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
                     file_data=file_data,
-                    client=ai_client
+                    client=ai_client,
                 )
-                logger.debug(f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n")
+                logger.debug(
+                    f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n"
+                )
 
             # Clean up unused clients
-            #self.cleanup_unused_clients()
+            # self.cleanup_unused_clients()
 
             return self.conversation_history
 
@@ -780,15 +1197,13 @@ class ConversationManager:
             MemoryManager.cleanup_all()
 
     @classmethod
-    def from_config(cls, config_path: str) -> 'ConversationManager':
+    def from_config(cls, config_path: str) -> "ConversationManager":
         """Create ConversationManager instance from configuration file."""
         config = load_config(config_path)
 
         # Initialize manager with config
         manager = cls(
-            config=config,
-            domain=config.goal,
-            mode="human-ai"  # Default mode
+            config=config, domain=config.goal, mode="human-ai"  # Default mode
         )
 
         # Set up models based on configuration
@@ -806,24 +1221,27 @@ class ConversationManager:
 
         return manager
 
-async def save_conversation(conversation: List[Dict[str, str]],
-                     filename: str,
-                     human_model: str,
-                     ai_model: str,
-                     file_data: Dict[str, Any] = None,
-                     mode: str = None) -> None:
+
+async def save_conversation(
+    conversation: List[Dict[str, str]],
+    filename: str,
+    human_model: str,
+    ai_model: str,
+    file_data: Dict[str, Any] = None,
+    mode: str = None,
+) -> None:
     """Save an AI conversation to an HTML file with proper encoding.
 
     Args:
-        conversation (List[Dict[str, str]]): List of conversation messages with 'role' and 'content'
-        filename (str): Output HTML file path
-        human_model (str): Name of the human/user model
-        ai_model (str): Name of the AI model
-        file_data (Dict[str, Any], optional): Any associated file content (images, video, text)
-        mode (str, optional): Conversation mode ('human-ai' or 'ai-ai')
+    conversation (List[Dict[str, str]]): List of conversation messages with 'role' and 'content'
+    filename (str): Output HTML file path
+    human_model (str): Name of the human/user model
+    ai_model (str): Name of the AI model
+    file_data (Dict[str, Any], optional): Any associated file content (images, video, text)
+    mode (str, optional): Conversation mode ('human-ai' or 'ai-ai')
 
     Raises:
-        Exception: If saving fails or template is missing
+    Exception: If saving fails or template is missing
     """
     try:
         with open("templates/conversation.html", "r") as f:
@@ -842,12 +1260,19 @@ async def save_conversation(conversation: List[Dict[str, str]],
                             mime_type = file_item.get("mime_type", "image/jpeg")
                             conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Image")}</h3>'
                             conversation_html += f'<img src="data:{mime_type};base64,{file_item["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
-                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
+                        elif (
+                            file_item["type"] == "video"
+                            and "key_frames" in file_item
+                            and file_item["key_frames"]
+                        ):
                             # Add first frame of video
                             frame = file_item["key_frames"][0]
                             conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Video")} (First Frame)</h3>'
                             conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
-                        elif file_item["type"] in ["text", "code"] and "text_content" in file_item:
+                        elif (
+                            file_item["type"] in ["text", "code"]
+                            and "text_content" in file_item
+                        ):
                             # Add text content
                             conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Text")}</h3><pre>{file_item["text_content"]}</pre></div>\n'
             # Handle single file (original implementation)
@@ -857,12 +1282,19 @@ async def save_conversation(conversation: List[Dict[str, str]],
                     mime_type = file_data.get("mime_type", "image/jpeg")
                     conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Image")}</h3>'
                     conversation_html += f'<img src="data:{mime_type};base64,{file_data["base64"]}" alt="Input image" style="max-width: 100%; max-height: 500px;"/></div>\n'
-                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                elif (
+                    file_data["type"] == "video"
+                    and "key_frames" in file_data
+                    and file_data["key_frames"]
+                ):
                     # Add first frame of video
                     frame = file_data["key_frames"][0]
                     conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Video")} (First Frame)</h3>'
                     conversation_html += f'<img src="data:image/jpeg;base64,{frame["base64"]}" alt="Video frame" style="max-width: 100%; max-height: 500px;"/></div>\n'
-                elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
+                elif (
+                    file_data["type"] in ["text", "code"]
+                    and "text_content" in file_data
+                ):
                     # Add text content
                     conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
 
@@ -873,7 +1305,9 @@ async def save_conversation(conversation: List[Dict[str, str]],
                 content = str(content)
 
             if role == "system":
-                conversation_html += f'<div class="system-message">{content} ({mode})</div>\n'
+                conversation_html += (
+                    f'<div class="system-message">{content} ({mode})</div>\n'
+                )
             elif role in ["user", "human"]:
                 conversation_html += f'<div class="human-message"><strong>Human ({human_model}):</strong> {content}</div>\n'
             elif role == "assistant":
@@ -889,9 +1323,10 @@ async def save_conversation(conversation: List[Dict[str, str]],
                             conversation_html += f'<div class="message-image"><img src="{image_data}" alt="Image in message" style="max-width: 100%; max-height: 300px;"/></div>\n'
 
         with open(filename, "w") as f:
-            f.write(template % {'conversation': conversation_html})
+            f.write(template % {"conversation": conversation_html})
     except Exception as e:
         logger.error(f"Failed to save conversation: {e}")
+
 
 def _sanitize_filename_part(prompt: str) -> str:
     """
@@ -899,11 +1334,12 @@ def _sanitize_filename_part(prompt: str) -> str:
     then trim to something reasonable such as 30 characters.
     """
     # Remove non-alphanumeric/punctuation
-    sanitized = re.sub(r'[^\w\s-]', '', prompt)
+    sanitized = re.sub(r"[^\w\s-]", "", prompt)
     # Convert spaces to underscores
-    sanitized = re.sub(r'\s+', '_', sanitized.strip())
+    sanitized = re.sub(r"\s+", "_", sanitized.strip())
     # Limit length
     return sanitized[:50]
+
 
 async def save_arbiter_report(report: Dict[str, Any]) -> None:
     """Save arbiter analysis report with visualization support."""
@@ -924,7 +1360,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
                 "winner": "No clear winner determined",
                 "assertions": [],
                 "key_insights": [],
-                "improvement_suggestions": []
+                "improvement_suggestions": [],
             }
 
         # Generate visualizations if metrics are available
@@ -937,12 +1373,12 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
 
         # Format report content
         report_content = template % {
-            'report_content': report.get("content", "No content available"),
-            'metrics_data': json.dumps(report.get("metrics", {})),
-            'flow_data': json.dumps(report.get("flow", {})),
-            'metrics_chart': metrics_chart,
-            'timeline_chart': timeline_chart,
-            'winner': report.get("winner", "No clear winner determined")
+            "report_content": report.get("content", "No content available"),
+            "metrics_data": json.dumps(report.get("metrics", {})),
+            "flow_data": json.dumps(report.get("flow", {})),
+            "metrics_chart": metrics_chart,
+            "timeline_chart": timeline_chart,
+            "winner": report.get("winner", "No clear winner determined"),
         }
 
         # Save report with timestamp
@@ -954,32 +1390,32 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
 
         logger.info(f"Arbiter report saved successfully as {filename}")
 
-        # Create symlink to latest report
-        #latest_link = "arbiter_report_latest.html"
-        #if os.path.exists(latest_link):
-        #    os.remove(latest_link)
-        #os.symlink(filename, latest_link)
-
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
-async def save_metrics_report(ai_ai_conversation: List[Dict[str, str]],
-                       human_ai_conversation: List[Dict[str, str]]) -> None:
+
+async def save_metrics_report(
+    ai_ai_conversation: List[Dict[str, str]],
+    human_ai_conversation: List[Dict[str, str]],
+) -> None:
     """Save metrics analysis report."""
     try:
         if ai_ai_conversation and human_ai_conversation:
-            analysis_data = analyze_conversations(ai_ai_conversation, human_ai_conversation)
+            analysis_data = analyze_conversations(
+                ai_ai_conversation, human_ai_conversation
+            )
             logger.info("Metrics report generated successfully")
         else:
             logger.info("Skipping metrics report - empty conversations")
     except Exception as e:
         logger.error(f"Failed to generate metrics report: {e}")
 
+
 async def main():
     """Main entry point."""
     rounds = 5
     initial_prompt = """"
-    GOAL: Write a short story about a detective solving a mystery.
+	GOAL: Write a short story about a detective solving a mystery.
 """
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -987,27 +1423,32 @@ async def main():
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = "gemini-2-pro"
-    human_model = "haiku"
+    ai_model = AI_MODEL  # "gemini-2-pro"
+    human_model = HUMAN_MODEL  # "haiku"
 
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
         domain=initial_prompt,
         openai_api_key=openai_api_key,
         claude_api_key=anthropic_api_key,
-        gemini_api_key=gemini_api_key
+        gemini_api_key=gemini_api_key,
     )
 
     # Only validate if using cloud models
-    if "mlx" not in human_model and "ollama" not in human_model or ("ollama" not in ai_model and "mlx" not in ai_model):
+    if (
+        "mlx" not in human_model
+        and "ollama" not in human_model
+        or ("ollama" not in ai_model and "mlx" not in ai_model)
+    ):
         if not manager.validate_connections([human_model, ai_model]):
             logger.error("Failed to validate required model connections")
             return
 
-
     human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}... Restrict output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if "GOAL:" in initial_prompt:
-        human_system_instruction = f"Solve {initial_prompt} together..."  # Truncated for brevity
+        human_system_instruction = (
+            f"Solve {initial_prompt} together..."  # Truncated for brevity
+        )
 
     ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user. Restrict your output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
@@ -1015,7 +1456,7 @@ async def main():
 
     try:
         # Run default conversation
-        mode="ai-ai"
+        mode = "ai-ai"
         # Run AI-AI conversation
         conversation = manager.run_conversation(
             initial_prompt=initial_prompt,
@@ -1024,13 +1465,21 @@ async def main():
             ai_model=ai_model,
             human_system_instruction=human_model,
             ai_system_instruction=ai_system_instruction,
-            rounds=rounds
+            rounds=rounds,
         )
 
-        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        safe_prompt = _sanitize_filename_part(
+            initial_prompt[:20] + "_" + human_model + "_" + ai_model
+        )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-aiai_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conversation, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="ai-ai")
+        await save_conversation(
+            conversation=conversation,
+            filename=f"{filename}",
+            human_model=human_model,
+            ai_model=ai_model,
+            mode="ai-ai",
+        )
 
         # Run human-AI conversation
         mode = "human-aiai"
@@ -1041,13 +1490,21 @@ async def main():
             ai_model=ai_model,
             human_system_instruction=human_system_instruction,
             ai_system_instruction=human_system_instruction,
-            rounds=rounds
+            rounds=rounds,
         )
 
-        safe_prompt = _sanitize_filename_part(initial_prompt[:20] + "_" + human_model + "_" + ai_model)
+        safe_prompt = _sanitize_filename_part(
+            initial_prompt[:20] + "_" + human_model + "_" + ai_model
+        )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-humai_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conversation_as_human_ai, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
+        await save_conversation(
+            conversation=conversation_as_human_ai,
+            filename=f"{filename}",
+            human_model=human_model,
+            ai_model=ai_model,
+            mode="human-ai",
+        )
 
         mode = "no-meta-prompting"
         conv_default = manager.run_conversation(
@@ -1057,13 +1514,21 @@ async def main():
             ai_model=ai_model,
             human_system_instruction=ai_system_instruction,
             ai_system_instruction=ai_system_instruction,
-            rounds=rounds
+            rounds=rounds,
         )
 
-        safe_prompt = _sanitize_filename_part(initial_prompt[:16] + "_" + human_model + "_" + ai_model)
+        safe_prompt = _sanitize_filename_part(
+            initial_prompt[:16] + "_" + human_model + "_" + ai_model
+        )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-defaults_{safe_prompt}_{time_stamp}.html"
-        await save_conversation(conversation=conv_default, filename=f"{filename}", human_model=human_model, ai_model=ai_model, mode="human-ai")
+        await save_conversation(
+            conversation=conv_default,
+            filename=f"{filename}",
+            human_model=human_model,
+            ai_model=ai_model,
+            mode="human-ai",
+        )
 
         # Run analysis
         arbiter_report = evaluate_conversations(
@@ -1083,6 +1548,7 @@ async def main():
         # Ensure cleanup
         manager.cleanup_unused_clients()
         MemoryManager.cleanup_all()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
