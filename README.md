@@ -14,10 +14,10 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
 ## As a versatile AI client
 
 ### Multi-Model and Multi-modal client API Support!**
-  - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support
+  - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support, and new Messages API
   - Gemini (Flash/Pro/Thinking) - Multimodal w Video + Image support
   - Claude Sonnet 3.7 thinking support with configurable thinking tokens
-  - OpenAI (GPT 4o/o1/o3/4.5 models) - Multimodal with Image support
+  - OpenAI (GPT 4o/o1/o3/4.5 models) - Multimodal with Image support and new Response API
   - o1 + o3 with reasoning effort configuration support
   - Ollama (e.g., llama3.2-vision, gemma3, phi4, ...) - Multimodal incl. Video
   - MLX (Local inference on Apple Silicon)
