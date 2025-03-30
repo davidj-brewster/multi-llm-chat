@@ -504,8 +504,24 @@ class ConversationManager:
                     self.model_map[model_name] = client
                     self._initialized_clients.add(model_name)
             except Exception as e:
-                logger.error(f"Failed to create client for {model_name}: {e}")
-                return None
+                # Check if this is a critical error that should terminate the program
+                is_critical_error = False
+                error_msg = str(e).lower()
+                
+                # Missing API key errors are critical and should terminate the program
+                if "api key" in error_msg and ("missing" in error_msg or "no api key" in error_msg or "not provided" in error_msg):
+                    is_critical_error = True
+                elif "no api key provided" in error_msg:
+                    is_critical_error = True
+                
+                if is_critical_error:
+                    logger.critical(f"CRITICAL ERROR: Failed to create client for {model_name}: {e}")
+                    logger.critical(f"Program will terminate as required API key is missing")
+                    # Re-raise the exception to terminate the program
+                    raise RuntimeError(f"Missing required API key for {model_name}: {e}")
+                else:
+                    logger.error(f"Failed to create client for {model_name}: {e}")
+                    return None
         return self.model_map.get(model_name)
 
     def cleanup_unused_clients(self):
@@ -855,7 +871,6 @@ class ConversationManager:
 
                 except Exception as e:
                     logger.error(f"Error processing file {file_config_item.path}: {e}")
-                    # Continue with other files
 
             # Pass the entire list of file data to the model client
             if file_data_list:
@@ -1425,6 +1440,25 @@ async def main():
     mode = "ai-ai"
     ai_model = AI_MODEL  # "gemini-2-pro"
     human_model = HUMAN_MODEL  # "haiku"
+
+    # Validate required API keys before proceeding
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["claude", "sonnet", "haiku"]):
+        if not anthropic_api_key:
+            logger.critical("ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
+            print("ERROR: ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
+            return
+    
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt", "openai", "o1", "o3"]):
+        if not openai_api_key:
+            logger.critical("OPENAI_API_KEY environment variable is not set but required for OpenAI models")
+            print("ERROR: OPENAI_API_KEY environment variable is not set but required for OpenAI models")
+            return
+    
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gemini"]):
+        if not gemini_api_key:
+            logger.critical("GOOGLE_API_KEY environment variable is not set but required for Gemini models")
+            print("ERROR: GOOGLE_API_KEY environment variable is not set but required for Gemini models")
+            return
 
     # Create manager with no cloud API clients by default
     manager = ConversationManager(

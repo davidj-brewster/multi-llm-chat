@@ -1300,7 +1300,8 @@ class ClaudeClient(BaseClient):
         try:
             api_key = anthropic_api_key or api_key
             if not api_key:
-                raise ValueError("No API key provided")
+                logger.critical("Missing required Anthropic API key for Claude models.")
+                raise ValueError("No Anthropic API key provided. Please set the ANTHROPIC_API_KEY environment variable.")
             self.client = Anthropic(api_key=api_key)
 
             # Enhanced vision parameters
