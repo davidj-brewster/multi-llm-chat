@@ -166,12 +166,12 @@ if __name__ == "__main__":
 
         # Run a simplified mock test
         print("=== MOCK TEST RESULTS ===")
-        print("Turn 1 (with image): The model would analyze a brain MRI scan")
+        print("Turn 1 (with image): The model would analyze cat behaviors in the video")
         print(
-            "Turn 2 (no image): The model would remember the image and discuss seizure-related features"
+            "Turn 2 (no image): The model would remember the video and discuss interaction patterns"
         )
         print(
-            "Turn 3 (no image): The model would continue analyzing hyperintensities in the remembered image"
+            "Turn 3 (no image): The model would continue analyzing behavioral traits in the remembered video"
         )
         sys.exit(1)
 

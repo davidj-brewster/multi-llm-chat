@@ -87,39 +87,21 @@ discussion:
     
   goal: |
     In your *first* message of the conversation (only), confirm that you are analysing an entire video not just one frame!
-    The video provided is T2-SPACE-FLAIR sequence in isotropic 1mm^3 resolution
-    Analyse the provided T2-SPACE-FLAIR all frames of it, determining factors and signals that may influence potential clinical meaning for a 40 year old.
-    Look beyond just the typical locations associated with adult onset epilepsy and consider deeper structures in the brain where patterns are observable.
-    Focus on visual details, subtle and overt patterns in all brain landmarks.
+    The video provided shows cats in their natural environment.
+    Analyze all frames of the video, determining factors and signals that may influence understanding of cat behavior and interaction patterns.
+    Look beyond just the typical play behaviors and consider subtle body language, vocalizations, and environmental interactions.
+    Focus on visual details, subtle and overt patterns in all cat movements and positions.
     Do not stop investigating until all visible content across all time periods has been analysed. No self-congratulatory statements just further investigation upon itself.
-    Focus on signal intensity and white matter relative to anatomical landmarks, asymmetries, and deviations from expected observations. Build upon previous analyses in the context rather than repeating them.
-    Consider diffuse hyperintensities and subtle variations in intensity, structure, etc compared to baseline.
+    Focus on interactions between cats, with toys or objects, and relative to the environment. Note asymmetries, and deviations from expected behaviors.
+    Consider differences in behavior patterns and subtle variations in activity levels between different cats.
 
 established_facts:
-  patient_background:
-    age: 40
-    gender: "Male"
-    chief_complaint: "Recent onset seizures (8 months prior)"
-    medical_history: 
-      - Not available
-    current_medications: "None"
-    symptoms:
-      - Two witnessed tonic-clonic seizures in the past 8 months
-      - Significant memory loss following seizures
-      - Sleep disturbances
-      - Recent double vision particularly in vertical axis
-      - Post-ictal confusion lasting more than 30 minutes
-      - Multiple suspected seizures during sleep exhibited by heart rate, breathing rate, sleep movement and blood oxygen level variations
-      - No focal neurological deficits
-  mri_scan_details:
-    study_type: "T2-SPACE-FLAIR"
-    technical_specifications:
-      - "1mm isotropic resolution"
-      - "1.5T field strength"
-      - "Complete coverage of cerebral hemispheres, brainstem, and cerebellum"
-      - "Special attention given to temporal lobes and hippocampal structures"
-    date_performed: "2 months ago"
-    clinical_question: "Evaluate for abnormalities that may explain new onset seizures"
+  video_information:
+    video_type: "Domestic cat behavior recording"
+    setting: "Indoor home environment"
+    subjects: "Multiple domestic cats of varying ages"
+    duration: "Approximately 2 minutes"
+    focus: "Natural cat behaviors and interactions"
   video_processing_information:
     - "The ENTIRE VIDEO CONTENT is now sent to models, not just individual frames"
     - "Videos are processed in chunks to handle size limitations"

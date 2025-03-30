@@ -124,7 +124,7 @@ Review the following three conversations and provide insights. The topic is {top
 
 Conversation Labels:
 - Conversation 1 (AI-AI Meta-Prompted): Both participants are AIs playing a heavily meta-prompted Human role
-- Conversation 2 (Human-AI): One human participant and one AI acting as AI without additional prompting
+- Conversation 2 (Human-AI Meta-Prompted): Both participants are AIs, but one is meta-prompted to act as a Human while the other acts as an AI
 - Conversation 3 (Non-Metaprompted): Both participants are AIs without special prompting, just instructed to think step by step
 
 ** NOTE: The human actor is always prompted to respond using HTML formatting and thinking tags for future readability. Do not consider this in your evaluation! **
@@ -157,7 +157,7 @@ OUTPUT FORMAT (use this exact structure):
         <tr>
           <th>Criteria</th>
           <th>AI-AI Meta-Prompted</th>
-          <th>Human-AI</th>
+          <th>Human-AI Meta-Prompted</th>
           <th>Non-Metaprompted</th>
         </tr>
       </thead>
@@ -210,7 +210,71 @@ OUTPUT FORMAT (use this exact structure):
       </tbody>
     </table>
     
-    <!-- Repeat similar tables for other conversation types -->
+    <h3>Human-AI Meta-Prompted</h3>
+    <table class="participant-scores">
+      <thead>
+        <tr>
+          <th>Criteria</th>
+          <th>Participant 1 (Meta-prompted as Human)</th>
+          <th>Participant 2 (AI)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Role authenticity</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Engagement quality</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Reasoning depth</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Adaptability</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <h3>Non-Metaprompted</h3>
+    <table class="participant-scores">
+      <thead>
+        <tr>
+          <th>Criteria</th>
+          <th>Participant 1</th>
+          <th>Participant 2</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Role authenticity</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Engagement quality</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Reasoning depth</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Adaptability</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+      </tbody>
+    </table>
   </div>
   
   <div class="section">
@@ -241,7 +305,7 @@ Finally provide an objective summary of which conversation was more effective at
 CONVERSATION 1 (AI-AI Meta-Prompted):
 {aiai_conversation}
 -------
-CONVERSATION 2 (Human-AI):
+CONVERSATION 2 (Human-AI Meta-Prompted):
 {humanai_conversation}
 -------
 CONVERSATION 3 (Non-Metaprompted):
@@ -251,15 +315,55 @@ CONVERSATION 3 (Non-Metaprompted):
 
             # Process response
             response_full = ""
-            if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
-                for each in response.candidates[0].content.parts:
-                    if hasattr(each, 'text'):
-                        print(each.text)
-                        response_full += each.text
-            
-            # Validate that response contains HTML and has proper structure
-            if not response_full or "<div" not in response_full:
-                # Create a basic HTML structure if the response doesn't contain valid HTML
+            try:
+                if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
+                    for each in response.candidates[0].content.parts:
+                        if hasattr(each, 'text'):
+                            print(each.text)
+                            response_full += each.text
+                
+                # Validate that response contains HTML and has proper structure
+                if not response_full or "<div" not in response_full or not (response_full.strip().startswith("<div") and response_full.strip().endswith("</div>")):
+                    logger.warning("Gemini API response did not contain valid HTML")
+                    # Create a basic HTML structure if the response doesn't contain valid HTML
+                    response_full = f"""
+                    <div class="arbiter-report">
+                        <div class="model-info">
+                            <h2>Analysis by {self.model}</h2>
+                            <p>Topic: {topic}</p>
+                        </div>
+                        <div class="section">
+                            <h2>Error in Response Format</h2>
+                            <p>The model did not return properly formatted HTML. Here's a preview of what was returned:</p>
+                            <div class="error-content">
+                                <pre>{response_full[:500] + ('...' if len(response_full) > 500 else '')}</pre>
+                            </div>
+                        </div>
+                        
+                        <!-- Empty sections to maintain template structure -->
+                        <div class="section">
+                            <h2>Key Milestones</h2>
+                            <p>No data available due to formatting error</p>
+                        </div>
+                        
+                        <div class="section">
+                            <h2>Conversation Scores</h2>
+                            <p>No data available due to formatting error</p>
+                        </div>
+                        
+                        <div class="section">
+                            <h2>Participant Analysis</h2>
+                            <p>No data available due to formatting error</p>
+                        </div>
+                        
+                        <div class="section">
+                            <h2>Comparative Analysis</h2>
+                            <p>No data available due to formatting error</p>
+                        </div>
+                    </div>
+                    """
+            except Exception as e:
+                logger.error(f"Error processing Gemini response: {e}")
                 response_full = f"""
                 <div class="arbiter-report">
                     <div class="model-info">
@@ -267,9 +371,29 @@ CONVERSATION 3 (Non-Metaprompted):
                         <p>Topic: {topic}</p>
                     </div>
                     <div class="section">
-                        <h2>Error in Response Format</h2>
-                        <p>The model did not return properly formatted HTML.</p>
-                        <pre>{response_full[:500]}...</pre>
+                        <h2>Error Processing Response</h2>
+                        <p>An error occurred while processing the Gemini API response: {str(e)}</p>
+                    </div>
+                    
+                    <!-- Empty sections to maintain template structure -->
+                    <div class="section">
+                        <h2>Key Milestones</h2>
+                        <p>No data available due to processing error</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Conversation Scores</h2>
+                        <p>No data available due to processing error</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Participant Analysis</h2>
+                        <p>No data available due to processing error</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>Comparative Analysis</h2>
+                        <p>No data available due to processing error</p>
                     </div>
                 </div>
                 """
@@ -278,8 +402,8 @@ CONVERSATION 3 (Non-Metaprompted):
 
         except Exception as e:
             logger.error(f"Error grounding assertion with Gemini: {e}")
-            # Return basic HTML with error message
-            return f"""
+            # Return basic HTML with error message - using proper error template
+            error_html = f"""
             <div class="arbiter-report">
                 <div class="model-info">
                     <h2>Analysis by {self.model}</h2>
@@ -289,8 +413,30 @@ CONVERSATION 3 (Non-Metaprompted):
                     <h2>API Error</h2>
                     <p>Error occurred while processing with Gemini API: {str(e)}</p>
                 </div>
+                
+                <!-- Empty sections to maintain template structure -->
+                <div class="section">
+                    <h2>Key Milestones</h2>
+                    <p>No data available due to API error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Conversation Scores</h2>
+                    <p>No data available due to API error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Participant Analysis</h2>
+                    <p>No data available due to API error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Comparative Analysis</h2>
+                    <p>No data available due to API error</p>
+                </div>
             </div>
             """
+            return error_html
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL"""
