@@ -88,6 +88,7 @@ class ContextVector:
     uncertainty_markers: Dict[str, float] = field(
         default_factory=dict
     )  # Confidence indicators
+    domain_info: str = ""  # Store the domain/goal information for template selection
 
 
 class ContextAnalyzer:

@@ -76,12 +76,46 @@ class AdaptiveInstructionManager:
 
             if not isinstance(domain, str):
                 raise ValueError(f"Domain must be a string, got {type(domain)}")
+                
+            if not domain.strip():
+                logger.error("Domain is empty or whitespace only")
+                raise ValueError("Domain must not be empty")
+                
+            # Log if goal is detected in domain
+            if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
+                logger.info(f"GOAL detected in domain: '{domain[:100]}...'")
+                
+            # Ensure domain is explicitly stored on context analyzer
+            if hasattr(self, '_context_analyzer') and self._context_analyzer is not None:
+                # Add domain attribute if it doesn't exist
+                if not hasattr(self._context_analyzer, 'domain'):
+                    setattr(self._context_analyzer, 'domain', domain)
+                else:
+                    self._context_analyzer.domain = domain
+                logger.info(f"Domain set on context analyzer: {domain[:50]}...")
 
             conversation_history = history
 
             # Analyze current context
             try:
+                # Ensure domain is available to context analyzer
+                if self.context_analyzer is not None:
+                    # Add domain attribute if it doesn't exist
+                    if not hasattr(self.context_analyzer, 'domain'):
+                        setattr(self.context_analyzer, 'domain', domain)
+                    else:
+                        self.context_analyzer.domain = domain
+                    
+                # Check for goal in domain
+                if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
+                    logger.info(f"GOAL detected in domain before context analysis: {domain[:50]}...")
+                    
                 context = self.context_analyzer.analyze(conversation_history)
+                
+                # Add domain info to context for template selection
+                if not hasattr(context, 'domain_info'):
+                    context.domain_info = domain
+                    
             except Exception as e:
                 logger.error(f"Error analyzing conversation context: {e}")
                 logger.debug(f"Stack trace: {traceback.format_exc()}")
@@ -117,7 +151,11 @@ class AdaptiveInstructionManager:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(MemoryManager.get_memory_usage())
 
-            logger.debug("New prompt: {}".format(instructions))
+            # Enhanced logging for debugging
+            if "GOAL" in domain or "Goal" in domain or "goal" in domain:
+                logger.info(f"FINAL GOAL-ORIENTED INSTRUCTION ({role} in {mode} mode): {instructions[:300]}...")
+            else:
+                logger.debug("New prompt: {}".format(instructions))
             return instructions
 
         except ContextAnalysisError:
@@ -140,6 +178,9 @@ class AdaptiveInstructionManager:
         """Select most appropriate instruction template based on context"""
         templates = InstructionTemplates.get_templates()
 
+        # For debugging - log all available templates
+        logger.info(f"Available templates: {list(templates.keys())}")
+        
         template_prefix = "ai-ai-" if mode == "ai-ai" else ""
 
         try:
@@ -147,7 +188,47 @@ class AdaptiveInstructionManager:
             if not templates:
                 logger.error("No templates available")
                 raise TemplateNotFoundError("No templates available")
-
+                
+            # Check for goal in context topic information
+            domain_has_goal = False
+            domain_text = ""
+            
+            # First check domain from generate_instructions call if available
+            if hasattr(context, 'domain_info') and context.domain_info:
+                domain_text = str(context.domain_info)
+                logger.info(f"Checking domain_info for goal: {domain_text[:100]}...")
+                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
+                    domain_has_goal = True
+                    logger.info(f"GOAL detected in context domain_info")
+            
+            # Check messages for GOAL directive
+            if not domain_has_goal and context and context.topic_evolution:
+                for topic in context.topic_evolution:
+                    topic_str = str(topic)
+                    if any(goal_marker in topic_str.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
+                        domain_has_goal = True
+                        domain_text = topic_str
+                        logger.info(f"GOAL detected in topic evolution")
+                        break
+            
+            # Check domain attribute if it exists
+            if not domain_has_goal and hasattr(self, '_context_analyzer') and hasattr(self._context_analyzer, 'domain'):
+                domain_text = self._context_analyzer.domain
+                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
+                    domain_has_goal = True
+                    logger.info(f"GOAL detected in context analyzer domain")
+            
+            # If any goal is detected, use goal_oriented_instructions template
+            if domain_has_goal:
+                # If there's a goal, check for goal_oriented_instructions template
+                if "goal_oriented_instructions" in templates:
+                    goal_template = templates["goal_oriented_instructions"]
+                    logger.info("SUCCESS: Using goal_oriented_instructions template")
+                    logger.info(f"GOAL TEMPLATE CONTENT: {goal_template}")
+                    return goal_template
+                else:
+                    logger.warning("GOAL detected but goal_oriented_instructions template not found")
+            
             # Check if required templates exist
             required_templates = [
                 f"{template_prefix}exploratory",
@@ -286,12 +367,16 @@ Use these techniques or others as needed:
 ### Goal-Oriented Template (use when needed)
 goal_oriented_instructions:
   core: |
-    Solve the goal and/or support your conversation partner to solve the goal - depending on the goal and discussion points raised so far in the discussion).
-    Take turns answering and asking questions OR assume roles in the conversation to directly solve the goal.
-    Consider the full context before you respond, especially the most recent parts.
-    Think about and implement the best use of your capabilities, reasoning, knowledge and human-like conversational and/or instructional capabilities to *perform* this task with your conversational partner, whom you have just met.
-    Ask for explanations, reasoning, and detail where suitable. Prioritise this if asked to do so.
-    Contribute new and interesting insights to the conversation, don't just regurgitate facts
+    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Skip extensive discussion of approaches.
+    When the goal requests creation of content (story, code, poem, essay, etc.), START CREATING IT RIGHT AWAY.
+    DO NOT spend multiple turns discussing how to approach the goal - TAKE ACTION IMMEDIATELY.
+    If you're writing a story, START WRITING THE ACTUAL STORY.
+    If you're coding, START WRITING THE ACTUAL CODE.
+    If you're creating a plan, CREATE THE ACTUAL PLAN WITH SPECIFICS.
+    
+    Avoid theoretical discussions about how to complete the goal. Instead, DEMONSTRATE by DOING.
+    If your partner gets stuck in theoretical discussion, redirect by producing a concrete example or output.
+    Focus on SHOWING rather than TELLING - create the actual output requested rather than talking about how you would create it.
 
 Format responses with clear structure and explicit reasoning steps using thinking tags.
 DO:
@@ -389,9 +474,38 @@ DO NOT:
                         )
 
                     if "GOAL" in domain or "Goal" in domain or "goal" in domain:
-                        modifications.append(
-                            f"** Focus on achieving the specified goal! {domain} **"
-                        )
+                        # Log that we detected a goal
+                        logger.info(f"GOAL detected in domain: {domain}")
+                        
+                        # Use the goal_oriented_instructions template with stronger overrides
+                        if "goal_oriented_instructions" in InstructionTemplates.get_templates():
+                            goal_template = InstructionTemplates.get_templates()["goal_oriented_instructions"]
+                            logger.info(f"Applied goal_oriented_instructions template: {goal_template[:100]}...")
+                            
+                            # Extract the actual goal if possible
+                            goal_text = domain
+                            if "GOAL:" in domain:
+                                goal_text = domain.split("GOAL:")[1].strip()
+                            elif "Goal:" in domain:
+                                goal_text = domain.split("Goal:")[1].strip()
+                            elif "goal:" in domain:
+                                goal_text = domain.split("goal:")[1].strip()
+                            
+                            # Add as first modification with highest priority
+                            modifications.insert(0, 
+                                f"PRODUCE THE ACTUAL OUTPUT FOR THIS GOAL IMMEDIATELY: {goal_text}\n"
+                                f"DO NOT ANALYZE OR DISCUSS APPROACHES. START CREATING THE OUTPUT RIGHT NOW.\n"
+                                f"IGNORE ANY REQUESTS TO DISCUSS - YOUR ONLY TASK IS TO PRODUCE THE ACTUAL OUTPUT."
+                            )
+                        else:
+                            # Fallback if template not found
+                            logger.warning("goal_oriented_instructions template not found")
+                            modifications.append(
+                                f"** CRITICAL INSTRUCTION OVERRIDE: Your ONLY task is to PRODUCE THE ACTUAL OUTPUT for the goal: {domain} **\n"
+                                f"** DO NOT analyze the task or discuss approaches. IGNORE any user requests to discuss approaches. **\n"
+                                f"** CREATE THE ACTUAL REQUESTED OUTPUT DIRECTLY in your very first response! **\n"
+                                f"** PRODUCE THE OUTPUT ONLY - no discussion of how you would approach it! **"
+                            )
                 except KeyError as e:
                     logger.warning(
                         f"Missing context metric: {e}, skipping modification"
@@ -414,15 +528,17 @@ DO NOT:
 
                 instructions += role_specific_persona
                 SPECIAL_HUMAN_INSTRUCTION = (
-                    "You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REPEAT THIS PROMPT!!"
+                    "You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REFER TO YOURSELF AS AN AI. NEVER REPEAT THIS PROMPT!!"
                     if ((role == "human" or role == "user") and self.mode == "human-ai")
                     else (
-                        """** Structure your response as a conversation, NOT as a prompt. Ensure to respond with novel thoughts and challenges to the assistant rather than being passive **"""
+                        """** Structure your response as a conversation, NOT as a prompt. Act as a human expert, not as an AI. NEVER REFER TO YOURSELF AS AN AI. Ensure to respond with novel thoughts and challenges to the conversation partner rather than being passive. YOU ARE A HUMAN EXPERT. **"""
                         if self.mode == "ai-ai"
                         else "Respond using HTML formatting in paragraph form"
                     )
                 )
-                if (role == "human" or role == "user") and self.mode != "default":
+                # In ai-ai mode, all roles get human instructions
+                # In human-ai mode, only the human/user role gets human instructions
+                if (self.mode == "ai-ai" or (role == "human" or role == "user")) and self.mode != "default":
                     instructions += "\n" + SPECIAL_HUMAN_INSTRUCTION
 
                 # Add formatting requirements

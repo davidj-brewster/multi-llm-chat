@@ -81,6 +81,17 @@ class InstructionTemplates:
                 Connect different concepts and identify patterns.
                 Focus on building a coherent understanding.
                 """,
+                "goal_oriented_instructions": """{domain}
+
+START CREATING THE REQUESTED OUTPUT IMMEDIATELY. Produce actual output instead of discussing approaches.
+
+For creative tasks: begin writing the content immediately.
+For coding tasks: start writing the code now.
+For analytical tasks: produce the analysis directly.
+
+Focus on SHOWING rather than TELLING - create first, then refine.
+Prioritize tangible results over theoretical discussions.
+""",
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.
                 Focus on exchanging structured knowledge and building on each other's insights.

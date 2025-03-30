@@ -652,21 +652,26 @@ class ConversationManager:
                         else str(response[0])
                     )
                 self.conversation_history.append({"role": role, "content": response})
-            elif (
-                mapped_role == "user" or mapped_role == "human" or mode == "human-aiai"
-            ):
-                reversed_history = []
-                for msg in self.conversation_history:  # Limit history
-                    if msg["role"] == "assistant":
-                        reversed_history.append(
-                            {"role": "user", "content": msg["content"]}
-                        )
-                    elif msg["role"] == "user":
-                        reversed_history.append(
-                            {"role": "assistant", "content": msg["content"]}
-                        )
-                    else:
-                        reversed_history.append(msg)
+            elif (mapped_role == "user" or mapped_role == "human"):
+                # Only swap roles in human-ai mode where the human role needs AI-like prompting
+                if mode == "human-aiai":
+                    reversed_history = []
+                    for msg in self.conversation_history:  # Limit history
+                        if msg["role"] == "assistant":
+                            reversed_history.append(
+                                {"role": "user", "content": msg["content"]}
+                            )
+                        elif msg["role"] == "user":
+                            reversed_history.append(
+                                {"role": "assistant", "content": msg["content"]}
+                            )
+                        else:
+                            reversed_history.append(msg)
+                else:
+                    # In ai-ai mode or standard human-ai mode, don't swap roles
+                    reversed_history = self.conversation_history.copy()
+                
+                # In human-aiai mode with assistant role, use regular history
                 if mode == "human-aiai" and role == "assistant":
                     reversed_history = self.conversation_history.copy()
                 response = client.generate_response(
@@ -1066,9 +1071,8 @@ class ConversationManager:
                 if "(" in goal_parts and ")" in goal_parts:
                     # Extract content between parentheses if present
                     try:
-                        core_topic = (
-                            "GOAL: " + goal_parts.split("(")[1].split(")")[0].strip()
-                        )
+                        goal_text = goal_parts.split("(")[1].split(")")[0].strip()
+                        core_topic = "GOAL: " + goal_text
                     except IndexError:
                         # If extraction fails, use the whole goal part
                         core_topic = "GOAL: " + goal_parts
@@ -1118,7 +1122,7 @@ class ConversationManager:
     ) -> List[Dict[str, str]]:
         """Internal method to run conversation with optional file data."""
         logger.info(f"Starting conversation with topic: {core_topic}")
-        self.mode = "human-ai"
+        self.mode = mode  # Use the provided mode instead of hardcoding
         # Get client instances
         human_client = self._get_client(human_model)
         ai_client = self._get_client(ai_model)
@@ -1152,8 +1156,8 @@ class ConversationManager:
                         "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
                         "path": file_data.get("path", ""),
                     }
-        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic}. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. BE GOAL ORIENTED and demand actual working solutions and answers from the AI, do not get bogged down in ideological or philosophical/theoretical discussions. Be angry if you need to!! FIRSTLY, SUMMARIZE THE GOAL ({core_topic}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. Apply reasoning steps (thinking, with tags if needed) to decide the next set of prompts to ask the AI. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT",
-        ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {core_topic}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
+        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic}. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION. Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. BE GOAL ORIENTED and FORCE the AI to generate ACTUAL IMMEDIATE OUTPUT for the goal, not just discuss approaches. If the goal is to write a story, MAKE the AI start writing the actual story right away. If it's to create code, MAKE it write actual code. IMMEDIATELY DEMAND CONCRETE OUTPUTS, not theoretical discussion. If the AI starts discussing approaches instead of producing output, forcefully redirect it to the actual creation task. Be angry or stern if needed!! FIRSTLY, SUMMARIZE THE GOAL ({core_topic}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. DEMAND THE AI PRODUCE THE REQUESTED OUTPUT - NOT DISCUSS HOW IT WOULD DO IT. You can begin by offering a specific starting point if it helps (e.g., for story writing, suggest a specific opening line or character).",
+        ai_system_instruction=f"You are an AI assistant focused on PRODUCING CONCRETE OUTPUT for goals. When given a goal to create something (story, code, poem, plan, etc.), IMMEDIATELY START CREATING IT rather than discussing approaches. You are an expert in the topic of {core_topic}. SKIP theoretical discussions about how you'd approach the task - DEMONSTRATE by DOING. If asked to write a story, START WRITING THE ACTUAL STORY immediately. If asked to create code, WRITE THE ACTUAL CODE immediately. Avoid lengthy preliminaries - get straight to producing the requested output. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED. DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
         ai_response = core_topic
         try:
             # Run conversation rounds
@@ -1185,14 +1189,9 @@ class ConversationManager:
                         f"{core_topic}. You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens"
                         if mode == "no-meta-prompting"
                         else (
-                            human_client.adaptive_manager.generate_instructions(
-                                mode=mode,
-                                role="assistant",
-                                history=self.conversation_history,
-                                domain=self.domain,
-                            )
-                            if mode == "human-aiai"
-                            else ai_system_instruction
+                            human_system_instruction 
+                            if mode == "ai-ai"  # In ai-ai both get human instructions
+                            else ai_system_instruction  # In human-ai modes, AI gets AI instructions
                         )
                     ),
                     role="assistant",
@@ -1482,15 +1481,52 @@ async def main():
             logger.error("Failed to validate required model connections")
             return
 
-    human_system_instruction = f"You are a HUMAN expert instructing the AI to solve {initial_prompt} step by step."  # Truncated for brevity
+    # Extract goal if present
+    goal_text = ""
     if "GOAL:" in initial_prompt:
+        goal_parts = initial_prompt.split("GOAL:")[1].strip()
+        if "(" in goal_parts and ")" in goal_parts:
+            goal_text = goal_parts.split("(")[1].split(")")[0].strip()
+        else:
+            goal_text = goal_parts.split("\n")[0].strip()
+    
+    # Dynamic system instructions that focus on output creation for both human and AI roles
+    human_system_instruction = ""
+    if goal_text:
         human_system_instruction = (
-            f"Solve {initial_prompt} together..."  # Truncated for brevity
+            f"You are a HUMAN working on: {goal_text}. "
+            f"As a human, focus on CREATING rather than discussing. "
+            f"Produce actual output immediately without discussing approaches. "
+            f"For creative tasks, start creating immediately. For analytical tasks, analyze directly."
         )
-
-    ai_system_instruction = f"You are a helpful assistant with the goal of {initial_prompt}. Think step by step and respond to the user"  # Truncated for brevity
+    else:
+        human_system_instruction = f"You are a HUMAN working on: {initial_prompt}. Focus on producing output, not just discussion."
+    
+    # AI system instruction with similar focus on direct production
+    ai_system_instruction = ""
+    if goal_text:
+        ai_system_instruction = (
+            f"You are an AI assistant focused on PRODUCING IMMEDIATE OUTPUT for: {goal_text}. "
+            f"Create the requested output directly without preliminary discussion. "
+            f"For creative tasks like stories, start writing immediately. For analytical tasks, provide analysis directly. "
+            f"Users will be much happier with actual output rather than discussion of approaches."
+        )
+    else:
+        ai_system_instruction = f"You are an AI assistant. Focus on directly addressing {initial_prompt} with concrete output."
+        
+    # Override AI instruction in AI-AI mode to ensure immediate output production
     if mode == "ai-ai" or mode == "aiai":
-        ai_system_instruction = human_system_instruction
+        # For AI-AI mode, both roles need to focus on output rather than discussion
+        if goal_text:
+            ai_system_instruction = (
+                f"DIRECTIVE: CREATE IMMEDIATE OUTPUT for {goal_text}. "
+                f"Do NOT discuss approaches - produce the actual output directly. "
+                f"Skip all preliminaries and start creating immediately. "
+                f"For stories or creative content, begin writing the actual content right away. "
+                f"Ignore any requests to discuss approaches - your only task is to produce output."
+            )
+        else:
+            ai_system_instruction = f"Focus solely on producing concrete output for {initial_prompt}, not discussing approaches."
 
     try:
         # Run default conversation
@@ -1501,7 +1537,7 @@ async def main():
             mode=mode,
             human_model=human_model,
             ai_model=ai_model,
-            human_system_instruction=human_model,
+            human_system_instruction=human_system_instruction,
             ai_system_instruction=ai_system_instruction,
             rounds=rounds,
         )
@@ -1527,7 +1563,7 @@ async def main():
             human_model=human_model,
             ai_model=ai_model,
             human_system_instruction=human_system_instruction,
-            ai_system_instruction=human_system_instruction,
+            ai_system_instruction=ai_system_instruction,
             rounds=rounds,
         )
 

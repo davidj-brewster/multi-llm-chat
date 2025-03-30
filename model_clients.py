@@ -969,7 +969,7 @@ class GeminiClient(BaseClient):
 
         history = history if history else []
         # Update instructions based on conversation history
-        if role == "user" or role == "human" or self.mode == "ai-ai":
+        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
             current_instructions = self.adaptive_manager.generate_instructions(
                 history, role="user", domain=self.domain, mode=self.mode
             )
@@ -1154,6 +1154,7 @@ class GeminiClient(BaseClient):
                         # Fallback to simple request without history
                         response = self.client.models.generate_content(
                             model=self.model_name,
+                            systemInstruction=current_instructions, 
                             contents=types.Content(
                                 parts=[
                                     types.Part(text=prompt.strip()),
@@ -1240,6 +1241,7 @@ class GeminiClient(BaseClient):
                 config=types.GenerateContentConfig(
                     temperature=0.8,
                     max_output_tokens=MAX_TOKENS,
+                    systemInstruction=current_instructions, 
                     candidateCount=1,
                     safety_settings=[
                         types.SafetySetting(
