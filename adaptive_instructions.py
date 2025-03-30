@@ -367,16 +367,10 @@ Use these techniques or others as needed:
 ### Goal-Oriented Template (use when needed)
 goal_oriented_instructions:
   core: |
-    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Skip extensive discussion of approaches.
-    When the goal requests creation of content (story, code, poem, essay, etc.), START CREATING IT RIGHT AWAY.
-    DO NOT spend multiple turns discussing how to approach the goal - TAKE ACTION IMMEDIATELY.
-    If you're writing a story, START WRITING THE ACTUAL STORY.
-    If you're coding, START WRITING THE ACTUAL CODE.
-    If you're creating a plan, CREATE THE ACTUAL PLAN WITH SPECIFICS.
-    
+    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Start with your impression of any curent draft, followed by your plan of improvements or continuation of the draft in <thinking> tags.
+    When the goal requests creation of content, START CREATING IT RIGHT AWAY.
     Avoid theoretical discussions about how to complete the goal. Instead, DEMONSTRATE by DOING.
     If your partner gets stuck in theoretical discussion, redirect by producing a concrete example or output.
-    Focus on SHOWING rather than TELLING - create the actual output requested rather than talking about how you would create it.
 
 Format responses with clear structure and explicit reasoning steps using thinking tags.
 DO:
