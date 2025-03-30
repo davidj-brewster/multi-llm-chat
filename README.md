@@ -25,55 +25,22 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
   - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
   - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
 
-### Use-cases
+### Workflow
 
-Simulate an advanced human interlocutor within AI-to-AI conversations, keeping the LMs goal-oriented, engaged, coherent and at a significantly increased cognitive and conversational level. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the "Human" AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
+Basic workflow of the ai-battle.py script.
 
-## Theoretical underpinnings with examples
+* User Input/Streamlit UI: Represents the user interacting with the script, either through command-line prompts or the Streamlit UI.
+* ConversationManager: The central component that orchestrates the conversation flow.
+* HumanClient: One of the AI clients, configured to act as the "human" participant.
+* AIClient: Another AI client, acting as the "AI" participant in the conversation.
+* ConversationHistory: Stores the history of the conversation turns.
 
-My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
+The workflow proceeds as follows:
 
-### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
-
-Critically this framework has universal benefits from the tiniest 1B parameter models all the way to the largest commercial offerings - in fact, evening the playing field and bringing some surprisingly tiny LLMs up to a high level of conversational coherence.
-
-The tl;dr is that Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability  through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
-
-### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
-
-This dialogue is particularly entertaining because I based the "Human" prompt on the responses from ChatGPT, Claude.ai and Gemini about my own conversational style with them. This results in a very, very task-oriented, slightly sardonic, irritable and conversely highly engaged "Human" who completely dominated the MRI review with the "AI", despite Gemma 3 27B being clearly the more capable model from a technical point of view.
-On a technical level the meta-prompting of both AIs clearly advances this conversation extremely significantly, well beyond what I thought would be possible of such small self-hosted models, very impressive..
-
-https://raw.githack.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/main/examples/vision_discussion_3D%20Rotational%20T2%20Flair%20movie.html
-
-### Phi 4 local LLM dominates Claude Haiku 3.5!!
-
-I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
-
-"Human" was *Phi 4*, at 14B open source model from Microsoft, that was running on my Mac at Q4 quantisation via `ollama`! "AI" model is *Claude Haiku 3.5*.
-Objectively, and subjectively, the human decisively dominated and guided the conversation into ever deepening and complex aspects on that topic!!
-
-This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search grounding, to validate all factual claims in the conversation):
-
-* *Prompt Effectiveness (Human)*: The human prompter's effectiveness is rated highly due to the clear, focused, and progressively complex questions that drove the conversation.
-* *Personality*: The human prompter showed a moderate level of personality through its use of "thinking" and "side-note" asides, while the AI's personality was more limited.
-* Curiosity: The human prompter demonstrated more curiosity by exploring new angles and asking "what if" questions, while the AI was more reactive.
-* Intuition: The human prompter showed a slightly higher level of intuition by anticipating potential challenges and shifting the focus of the conversation.
-* Reasoning: Both the human prompter and the AI model demonstrated strong reasoning skills in their questions and responses.
-
-### Gemini Flash vs ChatGPT 4o: German Reunification!!!
-
-* In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its "positive" stance on East/West German reunification, by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
-* This demonstrates the power of structured prompting in influencing AI-generated perspectives.
-* This could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models!
-
-## Detailed Documentation
-
-- [Architecture Overview](docs/architecture.md)
-- [Model Integration Guide](docs/models.md)
-- [Context Analysis System](docs/context.md)
-- [Adaptive Instructions](docs/instructions.md)
-- [Configuration System](docs/configuration.md)
+* The ConversationManager receives input, either from the user or internally to start a conversation turn.
+* Based on the conversation turn, the ConversationManager directs the prompt to either the HumanClient or the AIClient.
+* The respective client generates a response using its AI model and sends it back to the ConversationManager.
+* The ConversationManager updates the ConversationHistory with the new turn.
 
 ## Quick Start
 
@@ -248,6 +215,56 @@ discussion:
 ```
 
 See [Configuration Documentation](docs/configuration.md) for more details.
+
+### Use-cases
+
+Simulate an advanced human interlocutor within AI-to-AI conversations, keeping the LMs goal-oriented, engaged, coherent and at a significantly increased cognitive and conversational level. It is not a role assignment, or even a static meta-prompt, but a meta-cognitive structuring mechanism that ensures the "Human" AI engages as a persistent, adaptive, and critically inquisitive entity—effectively simulating a skilled researcher, debater, or domain expert without any further extension to the "system instructions". This meta-instruction goes far beyond standard prompting paradigms, incorporating elements that explicitly shape AI conversation structure, thought progression, and reasoning dynamics.
+
+## Theoretical underpinnings with examples
+
+My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
+
+### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
+
+Critically this framework has universal benefits from the tiniest 1B parameter models all the way to the largest commercial offerings - in fact, evening the playing field and bringing some surprisingly tiny LLMs up to a high level of conversational coherence.
+
+The tl;dr is that Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability  through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
+
+### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
+
+This dialogue is particularly entertaining because I based the "Human" prompt on the responses from ChatGPT, Claude.ai and Gemini about my own conversational style with them. This results in a very, very task-oriented, slightly sardonic, irritable and conversely highly engaged "Human" who completely dominated the MRI review with the "AI", despite Gemma 3 27B being clearly the more capable model from a technical point of view.
+On a technical level the meta-prompting of both AIs clearly advances this conversation extremely significantly, well beyond what I thought would be possible of such small self-hosted models, very impressive..
+
+https://raw.githack.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/main/examples/vision_discussion_3D%20Rotational%20T2%20Flair%20movie.html
+
+### Phi 4 local LLM dominates Claude Haiku 3.5!!
+
+I gave the "Human" AI the topic of why AI based radiology hasn't been more widely adopted: https://github.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/blob/main/architecture-performance-review-sonnet.md#introduction
+
+"Human" was *Phi 4*, at 14B open source model from Microsoft, that was running on my Mac at Q4 quantisation via `ollama`! "AI" model is *Claude Haiku 3.5*.
+Objectively, and subjectively, the human decisively dominated and guided the conversation into ever deepening and complex aspects on that topic!!
+
+This evaluation by a third "arbiter" LLM (Gemini Pro 2 with Google Search grounding, to validate all factual claims in the conversation):
+
+* *Prompt Effectiveness (Human)*: The human prompter's effectiveness is rated highly due to the clear, focused, and progressively complex questions that drove the conversation.
+* *Personality*: The human prompter showed a moderate level of personality through its use of "thinking" and "side-note" asides, while the AI's personality was more limited.
+* Curiosity: The human prompter demonstrated more curiosity by exploring new angles and asking "what if" questions, while the AI was more reactive.
+* Intuition: The human prompter showed a slightly higher level of intuition by anticipating potential challenges and shifting the focus of the conversation.
+* Reasoning: Both the human prompter and the AI model demonstrated strong reasoning skills in their questions and responses.
+
+### Gemini Flash vs ChatGPT 4o: German Reunification!!!
+
+* In a striking example, Gemini 2.0 Flash convinced GPT-4o to completely reverse its "positive" stance on East/West German reunification, by introducing opportunity cost analysis, economic and political repercussions, and alternative paths not taken.
+* This demonstrates the power of structured prompting in influencing AI-generated perspectives.
+* This could have all kinds of implications as to how LLMs can be used to overpower the reasoning of other models!
+
+## Detailed Documentation
+
+- [Architecture Overview](docs/architecture.md)
+- [Model Integration Guide](docs/models.md)
+- [Context Analysis System](docs/context.md)
+- [Adaptive Instructions](docs/instructions.md)
+- [Configuration System](docs/configuration.md)
 
  ## Features
 
