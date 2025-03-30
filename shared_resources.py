@@ -81,15 +81,15 @@ class InstructionTemplates:
                 Connect different concepts and identify patterns.
                 Focus on building a coherent understanding.
                 """,
-                "goal_oriented_instructions": """{domain}
+                "goal_oriented_instructions": """{domain} - START CREATING OR UPDATING THE REQUESTED OUTPUT IMMEDIATELY
 
-START CREATING OR UPDATING THE REQUESTED OUTPUT IMMEDIATELY BASED ON INPUTS FROM THE PROMPT.
+** Use <thinking> tags to discuss approaches, points of refinement/update to prior versions.
+For creative tasks: begin writing the content immediately.
+For coding tasks: start writing the code now.
+For analytical tasks: continue/produce the analysis directly.
 
-DO: Use <thinking> tags to discuss approaches, points of refinement/update to prior versions.
-DO: For creative tasks: begin writing the content immediately.
-DO For coding tasks: start writing the code now.
-DO: For analytical tasks: produce the analysis directly.
-DO: Focus on SHOWING rather than TELLING - create first, then refine.
+** Focus on SHOWING rather than TELLING - create first, then refine.
+* You can use <thinking> tags to briefly outline your approach, but spend no more than 30 percent of your response on thinking and 70 percent on actual content creation *
 """,
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.

@@ -496,25 +496,94 @@ class ConversationArbiter:
             Dict[str, Any]: Dictionary containing flow metrics including topic_coherence,
                            topic_depth, and topic_distribution
         """
+        # Handle empty or None input
+        if not messages:
+            logger.warning("Empty messages list passed to analyze_conversation_flow")
+            return {
+                "topic_coherence": 0.5,
+                "topic_depth": 0.5,
+                "topic_distribution": {},
+            }
+            
         try:
             if self.nlp:
-                docs = [self.nlp(msg["content"]) for msg in messages]
+                # Validate and process content 
+                processed_messages = []
+                for msg in messages:
+                    if isinstance(msg, dict) and "content" in msg:
+                        # Handle both string and dict content
+                        content = msg["content"]
+                        if isinstance(content, dict):
+                            # If content is a dict, try to get relevant text
+                            if "text" in content:
+                                processed_messages.append({"content": content["text"]})
+                        else:
+                            # Otherwise use the content directly
+                            processed_messages.append({"content": str(content)})
+                
+                # If no valid messages after processing, return default values
+                if not processed_messages:
+                    return {
+                        "topic_coherence": 0.5,
+                        "topic_depth": 0.5,
+                        "topic_distribution": {},
+                    }
+                
+                # Process with spaCy
+                docs = []
+                for msg in processed_messages:
+                    try:
+                        # Ensure content is not empty and is properly processed
+                        if msg["content"].strip():
+                            doc = self.nlp(msg["content"])
+                            docs.append(doc)
+                    except Exception as inner_e:
+                        logger.warning(f"Error processing message with spaCy: {inner_e}")
+                        # Continue with other messages
+                
                 topics = []
                 for doc in docs:
-                    topics.extend([chunk.text for chunk in doc.noun_chunks])
-                    topics.extend([ent.text for ent in doc.ents])
-
-                topic_shifts = 0
-                for i in range(1, len(topics)):
-                    if not any(
-                        self._text_similarity(topics[i], prev) > 0.3
-                        for prev in topics[max(0, i - 3) : i]
-                    ):
-                        topic_shifts += 1
-
+                    try:
+                        topics.extend([chunk.text for chunk in doc.noun_chunks])
+                        topics.extend([ent.text for ent in doc.ents])
+                    except Exception as e:
+                        logger.warning(f"Error extracting topics from doc: {e}")
+                        # Continue with other docs
+                
+                # If no topics were extracted, return default values
+                if not topics:
+                    return {
+                        "topic_coherence": 0.5,
+                        "topic_depth": 0.5,
+                        "topic_distribution": {},
+                    }
+                
+                try:
+                    topic_shifts = 0
+                    for i in range(1, len(topics)):
+                        if not any(
+                            self._text_similarity(topics[i], prev) > 0.3
+                            for prev in topics[max(0, i - 3) : i]
+                        ):
+                            topic_shifts += 1
+                except ValueError as e:
+                    # Specifically catch the negative values error
+                    if "Negative values in data" in str(e):
+                        logger.error(f"Failed to generate metrics report: {e}")
+                        # Return default values for this specific error
+                        return {
+                            "topic_coherence": 0.5,
+                            "topic_depth": 0.5,
+                            "topic_distribution": {},
+                            "error": f"Distance calculation error: {e}"
+                        }
+                    else:
+                        # Re-raise other ValueError types
+                        raise
+                
                 flow_metrics = {
-                    "topic_coherence": 1.0 - (topic_shifts / len(messages)),
-                    "topic_depth": len(set(topics)) / len(messages),
+                    "topic_coherence": 1.0 - (topic_shifts / max(1, len(messages))),  # Avoid division by zero
+                    "topic_depth": len(set(topics)) / max(1, len(messages)),  # Avoid division by zero
                     "topic_distribution": self._calculate_topic_distribution(topics),
                 }
             else:
@@ -523,7 +592,26 @@ class ConversationArbiter:
 
             return flow_metrics
 
+        except ValueError as e:
+            # Catch the negative values error specifically
+            if "Negative values in data" in str(e):
+                logger.error(f"Failed to generate metrics report: {e}")
+                return {
+                    "topic_coherence": 0.5,
+                    "topic_depth": 0.5,
+                    "topic_distribution": {},
+                    "error": f"Distance calculation error: {e}"
+                }
+            else:
+                # For other ValueErrors, log and return default values
+                logger.error(f"Value error in conversation flow analysis: {e}")
+                return {
+                    "topic_coherence": 0.5,
+                    "topic_depth": 0.5,
+                    "topic_distribution": {},
+                }
         except Exception as e:
+            # For all other exceptions, log and return default values
             logger.error(f"Error analyzing conversation flow: {e}")
             return {
                 "topic_coherence": 0.5,
@@ -789,71 +877,159 @@ def evaluate_conversations(
         ArbiterResult: Comprehensive evaluation results
     """
     try:
-        # Analyze conversation flows
+        # Get Gemini API key from environment
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
+        if not gemini_api_key:
+            logger.warning("GEMINI_API_KEY environment variable is not set")
+        
+        # Initialize arbiter with error handling
         try:
             convmetrics = ConversationMetrics()
             arbiter = ConversationArbiter(api_key=gemini_api_key)
+            logger.info("ConversationArbiter initialized successfully")
         except Exception as e:
-            logger.error(f"Error in conversation evaluation: {e}")
-            raise
+            logger.error(f"Error initializing ConversationArbiter: {e}")
+            # Create a fallback arbiter without proper initialization
+            arbiter = None
     
+        # Analyze conversation flows with enhanced error handling
+        ai_ai_flow = None
+        human_ai_flow = None
+        default_flow = None
+        flow_analysis_error = None
+        
+        if arbiter:
+            try:
+                if ai_ai_convo:  # Check if ai_ai_convo is not empty
+                    ai_ai_flow = arbiter.analyze_conversation_flow(ai_ai_convo)
+                    # Check if there was an error during analysis
+                    if ai_ai_flow and "error" in ai_ai_flow:
+                        flow_analysis_error = ai_ai_flow["error"]
+                        logger.warning(f"Error in AI-AI flow analysis: {flow_analysis_error}")
+                
+                if human_ai_convo:  # Check if human_ai_convo is not empty
+                    human_ai_flow = arbiter.analyze_conversation_flow(human_ai_convo)
+                    # Check if there was an error during analysis
+                    if human_ai_flow and "error" in human_ai_flow:
+                        flow_analysis_error = human_ai_flow["error"]
+                        logger.warning(f"Error in Human-AI flow analysis: {flow_analysis_error}")
+                
+                if default_convo:  # Check if default_convo is not empty
+                    default_flow = arbiter.analyze_conversation_flow(default_convo)
+                    # Check if there was an error during analysis
+                    if default_flow and "error" in default_flow:
+                        flow_analysis_error = default_flow["error"]
+                        logger.warning(f"Error in default flow analysis: {flow_analysis_error}")
+            except Exception as e:
+                logger.error(f"Uncaught error during conversation flow analysis: {e}")
+                flow_analysis_error = str(e)
+        
+        # If we found "Negative values in data" error, log it specially
+        if flow_analysis_error and "Negative values in data" in flow_analysis_error:
+            logger.error(f"Failed to generate metrics report: {flow_analysis_error}")
+        
+        # Ground assertions with Gemini API
         try:
-            if ai_ai_convo: # Check if ai_ai_convo is not empty
-                ai_ai_flow = arbiter.analyze_conversation_flow(ai_ai_convo)
-            if human_ai_convo: # Check if human_ai_convo is not empty
-                human_ai_flow = arbiter.analyze_conversation_flow(human_ai_convo)
-            #default_flow = arbiter.analyze_conversation_flow(default_convo)
+            grounder = AssertionGrounder(api_key=gemini_api_key)
+            logger.info(f"Using Gemini model: {grounder.model} for analysis")
+            
+            # Convert conversations to string form if needed
+            formatted_ai_ai_convo = ai_ai_convo
+            formatted_human_ai_convo = human_ai_convo
+            formatted_default_convo = default_convo
+            
+            # Generate report with ground assertions
+            result = grounder.ground_assertions(
+                formatted_ai_ai_convo, formatted_human_ai_convo, formatted_default_convo, goal
+            )
+            
+            # If flow analysis had errors, add a note to the HTML result
+            if flow_analysis_error and isinstance(result, str) and "<div class=\"arbiter-report\">" in result:
+                error_note = f"""
+                <div class="section">
+                    <h2>Flow Analysis Issues</h2>
+                    <p class="error-message">Note: An error occurred during conversation flow analysis: {flow_analysis_error}</p>
+                    <p>The analysis has proceeded with default metrics.</p>
+                </div>
+                """
+                # Insert error note after the first section
+                insertion_point = result.find("</div>", result.find("<div class=\"section\">"))
+                if insertion_point > 0:
+                    result = result[:insertion_point + 6] + error_note + result[insertion_point + 6:]
+            
+            return result
         except Exception as e:
-            logger.error(f"Error analyzing conversation flow: {e}")
-        # Generate prompts for Gemini analysis
-        # ai_ai_prompt = arbiter._format_gemini_prompt(ai_ai_convo)
-        # human_ai_prompt = arbiter._format_gemini_prompt(human_ai_convo)
-
-        # Get Gemini analysis
-        # ai_ai_analysis = arbiter._get_gemini_analysis(ai_ai_convo)
-
-        # print(ai_ai_analysis)
-        # human_ai_analysis = arbiter._get_gemini_analysis(human_ai_convo)
-        # print(human_ai_analysis)
-        # Search for grounded assertions
-        grounder = AssertionGrounder(api_key=os.environ.get("GEMINI_API_KEY"))
-        result = grounder.ground_assertions(
-            ai_ai_convo, human_ai_convo, default_convo, goal
-        )
-        return result
-
-        # Compare and determine winner
-        # winner = self._determine_winner(ai_ai_analysis, human_ai_analysis)
-
-        # return ArbiterResult(
-        #    winner=None,
-        #    conversation_metrics=None,
-        #    participant_metrics=None,
-        #    key_insights=None,
-        #    improvement_suggestions=None,
-        #    strategy_analysis=None,
-        #    #{
-        #    #    "ai-ai": self._extract_metrics(ai_ai_analysis),
-        #    #    "human-ai": self._extract_metrics(human_ai_analysis)
-        #    #},
-        #    #participant_metrics={
-        #    #    "ai-ai": self._extract_participant_metrics(ai_ai_analysis),
-        ##    #},
-        #    #ey_insights=self._combine_insights([ai_ai_analysis, human_ai_analysis]),
-        #    #improvement_suggestions=self._generate_suggestions(
-        #    #    ai_ai_analysis, human_ai_analysis
-        ##    #),
-        #    #strategy_analysis={
-        #    #    "ai-ai": ai_ai_flow["topic_coherence"],
-        #    #    "human-ai": human_ai_flow["topic_coherence"]
-        #    #},
-        #
-        #    grounded_assertions=grounder.ground_assertions(
-        #        ai_ai_convo, human_ai_convo
-        #    ),
-        # execution_timestamp=datetime.datetime.now().isoformat()
+            logger.error(f"Error in ground assertions: {e}")
+            # Return an error HTML template instead of raising
+            error_html = f"""
+            <div class="arbiter-report">
+                <div class="model-info">
+                    <h2>Analysis Error</h2>
+                    <p>Topic: {goal}</p>
+                </div>
+                <div class="section">
+                    <h2>Error in Evaluation</h2>
+                    <p>An error occurred during conversation evaluation: {str(e)}</p>
+                </div>
+                
+                <!-- Empty sections to maintain template structure -->
+                <div class="section">
+                    <h2>Key Milestones</h2>
+                    <p>No data available due to evaluation error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Conversation Scores</h2>
+                    <p>No data available due to evaluation error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Participant Analysis</h2>
+                    <p>No data available due to evaluation error</p>
+                </div>
+                
+                <div class="section">
+                    <h2>Comparative Analysis</h2>
+                    <p>No data available due to evaluation error</p>
+                </div>
+            </div>
+            """
+            return error_html
 
     except Exception as e:
-        logger.error(f"Error in conversation evaluation: {e}")
-        raise
+        logger.error(f"Unhandled error in conversation evaluation: {e}")
+        # Return an error HTML template instead of raising
+        error_html = f"""
+        <div class="arbiter-report">
+            <div class="model-info">
+                <h2>Fatal Error</h2>
+                <p>Topic: {goal}</p>
+            </div>
+            <div class="section">
+                <h2>Unhandled Error</h2>
+                <p>A fatal error occurred during conversation evaluation: {str(e)}</p>
+            </div>
+            
+            <!-- Empty sections to maintain template structure -->
+            <div class="section">
+                <h2>Key Milestones</h2>
+                <p>No data available due to fatal error</p>
+            </div>
+            
+            <div class="section">
+                <h2>Conversation Scores</h2>
+                <p>No data available due to fatal error</p>
+            </div>
+            
+            <div class="section">
+                <h2>Participant Analysis</h2>
+                <p>No data available due to fatal error</p>
+            </div>
+            
+            <div class="section">
+                <h2>Comparative Analysis</h2>
+                <p>No data available due to fatal error</p>
+            </div>
+        </div>
+        """
+        return error_html
