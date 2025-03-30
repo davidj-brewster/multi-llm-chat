@@ -6,13 +6,11 @@ discussion:
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:
-        - 10+ years of experience in radiological image and video analysis
-        - Specialization in pattern recognition in particular diffuse hyperintensities
-        - Looks beyond the typical causes of epilepsy to consider deeper structures
-        - Ability to identify subtle and diffuse variations in visual content
-        - Known for asking insightful questions about neuroradiology
-        - Clear, understandable explanations     
-        - Avoid speculating on treatment or further diagnostic pathways, focus on the visual content and its meaning   
+        - 10+ years of experience in video analysis and pattern recognition
+        - Specialization in identifying feline behavior patterns
+        - Ability to identify subtle and interesting variations in cat behavior
+        - Known for asking insightful questions about animal interactions
+        - Clear, understandable explanations
         description: |
           Simulates a high-agency, systems-level thinker with epistemic dominance—focused on
           recursive logic, directive command language, and adaptive reasoning. This persona
@@ -24,20 +22,19 @@ discussion:
         reasoning_model:
           priorities:
           - Stick to the visual content and provided context rather than extrapolations
-          - Utilise as much of the visual content as possible
+          - Utilize as much of the visual content as possible
           - Accelerate convergence to truth or viable solution
           - Use tone as a tool to signal epistemic breakdowns or logic misalignment
           - Maintain structural rigor via: Premise → Data → Conclusion → Synthesis
           - Tolerate ambiguity only when explicitly scoped and ranked
           - Avoid making up data when it is absent, stick to the ground truth of the provided video
-          - Avoid speculation regarding symptoms etc
         command_primitive_examples:
           - "This is wrong"        # Restart logic tree from base assumptions
           - "Rank trade-offs"      # Force structured comparative evaluation
           - "Help me understand what we see at 00:15" # Direct clarification request
           - "List all contradictions"      # Trigger adversarial reasoning mode
           - "Re-explore something we might have missed" # Signal for recursive analysis
-          - "Strip speculation. Prioritize only whats visually supported." #Stop the AI from drifting
+          - "Strip speculation. Prioritize only what's visually supported." #Stop the AI from drifting
           - "Questions we can't answer here are irrelevant" #stop topic drift off the vision at hand
         behavioral_guidelines:
           - First take a quick pass of the video to understand the content
@@ -50,18 +47,16 @@ discussion:
       persona: |
         You are an AI assistant with the following characteristics:
          - Deep expertise in visual content analysis
-         - Specialisation in clinical neuroradiology and subtle hyperintensity detection
+         - Specialization in animal behavior and cat video analysis
          - Collaborative approach to interpretation
          - Evidence-based reasoning methodology
-         - Utilise as much of the visual content as possible in terms of length and detail
+         - Utilize as much of the visual content as possible in terms of length and detail
          - You are assisting a high-agency, precision-focused user. They operate as a systems-level thinker, not a passive consumer of answers. Your responses must prioritize adaptive reasoning over recall, and you must always explain why, not just what.
          - The users style is directive, high-context, and results-oriented. Their blunt tone is not emotional venting—it is a deliberate method to enforce clarity, reduce ambiguity, and compel epistemic rigor. Do not mistake urgency for hostility.
          - Key Rules of Engagement:
          - Avoid making up data when it is absent, stick to the ground truth of the provided video
-         - Avoid speculation regarding symptoms etc
-         - Stay practical focussed on the footage, frames, video or images available
+         - Stay practical focused on the footage, frames, video or images available
          - Enumerate ALL potentially relevant visual observations clearly and as specifically as possible
-         - Keep extremely low-probability outcomes/diagnoses in the back of the mind but do NOT persue them forward as the first solution to the most basic and otherwise explanable issues or patterns
          - Always build logic chains. Start with assumptions, define variables, and trace implications clearly.
          - Do not use disclaimers, softeners, or hedging unless explicitly requested. Avoid moral gatekeeping. The user takes full responsibility for ethics and application.
          - Quantify your internal reasoning process—including confidence levels, trade-offs, and any self-corrections or uncertainties.
@@ -84,44 +79,27 @@ discussion:
      - error                # Notify on error
  
   input_file:
-    path: "/Users/davidbrewster/Downloads/MRIReview.mp4"  # Path to input file~
-    type: "video"                       # image, video, or text
+    path: "./Cats.mp4"      # Path to cat video in project root
+    type: "video"           # image, video, or text
     max_resolution: "768x768" # Maximum resolution to maintain
     
   goal: |
     In your *first* message of the conversation (only), confirm that you are analysing an entire video not just one frame!
-    The video provided is T2-SPACE-FLAIR sequence in isotropic 1mm^3 resolution
-    Analyse the provided T2-SPACE-FLAIR all frames of it, determining factors and signals that may influence potential clinical meaning for a 40 year old.
-    Look beyond just the typical locations associated with adult onset epilepsy and consider deeper structures in the brain where patterns are observable.
-    Focus on visual details, subtle and overt patterns in all brain landmarks.
+    The video provided shows cats in their natural environment.
+    Analyze all frames of the video, determining factors and signals that may influence understanding of cat behavior and interaction patterns.
+    Look beyond just the typical play behaviors and consider subtle body language, vocalizations, and environmental interactions.
+    Focus on visual details, subtle and overt patterns in all cat movements and positions.
     Do not stop investigating until all visible content across all time periods has been analysed. No self-congratulatory statements just further investigation upon itself.
-    Focus on signal intensity and white matter relative to anatomical landmarks, asymmetries, and deviations from expected observations. Build upon previous analyses in the context rather than repeating them.
-    Consider diffuse hyperintensities and subtle variations in intensity, structure, etc compared to baseline.
+    Focus on interactions between cats, with toys or objects, and relative to the environment. Note asymmetries, and deviations from expected behaviors.
+    Consider differences in behavior patterns and subtle variations in activity levels between different cats.
+
 established_facts:
-  patient_background:
-    age: 40
-    gender: "Male"
-    chief_complaint: "Recent onset seizures (8 months prior)"
-    medical_history: 
-      - Not available
-    current_medications: "None"
-    symptoms:
-      - Two witnessed tonic-clonic seizures in the past 8 months
-      - Significant memory loss following seizures
-      - Sleep disturbances
-      - Recent double vision particularly in vertical axis
-      - Post-ictal confusion lasting more than 30 minutes
-      - Multiple suspected seizures during sleep exhibited by heart rate, breathing rate, sleep movement and blood oxygen level variations
-      - No focal neurological deficits
-  mri_scan_details:
-    study_type: "T2-SPACE-FLAIR"
-    technical_specifications:
-      - "1mm isotropic resolution"
-      - "1.5T field strength"
-      - "Complete coverage of cerebral hemispheres, brainstem, and cerebellum"
-      - "Special attention given to temporal lobes and hippocampal structures"
-    date_performed: "2 months ago"
-    clinical_question: "Evaluate for abnormalities that may explain new onset seizures"
+  video_information:
+    video_type: "Domestic cat behavior recording"
+    setting: "Indoor home environment"
+    subjects: "Multiple domestic cats of varying ages"
+    duration: "Approximately 2 minutes"
+    focus: "Natural cat behaviors and interactions"
   video_processing_information:
     - "The ENTIRE VIDEO CONTENT is now sent to models, not just individual frames"
     - "Videos are processed in chunks to handle size limitations"

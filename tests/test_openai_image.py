@@ -69,9 +69,9 @@ def test_image_conversation(image_path):
 
     # Initial question with image
     try:
-        initial_prompt = "Describe this medical image in detail. What anatomical structures do you see and what kind of scan might this be?"
+        initial_prompt = "Describe this cat video in detail. What behaviors do you observe and what might the cats be doing?"
         system_instruction = (
-            "You are a helpful assistant with expertise in medical imaging."
+            "You are a helpful assistant with expertise in animal behavior."
         )
 
         # Keep track of conversation history
@@ -98,7 +98,7 @@ def test_image_conversation(image_path):
         print("\n=========================\n")
 
         # Second turn - follow-up question WITHOUT sending the image again
-        followup_prompt = "What specific features can you identify that might be relevant for someone with a history of seizures? Please be specific about any abnormalities you observe."
+        followup_prompt = "What specific behaviors or interactions can you identify that might indicate the cats' relationship with each other? Please be specific about any interesting patterns you observe."
 
         logger.info("TURN 2: Sending follow-up prompt WITHOUT image")
         response2 = client.generate_response(
@@ -120,7 +120,7 @@ def test_image_conversation(image_path):
         print("\n=========================\n")
 
         # Third turn - another follow-up question
-        final_prompt = "Based on what you can see, are there any hyperintensities or structural changes visible in this scan that might be clinically significant?"
+        final_prompt = "Based on what you can see, are there any playful behaviors or interesting environmental interactions in this video that might tell us something about these cats' personalities?"
 
         logger.info("TURN 3: Sending final follow-up prompt WITHOUT image")
         response3 = client.generate_response(
@@ -150,7 +150,7 @@ def test_image_conversation(image_path):
 
 
 if __name__ == "__main__":
-    image_path = "/Users/davidbrewster/Documents/mri_processing_2/clahe_00084.jpg"
+    image_path = "./Cats.mp4"  # Use a generic video file in project root
 
     # Override with command line argument if provided
     if len(sys.argv) > 1:

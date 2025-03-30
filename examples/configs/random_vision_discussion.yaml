@@ -76,18 +76,28 @@ discussion:
      - error                # Notify on error
  
   input_file:
-    path: "/Users/davidbrewster/Documents/AI Interpretation.mov"
+    path: "./Cats.mp4"     # Path to cat video in project root
     type: "video"                       # image, video, or text
     max_resolution: "512x512"         # Maximum resolution to maintain
     
   goal: |
     In your *first* message of the conversation (only), confirm that you are analysing an entire video not just one frame!
-    Describe the video, it's societal, social, historical and/or future impacts and implications
-    Focus on visual details, subtle and overt patterns in all brain landmarks.
+    The video provided shows cats in their natural environment.
+    Analyze all frames of the video, determining factors and signals that may influence understanding of cat behavior and interaction patterns.
+    Look beyond just the typical play behaviors and consider subtle body language, vocalizations, and environmental interactions.
+    Focus on visual details, subtle and overt patterns in all cat movements and positions.
     Do not stop investigating until all visible content across all time periods has been analysed. No self-congratulatory statements just further investigation upon itself.
+    Focus on interactions between cats, with toys or objects, and relative to the environment. Note asymmetries, and deviations from expected behaviors.
+    Consider differences in behavior patterns and subtle variations in activity levels between different cats.
 
 # Established facts that both Human and AI partners have access to
 established_facts:
+  video_information:
+    video_type: "Domestic cat behavior recording"
+    setting: "Indoor home environment"
+    subjects: "Multiple domestic cats of varying ages"
+    duration: "Approximately 2 minutes"
+    focus: "Natural cat behaviors and interactions"
   video_processing_information:
     - "The ENTIRE VIDEO CONTENT is now sent to models, not just individual frames"
     - "Videos are processed in chunks to handle size limitations"
