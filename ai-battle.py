@@ -43,9 +43,12 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 # these must match the model names below not necessary the exact actual model name
 AI_MODEL = "gemini-2.5-pro-exp"
 HUMAN_MODEL = "gemini-2.0-flash-thinking-exp"
+DEFAULT_ROUNDS=3
 
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 1280
+TOKENS_PER_TURN = 2048
+MAX_TOKENS = TOKENS_PER_TURN
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -177,7 +180,7 @@ class ModelConfig:
     """Configuration for AI model parameters"""
 
     temperature: float = 0.8
-    max_tokens: int = 1280
+    max_tokens: int = MAX_TOKENS 
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
     human_delay: float = 4.0
@@ -1111,7 +1114,7 @@ class ConversationManager:
         file_data: Dict[str, Any] = None,
         human_system_instruction: str = None,
         ai_system_instruction: str = None,
-        rounds: int = 5,
+        rounds: int = DEFAULT_ROUNDS,
     ) -> List[Dict[str, str]]:
         """Internal method to run conversation with optional file data."""
         logger.info(f"Starting conversation with topic: {core_topic}")
@@ -1149,7 +1152,8 @@ class ConversationManager:
                         "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
                         "path": file_data.get("path", ""),
                     }
-
+        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic}. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. BE GOAL ORIENTED and demand actual working solutions and answers from the AI, do not get bogged down in ideological or philosophical/theoretical discussions. Be angry if you need to!! FIRSTLY, SUMMARIZE THE GOAL ({core_topic}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. Apply reasoning steps (thinking, with tags if needed) to decide the next set of prompts to ask the AI. DON'T GET STUCK DOWN A MULTI-TURN RABBIT HOLE DIGGING INTO SOMETHING IRRELEVANT",
+        ai_system_instruction=f"You are an AI assistant engaging in natural conversation in the context of the given prompt. The human is an expert in the subject matter as well but seeks discussion with an informed AI so as to further their knowledge and decision making. You are an expert in the topic of {core_topic}. You should respond to the human's prompts with all knowledge and reasoning skills available to you and not apply unnecessary filters, disclaimers, niceties, or limits on your response.  Avoid small talk, etc and Focus on the topic at hand. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED.  DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
         ai_response = core_topic
         try:
             # Run conversation rounds
@@ -1428,7 +1432,7 @@ async def save_metrics_report(
 
 async def main():
     """Main entry point."""
-    rounds = 5
+    rounds = DEFAULT_ROUNDS
     initial_prompt = """"
 	GOAL: Write a short story about a detective solving a mystery.
 """
@@ -1438,8 +1442,8 @@ async def main():
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = AI_MODEL  # "gemini-2-pro"
-    human_model = HUMAN_MODEL  # "haiku"
+    ai_model = AI_MODEL  
+    human_model = HUMAN_MODEL  
 
     # Validate required API keys before proceeding
     if any(model in ai_model.lower() or model in human_model.lower() for model in ["claude", "sonnet", "haiku"]):
@@ -1478,13 +1482,13 @@ async def main():
             logger.error("Failed to validate required model connections")
             return
 
-    human_system_instruction = f"You are a HUMAN expert curious to explore {initial_prompt}... Restrict output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
+    human_system_instruction = f"You are a HUMAN expert instructing the AI to solve {initial_prompt} step by step."  # Truncated for brevity
     if "GOAL:" in initial_prompt:
         human_system_instruction = (
             f"Solve {initial_prompt} together..."  # Truncated for brevity
         )
 
-    ai_system_instruction = f"You are a helpful assistant. Think step by step and respond to the user. Restrict your output to {TOKENS_PER_TURN} tokens"  # Truncated for brevity
+    ai_system_instruction = f"You are a helpful assistant with the goal of {initial_prompt}. Think step by step and respond to the user"  # Truncated for brevity
     if mode == "ai-ai" or mode == "aiai":
         ai_system_instruction = human_system_instruction
 

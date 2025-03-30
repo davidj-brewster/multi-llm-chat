@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 1024
+MAX_TOKENS = 2048
 TOKENS_PER_TURN = MAX_TOKENS
 
 
@@ -43,7 +43,7 @@ class ModelConfig:
 
         max_tokens (int): Maximum number of tokens to generate in the response.
             This helps control response length and prevent excessive token usage.
-            Defaults to 1024.
+            Defaults to MAX_TOKENS=2048.
 
         stop_sequences (List[str], optional): List of strings that, when encountered,
             will stop the model from generating further text. Useful for controlling
@@ -57,14 +57,12 @@ class ModelConfig:
         Basic configuration:
         >>> config = ModelConfig()
         >>> config.temperature
-        0.8
         >>> config.max_tokens
-        1024
 
         Custom configuration:
         >>> config = ModelConfig(
         ...     temperature=0.3,
-        ...     max_tokens=2048,
+        ...     max_tokens=MAX_TOKENS,
         ...     stop_sequences=["END", "STOP"],
         ...     seed=42
         ... )
@@ -77,12 +75,12 @@ class ModelConfig:
         >>> client = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
         >>> response = client.generate_response(
         ...     prompt="Explain quantum entanglement",
-        ...     model_config=ModelConfig(temperature=0.2, max_tokens=500)
+        ...     model_config=ModelConfig(temperature=0.2, max_tokens=MAX_TOKENS)
         ... )
     """
 
     temperature: float = 0.8
-    max_tokens: int = 1024
+    max_tokens: int = MAX_TOKENS
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
 
@@ -125,7 +123,7 @@ class BaseClient:
 
         Custom instruction handling:
         >>> client = BaseClient(mode="human-ai", api_key="sk-...", domain="medicine")
-        >>> client.instructions = "You are a medical assistant specializing in diagnostics."
+        >>> client.instructions = "You are a helpful AI assistant."
         >>> client._get_mode_aware_instructions(role="assistant")
         'You are a medical assistant specializing in diagnostics.'
 
@@ -537,7 +535,7 @@ class BaseClient:
             >>> client = BaseClient(mode="human-ai", domain="education")
             >>> instructions = client._update_instructions([], role="assistant", mode="default")
             >>> instructions
-            'You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO 1024 tokens'
+            'You are a helpful assistant. Think step by step as needed'
 
             Adaptive instructions with history:
             >>> history = [
@@ -547,7 +545,7 @@ class BaseClient:
             >>> client._update_instructions(history, role="human", mode="ai-ai")  # Returns adaptive instructions
         """
         if (mode == "human-ai" and role == "assistant") or mode == "default":
-            return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO 1024 tokens"
+            return "You are a helpful assistant. Think step by step as needed"
         return (
             self.adaptive_manager.generate_instructions(history, self.domain)
             if history
@@ -592,7 +590,7 @@ class BaseClient:
             if role == "user" or role == "human":
                 return self.generate_human_prompt()
             else:
-                return "You are an AI assistant interacting with a human. RESTRICT OUTPUTS TO APPROX 1024 tokens"
+                return "You are an AI assistant interacting with a human."
         return ""
 
     def generate_human_system_instructions(self) -> str:
@@ -631,7 +629,7 @@ class BaseClient:
             True
         """
         if self.mode == "default":
-            return "You are a helpful assistant. Think step by step as needed. RESTRICT OUTPUTS TO APPROX 1024 tokens"
+            return "You are a helpful assistant. Think step by step as needed."
 
         return f"""You are acting as a human , exploring {self.domain} with a colleague.
 
@@ -948,7 +946,7 @@ class GeminiClient(BaseClient):
             >>> response = gemini.generate_response(
             ...     prompt="What is quantum entanglement?",
             ...     system_instruction="You are a quantum physics professor.",
-            ...     model_config=ModelConfig(temperature=0.3, max_tokens=500)
+            ...     model_config=ModelConfig(temperature=0.3, max_tokens=MAX_TOKENS)
             ... )
         """
         if model_config is None:
@@ -1119,7 +1117,7 @@ class GeminiClient(BaseClient):
                             model=self.model_name,
                             contents=gemini_history,
                             config=types.GenerateContentConfig(
-                                temperature=0.2,
+                                temperature=0.8,
                                 systemInstruction=current_instructions,
                                 max_output_tokens=8192,
                                 candidateCount=1,
@@ -1170,7 +1168,7 @@ class GeminiClient(BaseClient):
                                 ]
                             ),
                             config=types.GenerateContentConfig(
-                                temperature=0.4,
+                                temperature=0.8,
                                 systemInstruction=current_instructions,
                                 max_output_tokens=8192,
                                 candidateCount=1,
@@ -1240,8 +1238,8 @@ class GeminiClient(BaseClient):
                     contents if contents else prompt
                 ),  # This is for non-video content
                 config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=1280,
+                    temperature=0.8,
+                    max_output_tokens=MAX_TOKENS,
                     candidateCount=1,
                     safety_settings=[
                         types.SafetySetting(
@@ -1324,7 +1322,7 @@ class ClaudeClient(BaseClient):
         except Exception as e:
             logger.error(f"Failed to initialize Claude client: {e}")
             raise
-        self.max_tokens = 1024
+        self.max_tokens = MAX_TOKENS
 
     def set_extended_thinking(self, enabled: bool, budget_tokens: Optional[int] = None):
         """
@@ -1719,7 +1717,7 @@ class ClaudeClient(BaseClient):
             "model": self.model,
             "system": current_instructions,
             "messages": messages,
-            "max_tokens": model_config.max_tokens if model_config else 1024,
+            "max_tokens": model_config.max_tokens if model_config else MAX_TOKENS,
             "temperature": model_config.temperature if model_config else 0.8,
         }
 
@@ -1759,7 +1757,7 @@ class ClaudeClient(BaseClient):
                         # Add budget_tokens if specified
                         if self.budget_tokens is not None:
                             # Ensure budget_tokens is less than max_tokens
-                            max_tokens = request_params.get("max_tokens", 1024)
+                            max_tokens = request_params.get("max_tokens", MAX_TOKENS)
                             if self.budget_tokens < max_tokens:
                                 request_params["budget_tokens"] = self.budget_tokens
                                 logger.debug(
@@ -2314,8 +2312,8 @@ class OpenAIClient(BaseClient):
                 response = self.client.chat.completions.create(
                     model="gpt-4o",
                     messages=formatted_messages,
-                    temperature=0.85,
-                    max_tokens=1536,
+                    temperature=0.8,
+                    max_tokens=MAX_TOKENS,
                     timeout=90,
                     stream=False,
                 )

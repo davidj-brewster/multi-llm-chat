@@ -139,7 +139,7 @@ REASONING_TEMPLATES = {
     },
     "concise": {
         "level": "medium",
-        "max_reasoning_tokens": 200,
+        "max_reasoning_tokens": 1024,
         "format": """
         Thoughts: [Brief reasoning process]
         Answer: [Final answer]
