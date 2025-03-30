@@ -222,3 +222,4 @@ def get_reasoning_config(template_name: str = None, **kwargs) -> ClaudeReasoning
 
     # No template, just use kwargs
     return ClaudeReasoningConfig(**kwargs)
+

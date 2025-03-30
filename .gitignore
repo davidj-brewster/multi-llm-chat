@@ -15,3 +15,5 @@ wheels/
 .DS_Store
 .vscode
 processed_files
+*html
+
