@@ -1400,7 +1400,6 @@ class ClaudeClient(BaseClient):
         - Higher resolution images (up to 1800px)
         - Multiple image analysis (up to 10 images)
         - Comparative image reasoning
-        - Advanced medical imagery interpretation
         - Video frame extraction and analysis
         - Enhanced context management
         """
@@ -1419,7 +1418,7 @@ class ClaudeClient(BaseClient):
 
         # Get appropriate instructions
         history = history if history else []
-        if role == "user" or role == "human" or self.mode == "ai-ai":
+        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
             current_instructions = (
                 self.adaptive_manager.generate_instructions(
                     history, role=role, domain=self.domain, mode=self.mode
@@ -1437,27 +1436,6 @@ class ClaudeClient(BaseClient):
                     else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
                 )
             )
-
-            # Add medical imagery instructions if applicable
-            if self.capabilities.get("medical_imagery", False) and (
-                isinstance(file_data, dict)
-                and file_data.get("type") == "image"
-                or isinstance(file_data, list)
-                and any(
-                    f.get("type") == "image" for f in file_data if isinstance(f, dict)
-                )
-            ):
-                current_instructions += "\n\nYou have advanced medical image analysis capabilities. When analyzing medical images:"
-                current_instructions += "\n- Pay close attention to subtle variations in tissue density and signal intensity"
-                current_instructions += (
-                    "\n- Identify anatomical structures with precision"
-                )
-                current_instructions += (
-                    "\n- Note any asymmetries, hyperintensities, or abnormal patterns"
-                )
-                current_instructions += "\n- Compare across multiple images when available to identify patterns"
-                current_instructions += "\n- For MRIs, pay special attention to signal changes in T1/T2/FLAIR weighted sequences"
-                current_instructions += "\n- For video or multiple frames, track changes across frames and identify meaningful patterns"
 
         # Build context-aware prompt
         prompt = (

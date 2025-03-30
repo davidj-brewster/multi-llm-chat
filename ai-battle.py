@@ -43,7 +43,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 # these must match the model names below not necessary the exact actual model name
 AI_MODEL = "gemini-2.5-pro-exp"
 HUMAN_MODEL = "gemini-2.0-flash-thinking-exp"
-DEFAULT_ROUNDS=3
+DEFAULT_ROUNDS=2
 
 CONFIG_PATH = "config.yaml"
 TOKENS_PER_TURN = 2048
@@ -734,7 +734,7 @@ class ConversationManager:
         file_config: Union[FileConfig, Dict[str, Any], "MultiFileConfig"],
         human_system_instruction: str = None,
         ai_system_instruction: str = None,
-        rounds: int = 1,
+        rounds: int = 2,
     ) -> List[Dict[str, str]]:
         """Run conversation with file input."""
         # Clear history and set up initial state

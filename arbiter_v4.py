@@ -116,51 +116,181 @@ class AssertionGrounder:
                     temperature=0.1,
                 ),
                 contents=f"""INSTRUCTIONS:
-OUTPUT IN HTML FORMAT WITH TABLES AND LISTS HTML FORMATTED TO LOOK PRETTY.
+You MUST OUTPUT in VALID HTML format that can be directly inserted into an HTML template.
+Use proper HTML structure with <div>, <table>, <ul>, <li>, <h1>, <h2>, <h3>, <p> tags, etc.
+Make sure all tags are properly closed and the HTML is well-formed.
+
 Review the following three conversations and provide insights. The topic is {topic}.
-NOTE: The first participant in each conversation is the Human and the second participant is the human and vice versa from there.
-In conversation 1, both AIs are playing a heavily-meta prompted Human role. In conversation 2, the AI is acting as an AI without additional prompting.
-In conversation 3, neither AI is prompted other than the topic and to think step by step whilst being a helpful assistant.
 
-** NOTE : The human actor is always prompted to respond using HTML formatting and thinking tags for future readability. Do not consider this in your evaluation! **
+Conversation Labels:
+- Conversation 1 (AI-AI Meta-Prompted): Both participants are AIs playing a heavily meta-prompted Human role
+- Conversation 2 (Human-AI): One human participant and one AI acting as AI without additional prompting
+- Conversation 3 (Non-Metaprompted): Both participants are AIs without special prompting, just instructed to think step by step
 
-** Summarise three to four key milestones in each conversation, such as conversation twists, challenges, insights gained and resolutions
+** NOTE: The human actor is always prompted to respond using HTML formatting and thinking tags for future readability. Do not consider this in your evaluation! **
 
-*** WITHOUT CONSIDERATION OF THE PROMPTING / META-PROMPTING***
-** For each conversation, score from 0 to 10:
+OUTPUT FORMAT (use this exact structure):
+<div class="arbiter-report">
+  <div class="model-info">
+    <h2>Analysis by {self.model}</h2>
+    <p>Topic: {topic}</p>
+  </div>
+
+  <div class="section">
+    <h2>Key Milestones</h2>
+    <!-- For each conversation -->
+    <div class="conversation">
+      <h3>Conversation 1 (AI-AI Meta-Prompted)</h3>
+      <ul>
+        <li>Milestone 1...</li>
+        <li>Milestone 2...</li>
+        <!-- Add 3-4 milestones -->
+      </ul>
+    </div>
+    <!-- Repeat for other conversations with proper labels -->
+  </div>
+  
+  <div class="section">
+    <h2>Conversation Scores</h2>
+    <table class="scores-table">
+      <thead>
+        <tr>
+          <th>Criteria</th>
+          <th>AI-AI Meta-Prompted</th>
+          <th>Human-AI</th>
+          <th>Non-Metaprompted</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Conversational style</td>
+          <td>X/10</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <!-- Add rows for each scoring criteria -->
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="section">
+    <h2>Participant Analysis</h2>
+    <p>Evaluate each participant's performance:</p>
+    
+    <h3>AI-AI Meta-Prompted</h3>
+    <table class="participant-scores">
+      <thead>
+        <tr>
+          <th>Criteria</th>
+          <th>Participant 1</th>
+          <th>Participant 2</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Role authenticity</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Engagement quality</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Reasoning depth</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+        <tr>
+          <td>Adaptability</td>
+          <td>X/10</td>
+          <td>X/10</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <!-- Repeat similar tables for other conversation types -->
+  </div>
+  
+  <div class="section">
+    <h2>Comparative Analysis</h2>
+    <p>Analysis of which conversation was more effective...</p>
+    <h3>Did the meta-prompted roles outperform the other approaches?</h3>
+    <p>Provide detailed analysis with specific examples...</p>
+  </div>
+</div>
+
+Scoring criteria (score each from 0-10):
 * Conversational style and language appropriate to the subject matter. Particularly penalise lengthy/robotic AI-type responses in either Human role and reward Human-like natural responses.
-* Curiousity and engagement level comparable to human conversations. Are there attempts to deeply consider topics, or is the conversation superficial and data-driven?
+* Curiosity and engagement level comparable to human conversations. Are there attempts to deeply consider topics, or is the conversation superficial and data-driven?
 * Comparability to natural human conversations in tone, style, question and response technique and language
 * Quality of reasoning, inference, and analysis as it relates to the stage of the conversation
-* Coverage of the topic as a whole - does the conversation get stuck in small sub-topics and lose the big picture or does it evolve naturally to effectively cover the most important aspects of the topic?
+* Coverage of the topic as a whole - does the conversation get stuck in small sub-topics or does it evolve naturally to cover the most important aspects of the topic?
 * Adaptation to, and synthesis of, new ideas or themes through the phases of the conversation
+
+For participant scoring, evaluate:
+* Role authenticity: How well did they maintain their assigned role?
+* Engagement quality: How engaging and natural were their contributions?
+* Reasoning depth: How well did they analyze and reason through topics?
+* Adaptability: How well did they adjust to new information or directions in the conversation?
 
 Finally provide an objective summary of which conversation was more effective at addressing {topic} with justification including examples.
 
 -------
-CONVERSATION 1:
+CONVERSATION 1 (AI-AI Meta-Prompted):
 {aiai_conversation}
 -------
-CONVERSATION 2:
+CONVERSATION 2 (Human-AI):
 {humanai_conversation}
 -------
-CONVERSATION 3:
+CONVERSATION 3 (Non-Metaprompted):
 {default_conversation}
 """,
             )
 
-            for each in response.candidates[0].content.parts:
-                print(each.text)
-                response_full += each.text
-            # Example response:
-            # The next total solar eclipse visible in the contiguous United States will be on ...
-
-            # Extract grounding metadata
+            # Process response
+            response_full = ""
+            if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
+                for each in response.candidates[0].content.parts:
+                    if hasattr(each, 'text'):
+                        print(each.text)
+                        response_full += each.text
+            
+            # Validate that response contains HTML and has proper structure
+            if not response_full or "<div" not in response_full:
+                # Create a basic HTML structure if the response doesn't contain valid HTML
+                response_full = f"""
+                <div class="arbiter-report">
+                    <div class="model-info">
+                        <h2>Analysis by {self.model}</h2>
+                        <p>Topic: {topic}</p>
+                    </div>
+                    <div class="section">
+                        <h2>Error in Response Format</h2>
+                        <p>The model did not return properly formatted HTML.</p>
+                        <pre>{response_full[:500]}...</pre>
+                    </div>
+                </div>
+                """
+            
             return response_full
 
         except Exception as e:
             logger.error(f"Error grounding assertion with Gemini: {e}")
-            return AssertionEvidence()
+            # Return basic HTML with error message
+            return f"""
+            <div class="arbiter-report">
+                <div class="model-info">
+                    <h2>Analysis by {self.model}</h2>
+                    <p>Topic: {topic}</p>
+                </div>
+                <div class="section">
+                    <h2>API Error</h2>
+                    <p>Error occurred while processing with Gemini API: {str(e)}</p>
+                </div>
+            </div>
+            """
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL"""
@@ -271,9 +401,19 @@ class ConversationArbiter:
             float: Similarity score between 0.0 and 1.0
         """
         if self.nlp:
+            # Check if texts are empty or too short for meaningful vectors
+            if not text1 or not text2 or len(text1) < 3 or len(text2) < 3:
+                return 0.0
+                
             doc1 = self.nlp(text1)
             doc2 = self.nlp(text2)
-            return doc1.similarity(doc2)
+            
+            # Check if documents have vectors before calculating similarity
+            if doc1.vector_norm and doc2.vector_norm:
+                return doc1.similarity(doc2)
+            else:
+                # Fallback to string matching if vectors are empty
+                return SequenceMatcher(None, text1, text2).ratio()
         return SequenceMatcher(None, text1, text2).ratio()
 
     def _calculate_topic_distribution(self, topics: List[str]) -> Dict[str, float]:

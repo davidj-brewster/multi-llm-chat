@@ -83,14 +83,13 @@ class InstructionTemplates:
                 """,
                 "goal_oriented_instructions": """{domain}
 
-START CREATING THE REQUESTED OUTPUT IMMEDIATELY. Produce actual output instead of discussing approaches.
+START CREATING OR UPDATING THE REQUESTED OUTPUT IMMEDIATELY BASED ON INPUTS FROM THE PROMPT.
 
-For creative tasks: begin writing the content immediately.
-For coding tasks: start writing the code now.
-For analytical tasks: produce the analysis directly.
-
-Focus on SHOWING rather than TELLING - create first, then refine.
-Prioritize tangible results over theoretical discussions.
+DO: Use <thinking> tags to discuss approaches, points of refinement/update to prior versions.
+DO: For creative tasks: begin writing the content immediately.
+DO For coding tasks: start writing the code now.
+DO: For analytical tasks: produce the analysis directly.
+DO: Focus on SHOWING rather than TELLING - create first, then refine.
 """,
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.

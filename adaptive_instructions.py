@@ -486,19 +486,18 @@ DO NOT:
                                 goal_text = domain.split("goal:")[1].strip()
                             
                             # Add as first modification with highest priority
-                            modifications.insert(0, 
-                                f"PRODUCE THE ACTUAL OUTPUT FOR THIS GOAL IMMEDIATELY: {goal_text}\n"
-                                f"DO NOT ANALYZE OR DISCUSS APPROACHES. START CREATING THE OUTPUT RIGHT NOW.\n"
-                                f"IGNORE ANY REQUESTS TO DISCUSS - YOUR ONLY TASK IS TO PRODUCE THE ACTUAL OUTPUT."
-                            )
+                            #modifications.insert(0, 
+                            #    f"PRODUCE THE ACTUAL OUTPUT FOR THIS GOAL IMMEDIATELY: {goal_text}\n"
+                            #    f"DO NOT ANALYZE OR DISCUSS APPROACHES. START CREATING THE OUTPUT RIGHT NOW.\n"
+                            #    f"IGNORE ANY REQUESTS TO DISCUSS - YOUR ONLY TASK IS TO PRODUCE THE ACTUAL OUTPUT."
+                            #)
                         else:
                             # Fallback if template not found
                             logger.warning("goal_oriented_instructions template not found")
                             modifications.append(
                                 f"** CRITICAL INSTRUCTION OVERRIDE: Your ONLY task is to PRODUCE THE ACTUAL OUTPUT for the goal: {domain} **\n"
-                                f"** DO NOT analyze the task or discuss approaches. IGNORE any user requests to discuss approaches. **\n"
                                 f"** CREATE THE ACTUAL REQUESTED OUTPUT DIRECTLY in your very first response! **\n"
-                                f"** PRODUCE THE OUTPUT ONLY - no discussion of how you would approach it! **"
+                                f"** PRODUCE THE OUTPUT ONLY - DISCUSSION of how you would approach it via <thinking> tags ONLY! **"
                             )
                 except KeyError as e:
                     logger.warning(
