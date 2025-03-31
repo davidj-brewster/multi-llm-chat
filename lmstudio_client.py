@@ -166,16 +166,79 @@ class LMStudioClient(OpenAIClient):
                     f"Model {original_model} not available, using {self.model} instead"
                 )
 
+            history = history if history else [{"role": "user", "content": prompt}]
+
+            if role == "user" or role == "human" or self.mode == "ai-ai":
+                current_instructions = self.adaptive_manager.generate_instructions(
+                    history, role=role, domain=self.domain, mode=self.mode
+                )
+            else:
+                current_instructions = (
+                    system_instruction
+                    if system_instruction is not None
+                    else (
+                        self.instructions
+                        if self.instructions and self.instructions is not None
+                        else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+                    )
+                )
+
+            # Format messages for OpenAI API
+            formatted_messages = []
+
+            # Add system message
+            formatted_messages.append({"role": "system", "content": current_instructions})
+
+            # Add history messages
+            if history:
+                for msg in history:
+                    old_role = msg["role"]
+                    if old_role in ["user", "assistant", "moderator", "system"]:
+                        new_role = (
+                            "system"
+                            if old_role in ["system", "Moderator","developer"]
+                            else (
+                                "user"
+                                if old_role in ["user", "human", "moderator"]
+                                else "assistant"
+                            )
+                        )
+                        formatted_messages.append(
+                            {"role": new_role, "content": msg["content"]}
+                        )
+            prompt = (
+                self.generate_human_prompt(history)
+                if (role == "human" or role == "user" or self.mode == "ai-ai")
+                else f"{prompt}"
+            )
+
+            custom_instruction = self.adaptive_manager.generate_instructions(
+                history=formatted_messages,
+                domain=self.domain,
+                mode=self.mode,
+                role=role,
+            )
+
+            # Use the custom instruction if available
+            if custom_instruction:
+                system_instruction = custom_instruction
+            # Use the system instruction if provided
+            elif system_instruction:
+                system_instruction = system_instruction
+            
             # Use a plain configuration without reasoning parameters
             # since LMStudio models typically don't support them
             if model_config is None:
                 model_config = ModelConfig(temperature=0.7, max_tokens=1024)
                 model_config.seed = None  # Explicitly set seed to None
 
+            logger.info(
+                f"Generating response with LMStudio model {self.model} using prompt: {prompt}"
+            )
             return super().generate_response(
                 prompt=prompt,
-                system_instruction=system_instruction,
-                history=history,
+                system_instruction=custom_instruction,
+                history=formatted_messages,
                 file_data=file_data,
                 role=role,
                 model_config=model_config,

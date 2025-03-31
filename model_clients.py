@@ -967,7 +967,7 @@ class GeminiClient(BaseClient):
         if role:  # and not self.role:
             self.role = role
 
-        history = history if history else []
+        history = history if history else [{"role": "user", "content": prompt}]
         # Update instructions based on conversation history
         if role == "user" or role == "human" or self.mode == "ai-ai" or True:
             current_instructions = self.adaptive_manager.generate_instructions(
@@ -1916,12 +1916,7 @@ class OpenAIClient(BaseClient):
             self.mode = mode
 
         history = history if history else [{"role": "user", "content": prompt}]
-        # Analyze conversation context
-        conversation_analysis = self._analyze_conversation(
-            history[-10:]
-        )  # Limit history analysis
 
-        history = history if history else []
         if role == "user" or role == "human" or self.mode == "ai-ai":
             current_instructions = self.adaptive_manager.generate_instructions(
                 history, role=role, domain=self.domain, mode=self.mode
@@ -2595,6 +2590,7 @@ class MLXClient(BaseClient):
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
 
+    # Initialize the client
     def __init__(
         self, mode: str, domain: str, role: str = None, model: str = "phi4:latest"
     ):
@@ -2605,6 +2601,8 @@ class OllamaClient(BaseClient):
         self.client = Client(
             host=self.base_url
         )  # Use synchronous Client instead of AsyncClient
+        # Store conversation state
+        self.conversation_state = None
 
     def test_connection(self) -> None:
         """Test Ollama connection"""
@@ -2631,10 +2629,18 @@ class OllamaClient(BaseClient):
         if mode:
             self.mode = mode
 
-        history = history if history else []
-        if role == "user" or role == "human" or self.mode == "ai-ai":
+        history = history if history else [{"role": "user", "content": prompt}]
+        
+        # Initialize or retrieve conversation state
+        if self.conversation_state is None:
+            self.conversation_state = {"messages": []}
+            # If history is provided in the first call, use it to initialize the state
+            self.conversation_state["messages"] = [msg.copy() for msg in history if msg["role"] != "user"]
+        
+        # Update instructions based on conversation history
+        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
             current_instructions = self.adaptive_manager.generate_instructions(
-                history, role=role, domain=self.domain, mode=self.mode
+                history, role="user", domain=self.domain, mode=self.mode
             )
         else:
             current_instructions = (
@@ -2650,7 +2656,7 @@ class OllamaClient(BaseClient):
         # Build context-aware prompt
         context_prompt = (
             self.generate_human_prompt(history)
-            if (role == "human" or role == "user" or self.mode == "ai-ai")
+            if (role == "human" or role == "user" or self.mode == "ai-ai") and  self.mode != "default" and self.mode != "no-meta-prompting"
             else f"{prompt}"
         )
 
@@ -2658,8 +2664,13 @@ class OllamaClient(BaseClient):
         messages = []
         if current_instructions:
             messages.append({"role": "system", "content": current_instructions})
-
-        for msg in history:
+        
+        # Include all messages from our conversation state
+        for msg in self.conversation_state["messages"]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        
+        # Add new messages from current history that aren't in our state
+        for msg in [m for m in history if m not in self.conversation_state["messages"]]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 
         messages.append({"role": "user", "content": context_prompt})
@@ -2737,20 +2748,32 @@ class OllamaClient(BaseClient):
                     )
 
         try:
-            # Use the chat() method (Async)
-            response: ChatResponse = self.client.chat(  # Now synchronous
+            # Use the chat() method
+            response: ChatResponse = self.client.chat(
                 model=self.model,
                 messages=messages,  # Pass the correctly formatted messages
                 stream=False,
                 options={
                     "num_ctx": 16384,
-                    "num_predict": 1024,
+                    "num_predict": 2048,
                     "temperature": 0.7,
-                    "num_batch": 256,
-                    "top_k": 30,
+                    "num_batch": 512,
+                    "top_k": 40,
+                    "use_mmap": True
                 },
             )
-            return response.message.content  # Access the content correctly
+            
+            # Store the response in our conversation state
+            self.conversation_state["messages"].append({
+                "role": "user",
+                "content": context_prompt
+            })
+            self.conversation_state["messages"].append({
+                "role": "assistant", 
+                "content": response.message.content
+            })
+            
+            return response.message.content
 
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")

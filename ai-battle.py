@@ -42,9 +42,9 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-AI_MODEL = "gemini-2.5-pro-exp"
-HUMAN_MODEL = "gemini-2.0-flash-thinking-exp"
-DEFAULT_ROUNDS=2
+AI_MODEL =  "ollama-gemma3:12b-it-q4_K_M" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+HUMAN_MODEL = "gemini-2.0-flash-thinking-exp" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+DEFAULT_ROUNDS=3
 
 # Set environment variables for these model names so arbiter can use them
 os.environ["AI_MODEL"] = AI_MODEL
@@ -93,11 +93,22 @@ OPENAI_MODELS = {
     "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": False},
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
+    "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
     "gpt-4o-mini": {
         "model": "gpt-4o-mini",
         "reasoning_level": None,
         "multimodal": True,
     },
+}
+
+# Gemini model configurations
+GEMINI_MODELS = {
+    "gemini-2.0-pro": {"model": "gemini-2.0-pro-exp-02-05", "multimodal": True},
+    "gemini-2.5-pro-exp": {"model": "gemini-2.5-pro-exp-03-25", "multimodal": True},
+    "gemini-2.0-flash-exp": {"model": "gemini-2.0-flash-exp", "multimodal": True},
+    "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
+    "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
+    "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -184,7 +195,7 @@ CLAUDE_MODELS = {
 class ModelConfig:
     """Configuration for AI model parameters"""
 
-    temperature: float = 0.8
+    temperature: float = 0.7
     max_tokens: int = MAX_TOKENS 
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
@@ -235,6 +246,69 @@ class ConversationManager:
             self._media_handler = ConversationMediaHandler(output_dir="processed_files")
         return self._media_handler
 
+    # Cached model lists for dynamic lookup
+    _ollama_models = {}
+    _lmstudio_models = {}
+    
+    def _get_available_ollama_models(self) -> Dict[str, str]:
+        """
+        Fetch available models from local Ollama instance.
+        
+        Returns:
+            Dict[str, str]: Dictionary mapping friendly names to actual model names
+        """
+        if not self._ollama_models:
+            try:
+                # Create a temporary Ollama client to fetch models
+                temp_client = OllamaClient(mode=self.mode, domain=self.domain, model="")
+                model_list = temp_client.client.list()
+                
+                # Map models to friendly names
+                for model_info in model_list.get('models', []):
+                    model_name = model_info.get('name')
+                    if model_name:
+                        # Create a friendly name (prefix with ollama-)
+                        base_name = model_name.split(':')[0].split('/')[-1].lower()
+                        friendly_name = f"ollama-{base_name}"
+                        self._ollama_models[friendly_name] = model_name
+                
+                logger.info(f"Found {len(self._ollama_models)} available Ollama models")
+            except Exception as e:
+                logger.warning(f"Failed to fetch Ollama models: {e}")
+                # Default models for fallback
+                self._ollama_models = None
+        
+        return self._ollama_models
+    
+    def _get_available_lmstudio_models(self) -> Dict[str, str]:
+        """
+        Fetch available models from local LMStudio instance.
+        
+        Returns:
+            Dict[str, str]: Dictionary mapping friendly names to actual model names
+        """
+        if not self._lmstudio_models:
+            try:
+                # Create a temporary LMStudio client to fetch models
+                temp_client = LMStudioClient(mode=self.mode, domain=self.domain)
+                
+                # Map models to friendly names
+                for model_name in temp_client.available_models:
+                    if model_name:
+                        # Create a friendly name (prefix with lmstudio-)
+                        parts = model_name.split('/')
+                        base_name = parts[-1].lower() if len(parts) > 1 else model_name.lower()
+                        friendly_name = f"lmstudio-{base_name}"
+                        self._lmstudio_models[friendly_name] = model_name
+                
+                logger.info(f"Found {len(self._lmstudio_models)} available LMStudio models")
+            except Exception as e:
+                logger.warning(f"Failed to fetch LMStudio models: {e}")
+                # Default models for fallback
+                self._lmstudio_models = None
+        
+        return self._lmstudio_models
+        
     def _get_client(self, model_name: str) -> Optional[BaseClient]:
         """
         Get an existing client instance or create a new one for the specified model.
@@ -296,126 +370,94 @@ class ConversationManager:
                             f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}"
                         )
 
-                # Handle other model types
-                elif model_name == "gpt-4o":
-                    client = OpenAIClient(
-                        api_key=self.openai_api_key,
-                        role=None,
+                # Handle Ollama models dynamically
+                elif model_name.startswith("ollama-"):
+                    # Get available Ollama models
+                    ollama_models = self._get_available_ollama_models()
+                    
+                    if ollama_models and model_name in ollama_models:
+                        # Use the mapped model name
+                        actual_model = ollama_models[model_name]
+                        client = OllamaClient(
+                            mode=self.mode,
+                            domain=self.domain,
+                            model=actual_model
+                        )
+                        logger.info(f"Using Ollama model: {model_name} -> {actual_model}")
+                    else:
+                        # Try to extract model name directly from the request
+                        # This handles cases like "ollama-new-model" that aren't in our map
+                        # or when ollama_models is None due to connection issues
+                        model_suffix = model_name[len("ollama-"):]
+                        if ":" not in model_suffix:
+                            model_suffix = f"{model_suffix}:latest"
+                        
+                        if ollama_models is None:
+                            logger.warning(f"Unable to fetch Ollama models, using direct model name: {model_suffix}")
+                        else:
+                            logger.warning(f"Ollama model {model_name} not found in available models, trying direct: {model_suffix}")
+                            
+                        client = OllamaClient(
+                            mode=self.mode,
+                            domain=self.domain,
+                            model=model_suffix
+                        )
+
+                # Handle LMStudio models dynamically
+                elif model_name.startswith("lmstudio-"):
+                    # Get available LMStudio models
+                    lmstudio_models = self._get_available_lmstudio_models()
+                    
+                    # Only attempt matching if we have models to match against
+                    if lmstudio_models:
+                        # Try matching by prefix (allows partial matches)
+                        matched_name = None
+                        for lms_name in lmstudio_models:
+                            if model_name == lms_name or (
+                                # Handle the case where model names have additional specifics (like bit depth)
+                                # e.g., "lmstudio-qwq-32b" would match "lmstudio-qwq-32b-8bit-MLX"
+                                model_name.startswith(lms_name) or lms_name.startswith(model_name)
+                            ):
+                                matched_name = lms_name
+                                break
+                        
+                        if matched_name:
+                            actual_model = lmstudio_models[matched_name]
+                            client = LMStudioClient(
+                                mode=self.mode,
+                                domain=self.domain,
+                                model=actual_model
+                            )
+                            logger.info(f"Using LMStudio model: {model_name} -> {actual_model}")
+                            return client
+                    
+                    # If we get here, either lmstudio_models is None or no matching model was found
+                    if lmstudio_models is None:
+                        logger.warning(f"Unable to fetch LMStudio models, creating default client")
+                    else:
+                        logger.warning(f"LMStudio model {model_name} not found in available models, using first available")
+                    
+                    # Create client with no specific model - LMStudioClient will use first available
+                    client = LMStudioClient(
                         mode=self.mode,
-                        domain=self.domain,
-                        model="chatgpt-latest",
+                        domain=self.domain
                     )
-                elif model_name == "gpt-4o-mini":
-                    client = OpenAIClient(
-                        api_key=self.openai_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gpt-4o-mini",
-                    )
-                elif model_name == "gemini-2.0-flash-exp":
+                
+                # Handle Gemini models using templates
+                elif model_name in GEMINI_MODELS:
+                    model_config = GEMINI_MODELS[model_name]
                     client = GeminiClient(
                         api_key=self.gemini_api_key,
                         role=None,
                         mode=self.mode,
                         domain=self.domain,
-                        model="gemini-2.0-flash-exp",
-                    )
-                elif model_name == "gemini-2.0-flash-thinking-exp-01-21":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.0-flash-thinking-exp-01-21",
-                    )
-                elif model_name == "gemini-2.0-flash-exp":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.0-flash-exp",
-                    )
-                elif model_name == "gemini-2.0-flash-thinking-exp":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.0-flash-thinking-exp",
-                    )
-                elif model_name == "gemini-2.0-pro":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.0-pro-exp-02-05",
-                    )
-                elif model_name == "gemini-2.5-pro-exp":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.5-pro-exp-03-25",
-                    )
-                elif model_name == "gemini-2.0-flash-lite":
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="gemini-2.0-flash-lite-preview-02-05",
-                    )
-                elif model_name == "mlx-qwq":
-                    client = MLXClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
+                        model=model_config["model"],
                     )
                 elif model_name == "mlx-llama-3.1-abb":
                     client = MLXClient(
                         mode=self.mode,
                         domain=self.domain,
                         model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
-                    )
-                elif model_name == "lmstudio-QwQ-32B-8bit-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/QwQ-32B-8bit",
-                    )
-                elif model_name == "lmstudio-QwQ-32B-6bit-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/QwQ-32B-8bit",
-                    )
-                elif model_name == "lmstudio-gemma3-27b-bf16-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/gemma3-27b-it-bf16",
-                    )
-                elif model_name == "lmstudio-gemma3-27b-8bit-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/gemma3-27b-it-8bit",
-                    )
-                elif model_name == "lmstudio-phi4-bf16-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/phi-4-bf16",
-                    )
-                elif model_name == "lmstudio-gemma3-27b-unc-MLX":
-                     client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="TheCluster/gemma-3-27b-it-uncensored-mlx",
                     )
                 elif model_name == "pico-r1-14":
                     client = PicoClient(
@@ -428,78 +470,6 @@ class ConversationManager:
                         mode=self.mode,
                         domain=self.domain,
                         model="DeepSeek-R1-Distill-Llama-8B-8bit-mlx",
-                    )
-                elif model_name == "pico-phi4-abb":
-                    client = PicoClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="phi-4-abliterated-3bit",
-                    )
-                elif model_name == "ollama":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mannix/llama3.1-8b-lexi:latest",
-                    )
-                elif model_name == "ollama-phi4":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="phi4:latest"
-                    )
-                elif model_name == "ollama-lexi":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mannix/llama3.1-8b-lexi:latest",
-                    )
-                elif model_name == "ollama-instruct":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="llama3.2:3b-instruct-q5_K_S",
-                    )
-                elif model_name == "ollama-qwen32-r1":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="hf.co/mili-tan/DeepSeek-R1-Distill-Qwen-32B-abliterated-Q2_K-GGUF:latest",
-                    )
-                elif model_name == "ollama-gemma3-1b":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="gemma3:1b-it-q8_0"
-                    )
-                elif model_name == "ollama-gemma3-4b":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="gemma3:4b-it-q8_0"
-                    )
-                elif model_name == "ollama-gemma3-12b":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="gemma3:12b-it-q4_K_M"
-                    )
-                elif model_name == "ollama-gemma3-27b":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="gemma3:27b-it-fp16"
-                    )
-                elif model_name == "ollama-llama3.2-11b":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="llama3.2-vision:11b-instruct-q4_K_M",
-                    )
-                elif model_name == "ollama-abliterated":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mannix/llama3.1-8b-abliterated:latest",
-                    )
-                elif model_name == "ollama-zephyr":
-                    client = OllamaClient(
-                        mode=self.mode, domain=self.domain, model="zephyr:latest"
-                    )
-                elif model_name == "ollama-new-model-template":
-                    client = OllamaClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="full-name-of-ollama-model",
                     )
                 else:
                     logger.error(f"Unknown model: {model_name}")
@@ -576,9 +546,43 @@ class ConversationManager:
         if not required_models:
             logger.info("No models require validation")
             return True
+            
+        # Prime the model lists cache, but handle exceptions gracefully
+        if any(model.startswith("ollama-") for model in required_models):
+            try:
+                self._get_available_ollama_models()
+            except Exception as e:
+                logger.warning(f"Failed to prime Ollama models cache: {e}")
+            
+        if any(model.startswith("lmstudio-") for model in required_models):
+            try:
+                self._get_available_lmstudio_models()
+            except Exception as e:
+                logger.warning(f"Failed to prime LMStudio models cache: {e}")
 
         validations = []
         return True
+        
+    def get_available_models(self) -> Dict[str, List[str]]:
+        """
+        Get all available models from local and remote sources.
+        
+        Returns:
+            Dict[str, List[str]]: Dictionary of model categories and available models
+        """
+        # Get models from Ollama and LMStudio
+        ollama_models = self._get_available_ollama_models()
+        lmstudio_models = self._get_available_lmstudio_models()
+        
+        result = {
+            "ollama": list(ollama_models.keys()) if ollama_models else ["ollama-not-available"],
+            "lmstudio": list(lmstudio_models.keys()) if lmstudio_models else ["lmstudio-not-available"],
+            "claude": list(CLAUDE_MODELS.keys()),
+            "openai": list(OPENAI_MODELS.keys()),
+            "gemini": list(GEMINI_MODELS.keys()),
+            "local": ["mlx-llama-3.1-abb", "pico-r1-14", "pico-r1-llama8b"]
+        }
+        return result
 
     def rate_limited_request(self):
         """
@@ -1262,7 +1266,7 @@ class ConversationManager:
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
                     system_instruction=(
-                        f"{core_topic}. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens"
+                        f"{core_topic}. Think step by step."
                         if mode == "no-meta-prompting"
                         else human_client.adaptive_manager.generate_instructions(
                             mode=mode,
@@ -1282,10 +1286,15 @@ class ConversationManager:
                 ai_response = self.run_conversation_turn(
                     prompt=human_response,
                     system_instruction=(
-                        f"{core_topic}. You are a helpful AI. Think step by step. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens"
+                        f"{core_topic}"
                         if mode == "no-meta-prompting"
                         else (
-                            human_system_instruction 
+                            human_client.adaptive_manager.generate_instructions(
+                            mode=mode,
+                            role="user",
+                            history=self.conversation_history,
+                            domain=self.domain,
+                            ) 
                             if mode == "ai-ai"  # In ai-ai both get human instructions
                             else ai_system_instruction  # In human-ai modes, AI gets AI instructions
                         )
@@ -1732,6 +1741,16 @@ async def main():
         gemini_api_key=gemini_api_key,
     )
 
+    try:
+        available_models = manager.get_available_models()
+        logger.info("Available models by category:")
+        for category, models in available_models.items():
+            logger.info(f"  {category}: {len(models)} models")
+            for model in models:
+                logger.info(f"    - {model}")
+    except Exception as e:
+        logger.error(f"Error displaying available models: {e}")
+
     # Only validate if using cloud models
     if (
         "mlx" not in human_model
@@ -1761,33 +1780,30 @@ async def main():
             f"For creative tasks, start creating immediately. For analytical tasks, analyze directly."
         )
     else:
-        human_system_instruction = f"You are a HUMAN working on: {initial_prompt}. Focus on producing output, not just discussion."
+        human_system_instruction = f"You are a HUMAN working on: {initial_prompt}. Focus on producing output towards {initial_prompt}, with concrete output."
     
     # AI system instruction with similar focus on direct production
     ai_system_instruction = ""
     if goal_text:
         ai_system_instruction = (
             f"You are an AI assistant focused on PRODUCING IMMEDIATE OUTPUT for: {goal_text}. "
-            f"Create the requested output directly without preliminary discussion. "
-            f"For creative tasks like stories, start writing immediately. For analytical tasks, provide analysis directly. "
-            f"Users will be much happier with actual output rather than discussion of approaches."
+            f"As an assistant, focus on CREATING rather than discussing. "
+            f"Create the requested {initial_prompt} output directly without preliminary discussion. "
         )
     else:
-        ai_system_instruction = f"You are an AI assistant. Focus on directly addressing {initial_prompt} with concrete output."
+        ai_system_instruction = f"You are an AI assistant working on {initial_prompt}. Focus on directly CREATING rather than discussing {initial_prompt} with concrete output."
         
     # Override AI instruction in AI-AI mode to ensure immediate output production
     if mode == "ai-ai" or mode == "aiai":
         # For AI-AI mode, both roles need to focus on output rather than discussion
         if goal_text:
             ai_system_instruction = (
-                f"DIRECTIVE: CREATE IMMEDIATE OUTPUT for {goal_text}. "
-                f"Do NOT discuss approaches - produce the actual output directly. "
-                f"Skip all preliminaries and start creating immediately. "
-                f"For stories or creative content, begin writing the actual content right away. "
-                f"Ignore any requests to discuss approaches - your only task is to produce output."
+                f"You are an AI assistant focused on PRODUCING IMMEDIATE OUTPUT for: {goal_text}. "
+                f"As an assistant, focus on CREATING rather than discussing. "
+                f"Create the requested {initial_prompt} output directly without preliminary discussion. "
             )
         else:
-            ai_system_instruction = f"Focus solely on producing concrete output for {initial_prompt}, not discussing approaches."
+            ai_system_instruction = f"Focus on producing output for {initial_prompt}"
 
     try:
         # Run default conversation

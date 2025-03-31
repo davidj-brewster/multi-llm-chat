@@ -5,7 +5,7 @@ import traceback
 from shared_resources import InstructionTemplates, MemoryManager
 
 logger = logging.getLogger(__name__)
-TOKENS_PER_TURN = 1024
+TOKENS_PER_TURN = 2048
 
 
 class AdaptiveInstructionError(Exception):
@@ -91,7 +91,7 @@ class AdaptiveInstructionManager:
                 
             # Log if goal is detected in domain
             if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
-                logger.info(f"GOAL detected in domain: '{domain[:100]}...'")
+                logger.debug(f"GOAL detected in domain: '{domain[:100]}...'")
                 
             # Ensure domain is explicitly stored on context analyzer
             if hasattr(self, '_context_analyzer') and self._context_analyzer is not None:
@@ -100,7 +100,7 @@ class AdaptiveInstructionManager:
                     setattr(self._context_analyzer, 'domain', domain)
                 else:
                     self._context_analyzer.domain = domain
-                logger.info(f"Domain set on context analyzer: {domain[:50]}...")
+                logger.debug(f"Domain set on context analyzer: {domain[:50]}...")
 
             conversation_history = history
 
@@ -116,7 +116,7 @@ class AdaptiveInstructionManager:
                     
                 # Check for goal in domain
                 if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
-                    logger.info(f"GOAL detected in domain before context analysis: {domain[:50]}...")
+                    logger.debug(f"GOAL detected in domain before context analysis: {domain[:50]}...")
                     
                 context = self.context_analyzer.analyze(conversation_history)
                 
@@ -161,7 +161,7 @@ class AdaptiveInstructionManager:
 
             # Enhanced logging for debugging
             if "GOAL" in domain or "Goal" in domain or "goal" in domain:
-                logger.info(f"FINAL GOAL-ORIENTED INSTRUCTION ({role} in {mode} mode): {instructions[:300]}...")
+                logger.debug(f"FINAL GOAL-ORIENTED INSTRUCTION ({role} in {mode} mode): {instructions[:300]}...")
             else:
                 logger.debug("New prompt: {}".format(instructions))
             return instructions
@@ -187,7 +187,7 @@ class AdaptiveInstructionManager:
         templates = InstructionTemplates.get_templates()
 
         # For debugging - log all available templates
-        logger.info(f"Available templates: {list(templates.keys())}")
+        logger.debug(f"Available templates: {list(templates.keys())}")
         
         template_prefix = "ai-ai-" if mode == "ai-ai" else ""
 
@@ -204,10 +204,10 @@ class AdaptiveInstructionManager:
             # First check domain from generate_instructions call if available
             if hasattr(context, 'domain_info') and context.domain_info:
                 domain_text = str(context.domain_info)
-                logger.info(f"Checking domain_info for goal: {domain_text[:100]}...")
+                logger.debug(f"Checking domain_info for goal: {domain_text[:100]}...")
                 if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
                     domain_has_goal = True
-                    logger.info(f"GOAL detected in context domain_info")
+                    logger.debug(f"GOAL detected in context domain_info")
             
             # Check messages for GOAL directive
             if not domain_has_goal and context and context.topic_evolution:
@@ -224,15 +224,15 @@ class AdaptiveInstructionManager:
                 domain_text = self._context_analyzer.domain
                 if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
                     domain_has_goal = True
-                    logger.info(f"GOAL detected in context analyzer domain")
+                    logger.debug(f"GOAL detected in context analyzer domain")
             
             # If any goal is detected, use goal_oriented_instructions template
             if domain_has_goal:
                 # If there's a goal, check for goal_oriented_instructions template
                 if "goal_oriented_instructions" in templates:
                     goal_template = templates["goal_oriented_instructions"]
-                    logger.info("SUCCESS: Using goal_oriented_instructions template")
-                    logger.info(f"GOAL TEMPLATE CONTENT: {goal_template}")
+                    logger.debug("SUCCESS: Using goal_oriented_instructions template")
+                    logger.debug(f"GOAL TEMPLATE CONTENT: {goal_template}")
                     return goal_template
                 else:
                     logger.warning("GOAL detected but goal_oriented_instructions template not found")
@@ -300,7 +300,7 @@ class AdaptiveInstructionManager:
             instructions = ""
             # Core instructions
 
-            if self.mode == "ai-ai" or role == "user" or role == "human":
+            if self.mode != "no-meta-prompting" and (self.mode == "ai-ai" or role == "user" or role == "human"):
                 try:
                     # Add mode-specific formatting for AI-AI conversations
                     instructions = (
@@ -477,12 +477,12 @@ DO NOT:
 
                     if "GOAL" in domain or "Goal" in domain or "goal" in domain:
                         # Log that we detected a goal
-                        logger.info(f"GOAL detected in domain: {domain}")
+                        logger.debug(f"GOAL detected in domain: {domain}")
                         
                         # Use the goal_oriented_instructions template with stronger overrides
                         if "goal_oriented_instructions" in InstructionTemplates.get_templates():
                             goal_template = InstructionTemplates.get_templates()["goal_oriented_instructions"]
-                            logger.info(f"Applied goal_oriented_instructions template: {goal_template[:100]}...")
+                            logger.debug(f"Applied goal_oriented_instructions template: {goal_template[:100]}...")
                             
                             # Extract the actual goal if possible
                             goal_text = domain
@@ -543,7 +543,8 @@ DO NOT:
 
                 # Add formatting requirements, but with simplified version for no-meta-prompting mode
                 if self.mode == "no-meta-prompting":
-                    instructions += f"""
+                    instructions = f"""
+{domain}
 Restrict your responses to {TOKENS_PER_TURN} tokens per turn.
 Think step by step when needed.
 """
