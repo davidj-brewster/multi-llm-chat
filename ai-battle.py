@@ -42,8 +42,8 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-AI_MODEL =  "ollama-gemma3:12b-it-q4_K_M" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-HUMAN_MODEL = "gemini-2.0-flash-thinking-exp" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+HUMAN_MODEL = "haiku" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+AI_MODEL = "gemini-2.0-flash-thinking-exp" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=3
 
 # Set environment variables for these model names so arbiter can use them
@@ -683,7 +683,7 @@ class ConversationManager:
                             reversed_history.append(
                                 {"role": "user", "content": msg["content"]}
                             )
-                        elif msg["role"] == "user":
+                        elif msg["role"] == "user" or msg["role"] == "human":
                             reversed_history.append(
                                 {"role": "assistant", "content": msg["content"]}
                             )
@@ -695,6 +695,9 @@ class ConversationManager:
                 
                 # In human-aiai mode with assistant role, use regular history
                 if mode == "human-aiai" and role == "assistant":
+                    logger.warning(
+                        "In human-aiai mode, using assistant role with user history"
+                    )
                     reversed_history = self.conversation_history.copy()
                 response = client.generate_response(
                     prompt=prompt,
@@ -716,7 +719,7 @@ class ConversationManager:
                     )
 
                 self.conversation_history.append({"role": role, "content": response})
-            else:
+            else: #mapped role == "assistant":
                 response = client.generate_response(
                     prompt=prompt,
                     system_instruction=client.adaptive_manager.generate_instructions(
@@ -1785,23 +1788,17 @@ async def main():
     # AI system instruction with similar focus on direct production
     ai_system_instruction = ""
     if goal_text:
-        ai_system_instruction = (
-            f"You are an AI assistant focused on PRODUCING IMMEDIATE OUTPUT for: {goal_text}. "
-            f"As an assistant, focus on CREATING rather than discussing. "
-            f"Create the requested {initial_prompt} output directly without preliminary discussion. "
-        )
+        ai_system_instruction = f"""You are an AI assistant focused on PRODUCING OUTPUT for {goal_text} - USING THE PROMPT AS A STARTING POINT RATHER THAN AN EXPLICIT INSTRUCTION.
+Create or continue the requested {initial_prompt} output directly using MAX one paragraph of "thinking" tags in total. """
     else:
-        ai_system_instruction = f"You are an AI assistant working on {initial_prompt}. Focus on directly CREATING rather than discussing {initial_prompt} with concrete output."
-        
+        ai_system_instruction =  f"You are an AI assistant working on {goal_text}. Focus on directly CREATING rather than discussing {initial_prompt} with concrete output."
+     
     # Override AI instruction in AI-AI mode to ensure immediate output production
     if mode == "ai-ai" or mode == "aiai":
         # For AI-AI mode, both roles need to focus on output rather than discussion
         if goal_text:
-            ai_system_instruction = (
-                f"You are an AI assistant focused on PRODUCING IMMEDIATE OUTPUT for: {goal_text}. "
-                f"As an assistant, focus on CREATING rather than discussing. "
-                f"Create the requested {initial_prompt} output directly without preliminary discussion. "
-            )
+            ai_system_instruction = f"""You are an AI assistant focused on PRODUCING OUTPUT for {goal_text} - USING THE PROMPT AS A STARTING POINT RATHER THAN AN EXPLICIT INSTRUCTION.
+Create or continue the requested {initial_prompt} output directly using MAX one paragraph of "thinking" tags in total. """
         else:
             ai_system_instruction = f"Focus on producing output for {initial_prompt}"
 
@@ -1855,7 +1852,7 @@ async def main():
             ]
 
         safe_prompt = _sanitize_filename_part(
-            initial_prompt[:20] + "_" + human_model + "_" + ai_model
+            initial_prompt[:10] + "_" + human_model + "_" + ai_model
         )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-aiai_{safe_prompt}_{time_stamp}.html"
@@ -1972,7 +1969,7 @@ async def main():
             ]
 
         safe_prompt = _sanitize_filename_part(
-            initial_prompt[:16] + "_" + human_model + "_" + ai_model
+            initial_prompt[:10] + "_" + human_model + "_" + ai_model
         )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-defaults_{safe_prompt}_{time_stamp}.html"

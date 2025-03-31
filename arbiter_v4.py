@@ -6,11 +6,11 @@ import logging
 import datetime
 import spacy
 from difflib import SequenceMatcher
-from uuid import uuid4
 from typing import Dict, List, Any
 from collections import Counter
 from dataclasses import dataclass
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+from shared_resources import SpacyModelSingleton # Import the correct singleton class
 
 
 # Third-party imports
@@ -80,9 +80,6 @@ class ArbiterResult:
     def __post_init__(self):
         if self.conversation_ids is None:
             self.conversation_ids = {}
-
-
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 
 
 class AssertionGrounder:
@@ -477,6 +474,36 @@ CONVERSATION 3 (Non-Metaprompted):
                 for old_tag, new_tag in model_tags:
                     modified_response = modified_response.replace(old_tag, new_tag)
                 
+                # --- Add parsing logic to extract winner ---
+                extracted_winner = "No clear winner determined" # Default
+                try:
+                    start_tag = '<h2>Comparative Analysis</h2>'
+                    start_index = modified_response.find(start_tag)
+                    if start_index != -1:
+                        # Find the first <p> tag after the Comparative Analysis header
+                        p_start_tag = '<p>'
+                        p_start_index = modified_response.find(p_start_tag, start_index + len(start_tag))
+                        if p_start_index != -1:
+                            p_end_tag = '</p>'
+                            p_end_index = modified_response.find(p_end_tag, p_start_index + len(p_start_tag))
+                            if p_end_index != -1:
+                                # Extract text between <p> tags, strip whitespace, limit length
+                                winner_text = modified_response[p_start_index + len(p_start_tag):p_end_index].strip()
+                                # Basic check if it looks like a winner statement and not just tags
+                                if winner_text and not winner_text.startswith("<"): 
+                                   extracted_winner = winner_text[:250] + ('...' if len(winner_text) > 250 else '') # Limit length slightly more
+                                   logger.info(f"Extracted winner statement: {extracted_winner}")
+                                else:
+                                    logger.warning("Found <p> tag after Comparative Analysis, but content seems invalid or empty.")
+                        else:
+                            logger.warning("Could not find <p> tag following Comparative Analysis header.")
+                    else:
+                        logger.warning("Could not find '<h2>Comparative Analysis</h2>' section in the response.")
+
+                except Exception as parse_err:
+                    logger.warning(f"Could not parse winner from HTML response due to error: {parse_err}")
+                # --- End parsing logic ---
+
                 # For simple template, insert content directly without string formatting
                 if template_path == "templates/simple_arbiter_report.html":
                     html_parts = report_template.split("%s")
@@ -492,7 +519,7 @@ CONVERSATION 3 (Non-Metaprompted):
                     with open(formatted_filename, "w") as f:
                         f.write(template.safe_substitute(
                             gemini_content=modified_response,
-                            winner="No clear winner determined",  # Default value
+                            winner=extracted_winner, # Use extracted winner here
                             timestamp=formatted_timestamp
                         ))
                 
@@ -577,7 +604,7 @@ class ConversationArbiter:
 
         self.model = model
         self.grounder = AssertionGrounder(api_key=api_key)
-        self.nlp = spacy.load("en_core_web_lg")  # has vectors
+        self.nlp = SpacyModelSingleton.get_instance() # Use the correct singleton class
 
     def analyze_conversation_flow(
         self, messages: List[Dict[str, str]]

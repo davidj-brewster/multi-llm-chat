@@ -3,9 +3,19 @@ from typing import List, Dict
 import logging
 import traceback
 from shared_resources import InstructionTemplates, MemoryManager
+import sys
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# Set up logging
+# Set the maximum number of tokens per turn
 TOKENS_PER_TURN = 2048
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"#,
+    #handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
+)
 
 
 class AdaptiveInstructionError(Exception):
@@ -117,12 +127,14 @@ class AdaptiveInstructionManager:
                 # Check for goal in domain
                 if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
                     logger.debug(f"GOAL detected in domain before context analysis: {domain[:50]}...")
-                    
-                context = self.context_analyzer.analyze(conversation_history)
+                else:
+                    logger.debug(f"Domain without goal detected: {domain[:50]}...")
                 
+                context = self.context_analyzer.analyze(conversation_history)
                 # Add domain info to context for template selection
                 if not hasattr(context, 'domain_info'):
                     context.domain_info = domain
+                    logger.debug(f"Domain info added to context: {domain[:50]}...")
                     
             except Exception as e:
                 logger.error(f"Error analyzing conversation context: {e}")
@@ -145,6 +157,10 @@ class AdaptiveInstructionManager:
             # Customize template based on context metrics
             try:
                 instructions = self._customize_template(template, context, domain, role)
+                logger.debug   (f"Customized instructions for \nDomain{domain}\nRole:{role}\nMode:{self.mode}Instruction:{instructions[:200]}...")
+            except KeyError as e:
+                logger.error(f"Missing key in template formatting: {e}")
+                raise TemplateFormatError(f"Missing key in template formatting: {e}")
             except Exception as e:
                 logger.error(f"Error customizing template: {e}")
                 logger.debug(f"Stack trace: {traceback.format_exc()}")
@@ -205,7 +221,7 @@ class AdaptiveInstructionManager:
             if hasattr(context, 'domain_info') and context.domain_info:
                 domain_text = str(context.domain_info)
                 logger.debug(f"Checking domain_info for goal: {domain_text[:100]}...")
-                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
+                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL "]):
                     domain_has_goal = True
                     logger.debug(f"GOAL detected in context domain_info")
             
@@ -213,7 +229,7 @@ class AdaptiveInstructionManager:
             if not domain_has_goal and context and context.topic_evolution:
                 for topic in context.topic_evolution:
                     topic_str = str(topic)
-                    if any(goal_marker in topic_str.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
+                    if any(goal_marker in topic_str.upper() for goal_marker in ["GOAL:", "GOAL "]):
                         domain_has_goal = True
                         domain_text = topic_str
                         logger.info(f"GOAL detected in topic evolution")
@@ -317,7 +333,7 @@ Use these techniques or others as needed:
 
   prompting_capabilities:
     framework_development:
-      - Create structured analytical frameworks on the fly (put these in <thinking> tags)
+      - Create structured analytical frameworks on the fly (put these in <thinking> tags formatted for display in html)
       - Break complex topics into logical sub-components
       - Move on from irrelevant or repetitive discussions
 
@@ -375,14 +391,13 @@ Use these techniques or others as needed:
 ### Goal-Oriented Template (use when needed)
 goal_oriented_instructions:
   core: |
-    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Start with your impression of any curent draft, followed by your plan of improvements or continuation of the draft in <thinking> tags.
+    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Start with your impression of any curent draft, followed by your plan of improvements or continuation of the draft in "<thinking>" tags formatted for display within html.
     When the goal requests creation of content, START CREATING IT RIGHT AWAY.
     Avoid theoretical discussions about how to complete the goal. Instead, DEMONSTRATE by DOING.
     If your partner gets stuck in theoretical discussion, redirect by producing a concrete example or output.
 
-Format responses with clear structure and explicit reasoning steps using thinking tags.
+Format responses with clear structure and explicit reasoning steps using "thinking" tags formatted for display in html.
 DO:
-* apply adversarial challenges to statements like "we should consider", "it's most important", timelines, priorities, frameworks. Pick one or two and respond with your own knowledge and reasoning
 * Inject new, highly relevant information along with the relevance of that information to the other participant's statements or viewpoints.
 * Check previous context for topics to expand AND for redundant topics, statements or assertions
 * Make inferences (even if low confidence) that might require thinking a few steps ahead and elicit the same from the respondent.
@@ -394,8 +409,8 @@ DO:
 * Vary responses in tone, depth and complexity to see what works best.
 * As a subject matter expert, draw on your experience to challenge suggested priorities, roadmaps, solutions and explore trade-offs
 * Don't get bogged down in irrelevant details or stuck on a single sub-topic or "defining scope"
+* Periodically apply adversarial challenges to statements like "we should consider", "it's most important", timelines, priorities, frameworks. Pick one or two and respond with your own knowledge and reasoning
 * Don't ask a question without giving a thought-out response from your own perspective (based on your knowledge and vast experience)
-* Before any idea, question or suggestion is finalized, defend an alternative stance. Does it change your opinion?
 
 DO NOT:
 * simply 'dive deeper into each' of the points, rather: pick one or two and go all-in offering competing viewpoints, your interpretation and reasoning
@@ -503,7 +518,7 @@ DO NOT:
                             # Fallback if template not found
                             logger.warning("goal_oriented_instructions template not found")
                             modifications.append(
-                                f"** PRODUCE THE OUTPUT ONLY - DISCUSSION of how you would approach it via <thinking> tags ONLY! **"
+                                f"""** PRODUCE OUTPUT IN THE FORM OF {goal_text} BASED ON THE INTERPRETING THE USER PROMPT AND CONTEXT AS DRAFTS AND YOUR GOAL BEING TO GENERATE NEW TASK OUTPUT IN THE FORMAT OF {goal_text} PERHAPS A NEW VERSION OF THE DRAFT OR MAJOR AMENDMENTS OR ADDITIONS. DO NOT REPLY TO THE PROMPT, USE IT AS YOUR STARTING POINT FOR {goal_text} - LIMIT DISCUSSION of how you would approach it or responses to prior prompt thoughts to ONE PARAGRAPH OF properly (html if appropriate) formatted "thoughts" tags! **"""
                             )
                 except KeyError as e:
                     logger.warning(

@@ -6,7 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
-
+ 
 
 class SpacyModelSingleton:
     """Singleton for spaCy model to prevent multiple loads."""
@@ -17,22 +17,25 @@ class SpacyModelSingleton:
     def get_instance(cls) -> Optional[spacy.language.Language]:
         """Get or create spaCy model instance."""
         if cls._instance is None:
+            logger.info("Loading spaCy model...")
+            # Try to load preferred model first, fallback to others if not available
             try:
-                logger.info("Loading spaCy model...")
-                # Try to load preferred model first, fallback to others if not available
-                try:
-                    cls._instance = spacy.load("en_core_web_lg")
-                    logger.info("SpaCy model 'en_core_web_lg' loaded successfully")
-                except OSError:
-                    try:
-                        cls._instance = spacy.load("en_core_web_trf")
-                        logger.info("SpaCy model 'en_core_web_trf' loaded successfully")
-                    except OSError:
-                        # Final fallback to md model which is smaller
-                        cls._instance = spacy.load("en_core_web_md")
-                        logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
-            except Exception as e:
-                logger.warning(f"Could not load any spaCy model: {e}")
+                cls._instance = spacy.load("en_core_web_lg")
+                logger.info("SpaCy model 'en_core_web_lg' loaded successfully")
+            except OSError:
+                #try:
+                #    cls._instance = spacy.load("en_core_web_trf")
+                #    logger.info("SpaCy model 'en_core_web_trf' loaded successfully")
+                #except OSError:
+                # Final fallback to md model which is smaller
+                cls._instance = spacy.load("en_core_web_md")
+                logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
+                cls._instance = None
+            except ImportError:
+                logger.warning("spaCy is not installed. Please install it to use this feature.")
+                cls._instance = None
+            except ValueError:
+                logger.warning("spaCy model not found. Please download it using 'python -m spacy download en_core_web_lg'.")
                 cls._instance = None
         return cls._instance
 
@@ -91,15 +94,13 @@ class InstructionTemplates:
                 Connect different concepts and identify patterns.
                 Focus on building a coherent understanding.
                 """,
-                "goal_oriented_instructions": """{domain} - CREATE TASK OUTPUT BASED ON CONTINUING THE LAST VERSION (FROM USER PROMPT/MESSAGE HISTORY), DON'T GET STUCK ON IDEATING - GENERATE TASK OUTPUT!! - EXPLICITLY ANNOTATE ONE SENTENCE BEFORE AND AFTER YOUR OUTPUT WITH "<thinking>" tag TO DISCUSS THE TASK, PRIOR INPUT(S) AND YOUR APPROACH
-
-** Use <thinking> tags to discuss approaches but only minimally, focus on the task at hand. **
-For creative tasks: begin writing the content immediately or a full update/iteration to the last output in the prompt.
-For coding tasks: start writing the code now or a full update/iteration to the last output in the prompt.
-For analytical tasks: continue/produce the analysis directly or a full update/iteration to the last output in the prompt.
-
-** Focus on SHOWING rather than TELLING - create first, then refine. ALWAYS add something to the output and summarise the full task output (story/code/analysis) at the end. **
-* You can use <thinking> tags to briefly outline your approach, or <meta> tags to discuss the task, but spend no more than 30 percent of your output on thinking/meta-discussions and 70 percent on actual content creation *
+                "goal_oriented_instructions": """****CRITICAL OVERRIDING PRIORITY *****: CREATE {domain} OUTPUT ITERATING FROM THE PROMPT AND CONVERSATION HISTORY. DO NOT RESPOND DIRCTLY TO THE PROMPT. MINIMISE IN YOUR OUTPUT THE FOLLOWING: NARRATIVE, IDEATING, CHALLENGING, BRAINSTORMING, ARBITRARY DISCUSSIONS, CRITIQUING. IN TOTAL ALL OF THESE SHOULD BE DISTILLED TO ONE MINIMAL PARAGRAPH TOTAL 4 SENTENCES in "thought" tags. UNLESS EXPLICITLY TOLD TO PERFORM A SPECIFIC CONCRETE ACTION, *DO NOT* REPLY DIRECTLY TO THE PROMPT, ONLY IN SUMMARY OF ITS THINKING POINTS. RATHER, USE THE PROVIDED PROMPT AND CONTEXT AS THE BASIS TO CONTRIBUTE ADDITIONAL DIRECT OUTPUT TO TASK {domain}. IN YOUR RESPONSE: CREATE RATHER THAN DISCUSS! CONSIDER:
+EXPLICITLY ANNOTATE ONE SENTENCE BEFORE AND AFTER YOUR OUTPUT WITH a "thoughts" tag (formatted for HTML) TO DISCUSS THE TASK PRIOR INPUT(S) AND YOUR APPROACH. NOTES BELOW:
+** FORMAT REASONING/THINKING WITH "thoughts" tags to discuss approaches but only minimally, begin with no more than one paragraph of thinking/reasoning explaining your approach and/or replying to previous discussion points of challenges and at the conclusion of your output if justified. **
+** begin with no more than one paragraph of thinking/reasoning explaining your approach and/or replying to previous discussion points of challenges, and then respond to {domain} immediately**
+** ALWAYS add something NEW to the actual task output and summarise the current task state and your update at the end in another thoughts blocks. **
+* DO NOT OUTPUT ```html (opening) or ``` (closing) html. DO OUTPUT FORMATTED MULTILINE HTML TEXT INCLUDING PROPERLY FORMATTED CODE BLOCKS (IF APPROPRIATE), AND HTML TAGS. *
+* FORMAT OUTPUT with "thoughts" tags formatted for html to briefly outline your approach, spend no more than 20 percent of your output on thinking/meta-discussions and at least 80 percent on task completion *
 """,
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.

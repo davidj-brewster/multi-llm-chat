@@ -461,7 +461,7 @@ class BaseClient:
         # Get last AI response and its assessment
         ai_response = None
         ai_assessment = None
-        for msg in reversed(history[-10:]):  # Limit history analysis
+        for msg in reversed(history):  # Use full history
             if msg["role"] == "assistant":
                 next_idx = history.index(msg) + 1
                 if next_idx < len(history):
@@ -476,7 +476,7 @@ class BaseClient:
 
         # Build conversation summary
         conversation_summary = "<p>Previous exchanges:</p>"
-        for msg in history[-6:]:  # Last 2 turns
+        for msg in history: # Use full history
             role = (
                 "Human"
                 if (msg["role"] == "user" or msg["role"] == "human")
@@ -712,6 +712,58 @@ Generate a natural but sophisticated response that:
 - Do not overload the conversation with more than 3 or 4 active threads but deep dive into those as an active participant
 - Restrict tokens to {TOKENS_PER_TURN} tokens per prompt"""
 
+    def _determine_system_instructions(
+        self, system_instruction: Optional[str], history: List[Dict[str, str]], role: Optional[str], mode: Optional[str]
+    ) -> str:
+        """
+        Determine the appropriate system instructions based on context, mode, and role.
+
+        Prioritizes explicitly passed instructions, then uses the adaptive manager
+        to generate context-aware instructions, falling back to instance instructions
+        or a generic default. This allows goal detection via the adaptive manager.
+
+        Args:
+            system_instruction (Optional[str]): Explicitly provided system instructions.
+            history (List[Dict[str, str]]): Conversation history.
+            role (Optional[str]): The role being prompted.
+            mode (Optional[str]): The current conversation mode.
+
+        Returns:
+            str: The determined system instructions.
+        """
+        # Use provided system_instruction if available
+        if system_instruction is not None:
+            return system_instruction
+
+        # Otherwise, use adaptive manager (allows goal detection)
+        # The manager handles role differentiation internally for human simulation
+        try:
+            # Ensure history is a list, default to empty list if None
+            history = history if history is not None else []
+            return self.adaptive_manager.generate_instructions(
+                history, role=role, domain=self.domain, mode=mode or self.mode
+            )
+        except Exception as e:
+            logger.error(f"Error generating adaptive instructions: {e}. Falling back.")
+            # Fallback logic if adaptive manager fails
+            return (
+                self.instructions
+                if self.instructions and self.instructions is not None
+                else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
+            )
+
+    def _determine_user_prompt_content(self, prompt: str, history: List[Dict[str, str]], role: Optional[str], mode: Optional[str]) -> str:
+        """
+        Determine the final user prompt content based on role and mode.
+
+        Decides whether to use the raw prompt or generate a human-simulation prompt.
+        """
+        current_mode = mode or self.mode
+        if (role == "human" or role == "user" or current_mode == "ai-ai") and current_mode != "default" and current_mode != "no-meta-prompting":
+            return self.generate_human_prompt(history)
+        else:
+            return prompt
+
     def validate_connection(self) -> bool:
         """
         Validate API connection to the model provider.
@@ -859,6 +911,7 @@ class GeminiClient(BaseClient):
         )
         self.model_name = self.model
         self.role = "user" if role in ["user", "human"] else "model"
+        self.client = None
         try:
             self.client = genai.Client(
                 api_key=self.api_key, http_options={"api_version": "v1alpha"}
@@ -967,22 +1020,10 @@ class GeminiClient(BaseClient):
         if role:  # and not self.role:
             self.role = role
 
-        history = history if history else [{"role": "user", "content": prompt}]
+        history = history if history is not None else [] # Ensure history is a list
+
         # Update instructions based on conversation history
-        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
-            current_instructions = self.adaptive_manager.generate_instructions(
-                history, role="user", domain=self.domain, mode=self.mode
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction and system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are a helpful AI {self.domain}. Think step by step and show reasoning. Respond with HTML formatting in paragraph form, using HTML formatted lists when needed. Limit your output to {MAX_TOKENS} tokens."
-                )
-            )
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
 
         # Prepare content for Gemini API
         # Convert history to Gemini format
@@ -999,11 +1040,8 @@ class GeminiClient(BaseClient):
                 contents.append({"role": role, "parts": [{"text": msg["content"]}]})
             logger.info(f"Added {len(history)} messages from conversation history")
 
-        prompt = (
-            self.generate_human_prompt(history)
-            if (role == "human" or role == "user" or self.mode == "ai-ai")
-            else f"{prompt}"
-        )
+        # Determine final user prompt content
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
 
         # Add file content if provided
         if (
@@ -1188,11 +1226,11 @@ class GeminiClient(BaseClient):
                                     ),
                                     types.SafetySetting(
                                         category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                                        threshold="BLOCK_NONE",
+                                        threshold="BLOCK_ONLY_HIGH",
                                     ),
                                     types.SafetySetting(
                                         category="HARM_CATEGORY_CIVIC_INTEGRITY",
-                                        threshold="BLOCK_NONE",
+                                        threshold="BLOCK_ONLY_HIGH",
                                     ),
                                 ],
                             ),
@@ -1229,9 +1267,14 @@ class GeminiClient(BaseClient):
                 )
 
         # Add prompt text
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        contents.append({"role": "user", "parts": [{"text": final_prompt_content}]})
 
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- Gemini Request ---")
+            logger.debug(f"Model: {self.model_name}")
+            logger.debug(f"System Instruction: {current_instructions}")
+            logger.debug(f"Contents: {contents}")
             # Generate final response
             response = self.client.models.generate_content(
                 model=self.model_name,
@@ -1240,7 +1283,7 @@ class GeminiClient(BaseClient):
                 ),  # This is for non-video content
                 config=types.GenerateContentConfig(
                     temperature=0.8,
-                    max_output_tokens=MAX_TOKENS,
+                    max_output_tokens=model_config.max_tokens if model_config else MAX_TOKENS, # Use model_config
                     systemInstruction=current_instructions, 
                     candidateCount=1,
                     safety_settings=[
@@ -1292,7 +1335,7 @@ class ClaudeClient(BaseClient):
         api_key: str,
         mode: str,
         domain: str,
-        model: str = "claude-3-7-sonnet",
+        model: str = "claude-3-7-sonnet", # Default model
     ):
         super().__init__(
             mode=mode, api_key=api_key, domain=domain, model=model, role=role
@@ -1302,6 +1345,22 @@ class ClaudeClient(BaseClient):
             if not api_key:
                 logger.critical("Missing required Anthropic API key for Claude models.")
                 raise ValueError("No Anthropic API key provided. Please set the ANTHROPIC_API_KEY environment variable.")
+
+            # --- Map user-friendly names to specific API model IDs ---
+            model_map = {
+                "haiku": "claude-3-5-haiku-latest",
+                "claude-3-5-haiku": "claude-3-5-haiku-latest",
+                # Add other mappings here if needed, e.g.:
+                # "sonnet": "claude-3-5-sonnet-latest",
+                # "claude-3-5-sonnet": "claude-3-5-sonnet-latest",
+                # "opus": "claude-3-opus-latest",
+                # "claude-3-opus": "claude-3-opus-latest",
+            }
+            # Use mapped name if found, otherwise use the provided model name
+            self.model = model_map.get(model.lower(), model)
+            logger.info(f"Using Claude model ID: {self.model}")
+            # --- End Mapping ---
+
             self.client = Anthropic(api_key=api_key)
 
             # Enhanced vision parameters
@@ -1411,44 +1470,27 @@ class ClaudeClient(BaseClient):
         history = history if history else [{"role": "user", "content": prompt}]
 
         # Analyze conversation context
-        conversation_analysis = self._analyze_conversation(history)
-        ai_response = conversation_analysis.get("ai_response")
-        ai_assessment = conversation_analysis.get("ai_assessment")
-        conversation_summary = conversation_analysis.get("summary")
+        #conversation_analysis = self._analyze_conversation(history)
+        #ai_response = conversation_analysis.get("ai_response")
+        #ai_assessment = conversation_analysis.get("ai_assessment")
+        #conversation_summary = conversation_analysis.get("summary")
 
         # Get appropriate instructions
-        history = history if history else []
-        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
-            current_instructions = (
-                self.adaptive_manager.generate_instructions(
-                    history, role=role, domain=self.domain, mode=self.mode
-                )
-                if history
-                else system_instruction if system_instruction else self.instructions
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-                )
-            )
+        history = history if history is not None else [] # Ensure history is a list
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
 
         # Build context-aware prompt
-        prompt = (
-            self.generate_human_prompt(history)
-            if (role == "human" or role == "user" or self.mode == "ai-ai")
-            else f"{prompt}"
-        )
+        # Determine final user prompt content
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
 
         # Format messages for Claude API
         messages = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in history
-            if msg["role"] in ["user", "human", "assistant"]
+            {
+                "role": "user" if msg["role"] == "human" else msg["role"], # Map human to user
+                "content": msg["content"]
+            }
+            for msg in history # Iterate through the original history
+            if msg.get("role") in ["user", "human", "assistant"] # Filter valid roles
         ]
 
         # Handle file data
@@ -1549,7 +1591,7 @@ class ClaudeClient(BaseClient):
                     message_content.extend(video_frames)
 
                 # Add the prompt text
-                message_content.append({"type": "text", "text": text_content})
+                message_content.append({"type": "text", "text": final_prompt_content}) # Use final prompt content
 
                 # Add to messages
                 messages.append({"role": "user", "content": message_content})
@@ -1602,7 +1644,7 @@ class ClaudeClient(BaseClient):
                                     },
                                     "metadata": image_metadata,
                                 },
-                                {"type": "text", "text": prompt},
+                                {"type": "text", "text": final_prompt_content}, # Use final prompt content
                             ]
 
                             messages.append(
@@ -1650,7 +1692,7 @@ class ClaudeClient(BaseClient):
                                 )
 
                             # Add video-specific prompt
-                            video_prompt = f"{prompt}\n\nI'm showing you {len(message_content)} key frames from a video. Please analyze these frames in sequence, noting any significant changes or patterns between frames."
+                            video_prompt = f"{final_prompt_content}\n\nI'm showing you {len(message_content)} key frames from a video. Please analyze these frames in sequence, noting any significant changes or patterns between frames." # Use final prompt content
 
                             message_content.append(
                                 {"type": "text", "text": video_prompt}
@@ -1680,7 +1722,7 @@ class ClaudeClient(BaseClient):
                             {
                                 "role": "user",
                                 "content": f"[File content: {file_data.get('path', '')}]\n\n{file_data['text_content']}\n\n{prompt}",
-                            }
+                            } # Removed comma here - Note: This case still uses raw prompt, might need adjustment if file content should combine with final_prompt_content
                         )
                     else:
                         # Standard prompt with reference to file
@@ -1690,7 +1732,7 @@ class ClaudeClient(BaseClient):
                         messages.append({"role": "user", "content": content})
         else:
             # Standard prompt without file data
-            messages.append({"role": "user", "content": prompt})
+            messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         # Setup request parameters
         request_params = {
@@ -1762,11 +1804,12 @@ class ClaudeClient(BaseClient):
         if model_config and model_config.stop_sequences:
             request_params["stop_sequences"] = model_config.stop_sequences
 
-        # Add seed if provided
-        if model_config and model_config.seed is not None:
-            request_params["seed"] = model_config.seed
-
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- Claude Request ---")
+            logger.debug(f"Model: {request_params.get('model')}")
+            logger.debug(f"System Instruction: {request_params.get('system')}")
+            logger.debug(f"Messages: {request_params.get('messages')}")
             # Only attempt to use reasoning parameter with Claude 3.7
             if "reasoning" in request_params:
                 # Check if this is actually a 3.7 model
@@ -1915,22 +1958,10 @@ class OpenAIClient(BaseClient):
         if mode:
             self.mode = mode
 
-        history = history if history else [{"role": "user", "content": prompt}]
+        history = history if history is not None else [] # Ensure history is a list
 
-        if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = self.adaptive_manager.generate_instructions(
-                history, role=role, domain=self.domain, mode=self.mode
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-                )
-            )
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
 
         # Format messages for OpenAI API
         formatted_messages = []
@@ -1941,25 +1972,12 @@ class OpenAIClient(BaseClient):
         # Add history messages
         if history:
             for msg in history:
-                old_role = msg["role"]
-                if old_role in ["user", "assistant", "moderator", "system"]:
-                    new_role = (
-                        "developer"
-                        if old_role in ["system", "Moderator"]
-                        else (
-                            "user"
-                            if old_role in ["user", "human", "moderator"]
-                            else "assistant"
-                        )
-                    )
-                    formatted_messages.append(
-                        {"role": new_role, "content": msg["content"]}
-                    )
-        prompt = (
-            self.generate_human_prompt(history)
-            if (role == "human" or role == "user" or self.mode == "ai-ai")
-            else f"{prompt}"
-        )
+                # Map roles correctly for OpenAI API (Corrected Indentation)
+                role_map = {"user": "user", "human": "user", "assistant": "assistant", "system": "system"}
+                mapped_role = role_map.get(msg["role"])
+                if mapped_role:  # Only include roles OpenAI understands
+                    formatted_messages.append({"role": mapped_role, "content": msg["content"]})
+
         # Handle file data for OpenAI
         if file_data:
             if isinstance(file_data, list) and file_data:
@@ -1978,7 +1996,7 @@ class OpenAIClient(BaseClient):
                             )
 
                 # Add text content from text/code files to the prompt
-                text_content = prompt
+                text_content = final_prompt_content # Start with the determined prompt content
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if (
@@ -2001,7 +2019,7 @@ class OpenAIClient(BaseClient):
                                 {
                                     "role": "user",
                                     "content": [
-                                        {"type": "text", "text": prompt},
+                                        {"type": "text", "text": final_prompt_content}, # Use final prompt content
                                         {
                                             "type": "image_url",
                                             "image_url": {
@@ -2016,21 +2034,26 @@ class OpenAIClient(BaseClient):
                         logger.warning(
                             f"Model {self.model} doesn't support vision. Using text-only prompt."
                         )
-                        formatted_messages.append({"role": "user", "content": prompt})
+                        formatted_messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
                 elif (
                     file_data["type"] in ["text", "code"]
                     and "text_content" in file_data
                 ):
                     # Standard prompt with text content
-                    content = f"{file_data.get('text_content', '')}\n\n{prompt}"
+                    content = f"{file_data.get('text_content', '')}\n\n{final_prompt_content}" # Use final prompt content
                     formatted_messages.append({"role": "user", "content": content})
                 else:
                     logger.warning(f"Invalid file data: {file_data}")
         else:
             # Standard prompt without file data
-            formatted_messages.append({"role": "user", "content": prompt})
+            formatted_messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- OpenAI Request ---")
+            logger.debug(f"Model: {self.model}")
+            # Note: System instruction is the first message in formatted_messages
+            logger.debug(f"Messages: {formatted_messages}")
             # Check if current model supports responses API
             model_supports_responses = any(
                 m in self.model.lower() for m in self.responses_compatible_models
@@ -2346,30 +2369,11 @@ class PicoClient(BaseClient):
         if mode:
             self.mode = mode
 
-        # Analyze conversation context
-        conversation_analysis = self._analyze_conversation(
-            history[-10:]
-        )  # Limit history analysis
+        history = history if history is not None else [] # Ensure history is a list
 
-        history = history if history else []
-        if role == "user" or role == "human" or mode == "ai-ai":
-            current_instructions = (
-                self.adaptive_manager.generate_instructions(
-                    history, role=role, domain=self.domain, mode=self.mode
-                )
-                if history
-                else system_instruction if system_instruction else self.instructions
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-                )
-            )
+        # Determine instructions and final prompt content using BaseClient helpers
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
 
         # Build context-aware prompt
         context_prompt = (
@@ -2378,11 +2382,10 @@ class PicoClient(BaseClient):
             else f"{prompt}"
         )
 
-        # Limit history size
-        history = history[-10:] if history else []
+        # Prepare messages for PicoClient (Note: It uses a 'developer' role for system instructions)
+        messages = history[-10:] if history else [] # Limit history size
         history.append({"role": "developer", "content": current_instructions})
-
-        history.append({"role": "user", "content": context_prompt})
+        messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         # Check if this is a vision-capable model and we have image data
         is_vision_model = any(
@@ -2400,22 +2403,27 @@ class PicoClient(BaseClient):
         ):
             # Format for Ollama's vision API
             images = file_data["path"]
-            history.append({"role": "user", "content": images})
+            messages.append({"role": "user", "content": images}) # Append image path to messages
         elif (
             is_vision_model
             and file_data
             and file_data["type"] == "video"
             and "key_frames" in file_data
             and file_data["key_frames"]
-        ):
+        ): # Note: PicoClient video handling might be basic
             images = [file_data["path"]]
             prompt = f"{prompt}"
             history.append({"role": "user", "content": images})
 
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- Pico Request ---")
+            logger.debug(f"Model: {self.model}")
+            # Note: System instruction is added as 'developer' role in messages
+            logger.debug(f"Messages: {messages}")
             response = self.client.chat(
                 model=self.model,
-                messages=history,
+                messages=messages, # Use the prepared messages list
                 options={
                     "num_ctx": 16384,
                     "num_predict": 512,
@@ -2447,7 +2455,7 @@ class MLXClient(BaseClient):
         base_url: str = "http://localhost:9999",
         model: str = "mlx",
     ) -> None:
-        super().__init__(mode=mode, api_key="", domain=domain, model=model)
+        super().__init__(mode=mode, api_key="dummy-key", domain=domain, model=model) # Add dummy key
         self.base_url = base_url or "http://localhost:9999"
 
     def test_connection(self) -> None:
@@ -2458,6 +2466,7 @@ class MLXClient(BaseClient):
                 json={
                     "model": self.model,
                     "messages": [{"role": "user", "content": "test"}],
+                    "headers": {"Authorization": f"Bearer {self.api_key}"} # Pass dummy key
                 },
             )
             response.raise_for_status()
@@ -2482,33 +2491,14 @@ class MLXClient(BaseClient):
 
         # Format messages for OpenAI chat completions API
         messages = []
-        current_instructions = ""
 
-        history = history if history else []
-        if role == "user" or role == "human" or self.mode == "ai-ai":
-            current_instructions = (
-                self.adaptive_manager.generate_instructions(
-                    history, role=role, domain=self.domain, mode=self.mode
-                )
-                if history
-                else system_instruction if system_instruction else self.instructions
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-                )
-            )
+        history = history if history is not None else [] # Ensure history is a list
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
 
         if current_instructions:
-            messages.append(
-                {"role": "system", "content": "".join(current_instructions)}
-            )
-
+            messages.append({"role": "system", "content": current_instructions}) # Add system instruction first
+            
         if history:
             # Limit history to last 10 messages
             recent_history = history
@@ -2517,12 +2507,8 @@ class MLXClient(BaseClient):
                     messages.append({"role": "user", "content": msg["content"]})
                 elif msg["role"] in ["assistant", "system"]:
                     messages.append({"role": msg["role"], "content": msg["content"]})
-        prompt = (
-            self.generate_human_prompt(history)
-            if (role == "human" or role == "user" or self.mode == "ai-ai")
-            else f"{prompt}"
-        )
-        messages.append({"role": "user", "content": str(prompt)})
+
+        messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         # Handle file data
         if file_data:
@@ -2563,9 +2549,15 @@ class MLXClient(BaseClient):
             messages[-1] = last_msg
 
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- MLX Request ---")
+            logger.debug(f"URL: {self.base_url}/v1/chat/completions")
+            # Note: System instruction is the first message in messages
+            logger.debug(f"Messages: {messages}")
             response = requests.post(
                 f"{self.base_url}/v1/chat/completions",
                 json={"messages": messages, "stream": False},
+                headers={"Authorization": f"Bearer {self.api_key}"}, # Pass dummy key
                 stream=False,
             )
             response.raise_for_status()
@@ -2601,8 +2593,6 @@ class OllamaClient(BaseClient):
         self.client = Client(
             host=self.base_url
         )  # Use synchronous Client instead of AsyncClient
-        # Store conversation state
-        self.conversation_state = None
 
     def test_connection(self) -> None:
         """Test Ollama connection"""
@@ -2629,51 +2619,33 @@ class OllamaClient(BaseClient):
         if mode:
             self.mode = mode
 
-        history = history if history else [{"role": "user", "content": prompt}]
-        
-        # Initialize or retrieve conversation state
-        if self.conversation_state is None:
-            self.conversation_state = {"messages": []}
-            # If history is provided in the first call, use it to initialize the state
-            self.conversation_state["messages"] = [msg.copy() for msg in history if msg["role"] != "user"]
-        
-        # Update instructions based on conversation history
-        if role == "user" or role == "human" or self.mode == "ai-ai" or True:
-            current_instructions = self.adaptive_manager.generate_instructions(
-                history, role="user", domain=self.domain, mode=self.mode
-            )
-        else:
-            current_instructions = (
-                system_instruction
-                if system_instruction is not None
-                else (
-                    self.instructions
-                    if self.instructions and self.instructions is not None
-                    else f"You are an expert in {self.domain}. Respond at expert level using step by step thinking where appropriate"
-                )
-            )
+        history = history if history is not None else [] # Ensure history is a list
 
-        # Build context-aware prompt
         context_prompt = (
             self.generate_human_prompt(history)
             if (role == "human" or role == "user" or self.mode == "ai-ai") and  self.mode != "default" and self.mode != "no-meta-prompting"
             else f"{prompt}"
         )
 
+        # Determine instructions and final prompt content using BaseClient helpers
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
         # Prepare messages for Ollama's chat API
         messages = []
         if current_instructions:
-            messages.append({"role": "system", "content": current_instructions})
-        
-        # Include all messages from our conversation state
-        for msg in self.conversation_state["messages"]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-        
-        # Add new messages from current history that aren't in our state
-        for msg in [m for m in history if m not in self.conversation_state["messages"]]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append({"role": "system", "content": current_instructions}) # Add system instruction first
 
-        messages.append({"role": "user", "content": context_prompt})
+        # Add full history (excluding system message if already added)
+        # Assuming history doesn't contain the system message itself
+        # Map roles if necessary (Ollama uses 'user', 'assistant', 'system')
+        if history:
+            for msg in history:
+                # Add message if role is valid for Ollama (user, assistant)
+                if msg.get("role") in ["user", "assistant", "human"]: # Map human to user if needed
+                    role = "user" if msg["role"] == "human" else msg["role"]
+                    messages.append({"role": role, "content": msg["content"]})
+
+        messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         # Check if this is a vision-capable model and we have image data
         is_vision_model = any(
@@ -2748,6 +2720,11 @@ class OllamaClient(BaseClient):
                     )
 
         try:
+            # --- Debug Logging ---
+            logger.debug(f"--- Ollama Request ---")
+            logger.debug(f"Model: {self.model}")
+            # Note: System instruction is the first message in messages
+            logger.debug(f"Messages: {messages}")
             # Use the chat() method
             response: ChatResponse = self.client.chat(
                 model=self.model,
@@ -2762,17 +2739,7 @@ class OllamaClient(BaseClient):
                     "use_mmap": True
                 },
             )
-            
-            # Store the response in our conversation state
-            self.conversation_state["messages"].append({
-                "role": "user",
-                "content": context_prompt
-            })
-            self.conversation_state["messages"].append({
-                "role": "assistant", 
-                "content": response.message.content
-            })
-            
+
             return response.message.content
 
         except Exception as e:
