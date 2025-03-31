@@ -68,7 +68,15 @@ class AdaptiveInstructionManager:
     ) -> str:
         """Generate adaptive instructions based on conversation context"""
         try:
-            logger.info("Applying adaptive instruction generation..")
+            # Override mode if provided
+            if mode:
+                self.mode = mode
+                
+            # Special case for no-meta-prompting mode
+            if self.mode == "no-meta-prompting":
+                return f"You are having a conversation about: {domain}. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens."
+                
+            logger.info(f"Applying adaptive instruction generation for mode: {self.mode}")
 
             # Validate inputs
             if not isinstance(history, list):
@@ -495,8 +503,6 @@ DO NOT:
                             # Fallback if template not found
                             logger.warning("goal_oriented_instructions template not found")
                             modifications.append(
-                                f"** CRITICAL INSTRUCTION OVERRIDE: Your ONLY task is to PRODUCE THE ACTUAL OUTPUT for the goal: {domain} **\n"
-                                f"** CREATE THE ACTUAL REQUESTED OUTPUT DIRECTLY in your very first response! **\n"
                                 f"** PRODUCE THE OUTPUT ONLY - DISCUSSION of how you would approach it via <thinking> tags ONLY! **"
                             )
                 except KeyError as e:
@@ -531,11 +537,18 @@ DO NOT:
                 )
                 # In ai-ai mode, all roles get human instructions
                 # In human-ai mode, only the human/user role gets human instructions
-                if (self.mode == "ai-ai" or (role == "human" or role == "user")) and self.mode != "default":
+                # Skip special instructions for "no-meta-prompting" and "default" modes
+                if (self.mode == "ai-ai" or (role == "human" or role == "user")) and self.mode != "default" and self.mode != "no-meta-prompting":
                     instructions += "\n" + SPECIAL_HUMAN_INSTRUCTION
 
-                # Add formatting requirements
-                instructions += f"""**Output**:
+                # Add formatting requirements, but with simplified version for no-meta-prompting mode
+                if self.mode == "no-meta-prompting":
+                    instructions += f"""
+Restrict your responses to {TOKENS_PER_TURN} tokens per turn.
+Think step by step when needed.
+"""
+                else:
+                    instructions += f"""**Output**:
 - HTML formatting, default to paragraphs
 - Use HTML lists when needed
 - Use thinking tags for reasoning, but not to repeat the prompt or task

@@ -9,6 +9,7 @@ import time
 import random
 import logging
 import re
+import traceback
 from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
 import io
@@ -44,6 +45,10 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 AI_MODEL = "gemini-2.5-pro-exp"
 HUMAN_MODEL = "gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=2
+
+# Set environment variables for these model names so arbiter can use them
+os.environ["AI_MODEL"] = AI_MODEL
+os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 
 CONFIG_PATH = "config.yaml"
 TOKENS_PER_TURN = 2048
@@ -636,6 +641,19 @@ class ConversationManager:
                 {"role": "system", "content": f"{system_instruction}!"}
             )
 
+        # Define a list of known fatal errors that should halt processing
+        fatal_connection_errors = [
+            "Connection aborted",
+            "Remote end closed connection without response",
+            "Connection refused",
+            "Max retries exceeded",
+            "Read timed out",
+            "API key not valid",
+            "Authentication failed",
+            "Quota exceeded",
+            "Service unavailable"
+        ]
+            
         try:
             if prompt_level == "no-meta-prompting":
                 response = client.generate_response(
@@ -719,9 +737,87 @@ class ConversationManager:
             print(f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
 
         except Exception as e:
-            logger.error(f"Error generating response: {e} (role: {mapped_role})")
-            raise e
-            response = f"Error: {str(e)}"
+            error_str = str(e)
+            logger.error(f"Error generating response: {error_str} (role: {mapped_role})")
+            
+            # Check if this is a fatal connection error
+            is_fatal = any(fatal_error in error_str for fatal_error in fatal_connection_errors)
+            
+            if is_fatal:
+                # Create an error report file with details
+                try:
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    error_filename = f"fatal_error_{timestamp}.html"
+                    error_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AI Battle - Fatal Error Report</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; }}
+        h1 {{ color: #b91c1c; }}
+        .error-box {{ background-color: #fee2e2; border-left: 4px solid #b91c1c; padding: 1rem; margin: 1rem 0; }}
+        pre {{ background-color: #f8fafc; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }}
+        .session-info {{ background-color: #f0f9ff; padding: 1rem; margin: 1rem 0; border-left: 4px solid #0ea5e9; }}
+        .recovery-info {{ background-color: #ecfdf5; padding: 1rem; margin: 1rem 0; border-left: 4px solid #059669; }}
+    </style>
+</head>
+<body>
+    <h1>AI Battle - Fatal Error Report</h1>
+    
+    <div class="error-box">
+        <h2>Fatal Error Occurred</h2>
+        <p><strong>Error:</strong> {error_str}</p>
+        <p><strong>Time:</strong> {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p><strong>Model:</strong> {model_type} (Role: {mapped_role})</p>
+    </div>
+    
+    <div class="session-info">
+        <h2>Session Information</h2>
+        <p><strong>Mode:</strong> {mode}</p>
+        <p><strong>Domain/Topic:</strong> {self.domain}</p>
+        <p><strong>Conversation Progress:</strong> {len(self.conversation_history)} messages</p>
+    </div>
+    
+    <h2>Error Details</h2>
+    <pre>{traceback.format_exc()}</pre>
+    
+    <div class="recovery-info">
+        <h2>Recovery Options</h2>
+        <p>This error appears to be a connection issue with the model API. Possible solutions:</p>
+        <ul>
+            <li>Check your internet connection</li>
+            <li>Verify that your API key is valid and has sufficient quota</li>
+            <li>Try running the conversation again with a different model or settings</li>
+            <li>If the problem persists, the API service may be experiencing issues</li>
+        </ul>
+    </div>
+</body>
+</html>"""
+                    
+                    with open(error_filename, "w") as f:
+                        f.write(error_html)
+                    
+                    logger.error(f"Fatal error report saved as {error_filename}")
+                    
+                    # Add error information to conversation history
+                    error_message = f"ERROR: A fatal connection error occurred with {model_type}: {error_str}"
+                    self.conversation_history.append({"role": "system", "content": error_message})
+                    
+                    # Raise a more informative exception
+                    raise RuntimeError(f"Fatal connection error with {model_type}: {error_str}. See error report: {error_filename}") from e
+                except Exception as report_e:
+                    logger.error(f"Failed to create error report: {report_e}")
+                    # Re-raise the original exception
+                    raise e
+            else:
+                # For non-fatal errors, add to conversation and continue
+                error_message = f"Error with {model_type} ({mapped_role}): {error_str}"
+                self.conversation_history.append({"role": "system", "content": error_message})
+                response = f"Error: {error_str}"
+                # For the non-fatal error case, we'll just return the error message instead of raising
+                # This allows the conversation to continue despite errors
+                return response
 
         return response
 
@@ -1362,51 +1458,64 @@ def _sanitize_filename_part(prompt: str) -> str:
 async def save_arbiter_report(report: Dict[str, Any]) -> None:
     """Save arbiter analysis report with visualization support."""
     try:
-        with open("templates/arbiter_report.html") as f:
-            template = f.read()
-
-        # Ensure proper report structure
+        # If report is a string, we're just passing through the Gemini report
         if isinstance(report, str):
-            report = {
-                "content": report,
-                "metrics": {
-                    "conversation_quality": {},
-                    "participant_analysis": {},
-                },
-                "flow": {},
-                "visualizations": {},
-                "winner": "No clear winner determined",
-                "assertions": [],
-                "key_insights": [],
-                "improvement_suggestions": [],
+            logger.info("Using pre-generated arbiter report from Gemini")
+            # The report is already saved by the ground_assertions method in arbiter_v4.py
+            return
+            
+        # Only proceed if we have a report dict with metrics to visualize
+        try:
+            with open("templates/arbiter_report.html") as f:
+                template = f.read()
+
+            # Generate dummy data for the report if needed
+            dummy_metrics = {
+                "ai_ai": {"depth_score": 0.7, "topic_coherence": 0.8, "assertion_density": 0.6, 
+                          "question_answer_ratio": 0.5, "avg_complexity": 0.75},
+                "human_ai": {"depth_score": 0.6, "topic_coherence": 0.7, "assertion_density": 0.5, 
+                             "question_answer_ratio": 0.6, "avg_complexity": 0.7}
+            }
+            
+            dummy_flow = {
+                "ai_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}], 
+                          "edges": []},
+                "human_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}], 
+                             "edges": []}
             }
 
-        # Generate visualizations if metrics are available
-        viz_generator = VisualizationGenerator()
-        metrics_chart = ""
-        timeline_chart = ""
-        if report.get("metrics", {}).get("conversation_quality"):
-            metrics_chart = viz_generator.generate_metrics_chart(report["metrics"])
-            timeline_chart = viz_generator.generate_timeline(report.get("flow", {}))
+            # Generate visualizations if metrics are available
+            viz_generator = VisualizationGenerator()
+            metrics_chart = ""
+            timeline_chart = ""
+            if report.get("metrics", {}).get("conversation_quality"):
+                metrics_chart = viz_generator.generate_metrics_chart(report["metrics"])
+                timeline_chart = viz_generator.generate_timeline(report.get("flow", {}))
 
-        # Format report content
-        report_content = template % {
-            "report_content": report.get("content", "No content available"),
-            "metrics_data": json.dumps(report.get("metrics", {})),
-            "flow_data": json.dumps(report.get("flow", {})),
-            "metrics_chart": metrics_chart,
-            "timeline_chart": timeline_chart,
-            "winner": report.get("winner", "No clear winner determined"),
-        }
+            # Format report content with safe defaults
+            report_content = template % {
+                "report_content": report.get("content", "No content available"),
+                "metrics_data": json.dumps(report.get("metrics", dummy_metrics)),
+                "flow_data": json.dumps(report.get("flow", dummy_flow)),
+                "metrics_chart": metrics_chart,
+                "timeline_chart": timeline_chart,
+                "winner": report.get("winner", "No clear winner determined"),
+            }
 
-        # Save report with timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        filename = f"arbiter_report_{timestamp}.html"
+            # Save report with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename = f"arbiter_visualization_{timestamp}.html"
 
-        with open(filename, "w") as f:
-            f.write(report_content)
+            with open(filename, "w") as f:
+                f.write(report_content)
 
-        logger.info(f"Arbiter report saved successfully as {filename}")
+            logger.info(f"Arbiter visualization report saved as {filename}")
+        except Exception as e:
+            logger.warning(f"Failed to generate visualization report: {e}")
+            # Not a critical error since we already have the main report
+            
+    except Exception as e:
+        logger.error(f"Failed to save arbiter report: {e}")
 
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
@@ -1419,14 +1528,166 @@ async def save_metrics_report(
     """Save metrics analysis report."""
     try:
         if ai_ai_conversation and human_ai_conversation:
-            analysis_data = analyze_conversations(
-                ai_ai_conversation, human_ai_conversation
-            )
-            logger.info("Metrics report generated successfully")
+            try:
+                analysis_data = analyze_conversations(
+                    ai_ai_conversation, human_ai_conversation
+                )
+                logger.info("Metrics report generated successfully")
+                
+                # Save the metrics report to a file
+                timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                metrics_filename = f"metrics_report_{timestamp}.html"
+                
+                # Create a basic HTML representation
+                html_content = f"""
+                <html>
+                <head>
+                    <title>Conversation Metrics Report</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                        h1, h2 {{ color: #333; }}
+                        .metrics-container {{ display: flex; }}
+                        .metrics-section {{ flex: 1; padding: 15px; margin: 10px; border: 1px solid #ddd; border-radius: 5px; }}
+                        table {{ border-collapse: collapse; width: 100%; }}
+                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Conversation Metrics Report</h1>
+                    <div class="metrics-container">
+                        <div class="metrics-section">
+                            <h2>AI-AI Conversation Metrics</h2>
+                            <table>
+                                <tr><th>Metric</th><th>Value</th></tr>
+                                <tr><td>Total Messages</td><td>{analysis_data['metrics']['ai-ai']['total_messages']}</td></tr>
+                                <tr><td>Average Message Length</td><td>{analysis_data['metrics']['ai-ai']['avg_message_length']:.2f}</td></tr>
+                                <tr><td>Topic Coherence</td><td>{analysis_data['metrics']['ai-ai']['topic_coherence']:.2f}</td></tr>
+                                <tr><td>Turn Taking Balance</td><td>{analysis_data['metrics']['ai-ai']['turn_taking_balance']:.2f}</td></tr>
+                                <tr><td>Average Complexity</td><td>{analysis_data['metrics']['ai-ai']['avg_complexity']:.2f}</td></tr>
+                            </table>
+                        </div>
+                        <div class="metrics-section">
+                            <h2>Human-AI Conversation Metrics</h2>
+                            <table>
+                                <tr><th>Metric</th><th>Value</th></tr>
+                                <tr><td>Total Messages</td><td>{analysis_data['metrics']['human-ai']['total_messages']}</td></tr>
+                                <tr><td>Average Message Length</td><td>{analysis_data['metrics']['human-ai']['avg_message_length']:.2f}</td></tr>
+                                <tr><td>Topic Coherence</td><td>{analysis_data['metrics']['human-ai']['topic_coherence']:.2f}</td></tr>
+                                <tr><td>Turn Taking Balance</td><td>{analysis_data['metrics']['human-ai']['turn_taking_balance']:.2f}</td></tr>
+                                <tr><td>Average Complexity</td><td>{analysis_data['metrics']['human-ai']['avg_complexity']:.2f}</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                
+                with open(metrics_filename, "w") as f:
+                    f.write(html_content)
+                
+                logger.info(f"Metrics report saved successfully as {metrics_filename}")
+                
+            except ValueError as e:
+                if "Negative values in data" in str(e):
+                    logger.error(f"Failed to generate metrics report due to distance calculation error: {e}")
+                    # Create a simplified metrics report that doesn't depend on the problematic clustering
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    metrics_filename = f"metrics_report_basic_{timestamp}.html"
+                    
+                    # Calculate basic metrics that don't depend on complex clustering
+                    ai_ai_msg_count = len(ai_ai_conversation)
+                    human_ai_msg_count = len(human_ai_conversation)
+                    
+                    ai_ai_avg_length = sum(len(msg.get('content', '')) for msg in ai_ai_conversation) / max(1, ai_ai_msg_count)
+                    human_ai_avg_length = sum(len(msg.get('content', '')) for msg in human_ai_conversation) / max(1, human_ai_msg_count)
+                    
+                    html_content = f"""
+                    <html>
+                    <head>
+                        <title>Basic Conversation Metrics Report</title>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                            h1, h2 {{ color: #333; }}
+                            .metrics-container {{ display: flex; }}
+                            .metrics-section {{ flex: 1; padding: 15px; margin: 10px; border: 1px solid #ddd; border-radius: 5px; }}
+                            table {{ border-collapse: collapse; width: 100%; }}
+                            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                            th {{ background-color: #f2f2f2; }}
+                            .error {{ color: red; padding: 10px; background-color: #ffeeee; border-radius: 5px; margin-bottom: 20px; }}
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Basic Conversation Metrics Report</h1>
+                        <div class="error">
+                            <p>Note: Advanced metrics calculation failed with error: "{str(e)}"</p>
+                            <p>This is a simplified report with basic metrics only.</p>
+                        </div>
+                        <div class="metrics-container">
+                            <div class="metrics-section">
+                                <h2>AI-AI Conversation Basic Metrics</h2>
+                                <table>
+                                    <tr><th>Metric</th><th>Value</th></tr>
+                                    <tr><td>Total Messages</td><td>{ai_ai_msg_count}</td></tr>
+                                    <tr><td>Average Message Length</td><td>{ai_ai_avg_length:.2f}</td></tr>
+                                </table>
+                            </div>
+                            <div class="metrics-section">
+                                <h2>Human-AI Conversation Basic Metrics</h2>
+                                <table>
+                                    <tr><th>Metric</th><th>Value</th></tr>
+                                    <tr><td>Total Messages</td><td>{human_ai_msg_count}</td></tr>
+                                    <tr><td>Average Message Length</td><td>{human_ai_avg_length:.2f}</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    with open(metrics_filename, "w") as f:
+                        f.write(html_content)
+                    
+                    logger.info(f"Basic metrics report saved as {metrics_filename}")
+                else:
+                    # For other value errors, rethrow
+                    raise
         else:
             logger.info("Skipping metrics report - empty conversations")
     except Exception as e:
         logger.error(f"Failed to generate metrics report: {e}")
+        # Create an error report file
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            error_filename = f"metrics_error_{timestamp}.html"
+            
+            html_content = f"""
+            <html>
+            <head>
+                <title>Metrics Report Error</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                    h1 {{ color: #d33; }}
+                    .error {{ padding: 15px; background-color: #ffeeee; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <h1>Error Generating Metrics Report</h1>
+                <div class="error">
+                    <p><strong>Error:</strong> {str(e)}</p>
+                    <p>The system encountered an error while generating the metrics report.</p>
+                    <p>This does not affect the arbiter report or the conversation outputs.</p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            with open(error_filename, "w") as f:
+                f.write(html_content)
+            
+            logger.info(f"Error report saved as {error_filename}")
+        except Exception as inner_e:
+            logger.error(f"Failed to save error report: {inner_e}")
 
 
 async def main():
@@ -1531,16 +1792,51 @@ async def main():
     try:
         # Run default conversation
         mode = "ai-ai"
-        # Run AI-AI conversation
-        conversation = manager.run_conversation(
-            initial_prompt=initial_prompt,
-            mode=mode,
-            human_model=human_model,
-            ai_model=ai_model,
-            human_system_instruction=human_system_instruction,
-            ai_system_instruction=ai_system_instruction,
-            rounds=rounds,
-        )
+        # Run AI-AI conversation with retry mechanism
+        max_retries = 2
+        retry_count = 0
+        conversation = None
+        
+        while retry_count <= max_retries:
+            try:
+                conversation = manager.run_conversation(
+                    initial_prompt=initial_prompt,
+                    mode=mode,
+                    human_model=human_model,
+                    ai_model=ai_model,
+                    human_system_instruction=human_system_instruction,
+                    ai_system_instruction=ai_system_instruction,
+                    rounds=rounds,
+                )
+                # Success, break out of the retry loop
+                break
+            except RuntimeError as e:
+                error_str = str(e)
+                logger.warning(f"Connection error occurred: {error_str}")
+                
+                # Check if we should retry
+                if "Fatal connection error" in error_str and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = retry_count * 5  # Progressive backoff: 5s, then 10s
+                    logger.info(f"Retrying in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Either we're out of retries or it's not a connection error
+                    logger.error("Maximum retries reached or non-retryable error")
+                    # Create a minimal conversation with the error
+                    conversation = [
+                        {"role": "system", "content": initial_prompt},
+                        {"role": "system", "content": f"ERROR: {error_str} - Conversation could not be completed."}
+                    ]
+                    break
+        
+        # If we somehow end up with no conversation (should never happen), create an empty one
+        if not conversation:
+            conversation = [
+                {"role": "system", "content": initial_prompt},
+                {"role": "system", "content": "ERROR: Failed to generate conversation after multiple attempts."}
+            ]
 
         safe_prompt = _sanitize_filename_part(
             initial_prompt[:20] + "_" + human_model + "_" + ai_model
@@ -1555,17 +1851,51 @@ async def main():
             mode="ai-ai",
         )
 
-        # Run human-AI conversation
+        # Run human-AI conversation with retry mechanism
         mode = "human-aiai"
-        conversation_as_human_ai = manager.run_conversation(
-            initial_prompt=initial_prompt,
-            mode=mode,
-            human_model=human_model,
-            ai_model=ai_model,
-            human_system_instruction=human_system_instruction,
-            ai_system_instruction=ai_system_instruction,
-            rounds=rounds,
-        )
+        retry_count = 0
+        conversation_as_human_ai = None
+        
+        while retry_count <= max_retries:
+            try:
+                conversation_as_human_ai = manager.run_conversation(
+                    initial_prompt=initial_prompt,
+                    mode=mode,
+                    human_model=human_model,
+                    ai_model=ai_model,
+                    human_system_instruction=human_system_instruction,
+                    ai_system_instruction=ai_system_instruction,
+                    rounds=rounds,
+                )
+                # Success, break out of the retry loop
+                break
+            except RuntimeError as e:
+                error_str = str(e)
+                logger.warning(f"Connection error occurred in human-AI conversation: {error_str}")
+                
+                # Check if we should retry
+                if "Fatal connection error" in error_str and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = retry_count * 5  # Progressive backoff: 5s, then 10s
+                    logger.info(f"Retrying human-AI conversation in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Either we're out of retries or it's not a connection error
+                    logger.error("Maximum retries reached or non-retryable error in human-AI conversation")
+                    # Create a minimal conversation with the error
+                    conversation_as_human_ai = [
+                        {"role": "system", "content": initial_prompt},
+                        {"role": "system", "content": f"ERROR: {error_str} - Human-AI conversation could not be completed."}
+                    ]
+                    break
+        
+        # If we somehow end up with no conversation (should never happen), create an empty one
+        if not conversation_as_human_ai:
+            conversation_as_human_ai = [
+                {"role": "system", "content": initial_prompt},
+                {"role": "system", "content": "ERROR: Failed to generate human-AI conversation after multiple attempts."}
+            ]
 
         safe_prompt = _sanitize_filename_part(
             initial_prompt[:20] + "_" + human_model + "_" + ai_model
@@ -1581,15 +1911,49 @@ async def main():
         )
 
         mode = "no-meta-prompting"
-        conv_default = manager.run_conversation(
-            initial_prompt=initial_prompt,
-            mode=mode,
-            human_model=human_model,
-            ai_model=ai_model,
-            human_system_instruction=ai_system_instruction,
-            ai_system_instruction=ai_system_instruction,
-            rounds=rounds,
-        )
+        retry_count = 0
+        conv_default = None
+        
+        while retry_count <= max_retries:
+            try:
+                conv_default = manager.run_conversation(
+                    initial_prompt=initial_prompt,
+                    mode=mode,
+                    human_model=human_model,
+                    ai_model=ai_model,
+                    human_system_instruction=ai_system_instruction,
+                    ai_system_instruction=ai_system_instruction,
+                    rounds=rounds,
+                )
+                # Success, break out of the retry loop
+                break
+            except RuntimeError as e:
+                error_str = str(e)
+                logger.warning(f"Connection error occurred in default conversation: {error_str}")
+                
+                # Check if we should retry
+                if "Fatal connection error" in error_str and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = retry_count * 5  # Progressive backoff: 5s, then 10s
+                    logger.info(f"Retrying default conversation in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Either we're out of retries or it's not a connection error
+                    logger.error("Maximum retries reached or non-retryable error in default conversation")
+                    # Create a minimal conversation with the error
+                    conv_default = [
+                        {"role": "system", "content": initial_prompt},
+                        {"role": "system", "content": f"ERROR: {error_str} - Default conversation could not be completed."}
+                    ]
+                    break
+        
+        # If we somehow end up with no conversation (should never happen), create an empty one
+        if not conv_default:
+            conv_default = [
+                {"role": "system", "content": initial_prompt},
+                {"role": "system", "content": "ERROR: Failed to generate default conversation after multiple attempts."}
+            ]
 
         safe_prompt = _sanitize_filename_part(
             initial_prompt[:16] + "_" + human_model + "_" + ai_model
@@ -1604,12 +1968,14 @@ async def main():
             mode="human-ai",
         )
 
-        # Run analysis
+        # Run analysis with model information
         arbiter_report = evaluate_conversations(
             ai_ai_convo=conversation,
             human_ai_convo=conversation_as_human_ai,
             default_convo=conv_default,
             goal=initial_prompt,
+            ai_model=ai_model,
+            human_model=human_model,
         )
 
         print(arbiter_report)

@@ -104,7 +104,14 @@ class AssertionGrounder:
         humanai_conversation,
         default_conversation,
         topic: str,
+        ai_model: str = None,
+        human_model: str = None,
     ):  # ssertionEvidence:
+        # Store model information for later use when generating the report
+        if ai_model:
+            self._ai_model = ai_model
+        if human_model:
+            self._human_model = human_model
         """Ground an assertion using Gemini with search capability"""
         try:
             response_full = ""
@@ -315,12 +322,22 @@ CONVERSATION 3 (Non-Metaprompted):
 
             # Process response
             response_full = ""
+            raw_response = ""
             try:
                 if hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0:
                     for each in response.candidates[0].content.parts:
                         if hasattr(each, 'text'):
                             print(each.text)
                             response_full += each.text
+                
+                # Save the raw response for later
+                raw_response = response_full
+                
+                # Remove markdown code block delimiters if present
+                if response_full.strip().startswith("```html") and response_full.strip().endswith("```"):
+                    response_full = response_full.strip()[7:-3].strip()  # Remove ```html and ``` markers
+                elif response_full.strip().startswith("```") and response_full.strip().endswith("```"):
+                    response_full = response_full.strip()[3:-3].strip()  # Remove ``` markers
                 
                 # Validate that response contains HTML and has proper structure
                 if not response_full or "<div" not in response_full or not (response_full.strip().startswith("<div") and response_full.strip().endswith("</div>")):
@@ -397,6 +414,91 @@ CONVERSATION 3 (Non-Metaprompted):
                     </div>
                 </div>
                 """
+            
+            # Save the raw Gemini output to a separate file
+            try:
+                with open("templates/gemini_output.html") as f:
+                    gemini_template = f.read()
+                
+                timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                gemini_filename = f"arbiter_output_{timestamp}.html"
+                
+                # Create the HTML content by inserting the raw response inside the body tag
+                html_parts = gemini_template.split("%s")
+                if len(html_parts) == 2:
+                    full_html = html_parts[0] + raw_response + html_parts[1]
+                    
+                    with open(gemini_filename, "w") as f:
+                        f.write(full_html)
+                    
+                    logger.info(f"Raw Gemini output saved as {gemini_filename}")
+                else:
+                    logger.warning("Template format doesn't contain a single '%s' placeholder")
+            except Exception as e:
+                logger.error(f"Failed to save raw Gemini output: {e}")
+            
+            # Save the formatted arbiter report with proper styling
+            try:
+                # Try to use the new template first
+                template_path = "templates/new_arbiter_report.html"
+                if not os.path.exists(template_path):
+                    template_path = "templates/simple_arbiter_report.html"
+                    
+                with open(template_path) as f:
+                    report_template = f.read()
+                
+                timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                formatted_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                formatted_filename = f"arbiter_report_{timestamp}.html"
+                
+                # Inject model information into the report response
+                # Look for the first h3 tag for each conversation
+                modified_response = response_full
+                
+                # Get model information from environment variables or function params
+                ai_model = os.environ.get("AI_MODEL", "")
+                human_model = os.environ.get("HUMAN_MODEL", "")
+                
+                # If environment variables aren't set but we have function parameters, use those directly
+                if (not ai_model or not human_model) and hasattr(self, "_ai_model") and hasattr(self, "_human_model"):
+                    ai_model = self._ai_model
+                    human_model = self._human_model
+                
+                # Replace conversation headers to include model information
+                model_tags = [
+                    ("<h3>Conversation 1 (AI-AI Meta-Prompted)</h3>", 
+                     f"<h3>Conversation 1 (AI-AI Meta-Prompted) - Models: {human_model} & {ai_model}</h3>"),
+                    ("<h3>Conversation 2 (Human-AI Meta-Prompted)</h3>", 
+                     f"<h3>Conversation 2 (Human-AI Meta-Prompted) - Models: {human_model} & {ai_model}</h3>"),
+                    ("<h3>Conversation 3 (Non-Metaprompted)</h3>", 
+                     f"<h3>Conversation 3 (Non-Metaprompted) - Models: {human_model} & {ai_model}</h3>")
+                ]
+                
+                for old_tag, new_tag in model_tags:
+                    modified_response = modified_response.replace(old_tag, new_tag)
+                
+                # For simple template, insert content directly without string formatting
+                if template_path == "templates/simple_arbiter_report.html":
+                    html_parts = report_template.split("%s")
+                    if len(html_parts) == 2:
+                        full_html = html_parts[0] + modified_response + html_parts[1]
+                        
+                        with open(formatted_filename, "w") as f:
+                            f.write(full_html)
+                else:
+                    # For new template, use safer string.Template
+                    import string
+                    template = string.Template(report_template)
+                    with open(formatted_filename, "w") as f:
+                        f.write(template.safe_substitute(
+                            gemini_content=modified_response,
+                            winner="No clear winner determined",  # Default value
+                            timestamp=formatted_timestamp
+                        ))
+                
+                logger.info(f"Formatted arbiter report saved as {formatted_filename}")
+            except Exception as e:
+                logger.error(f"Failed to save formatted arbiter report: {e}")
             
             return response_full
 
@@ -634,21 +736,35 @@ class ConversationArbiter:
         Returns:
             float: Similarity score between 0.0 and 1.0
         """
-        if self.nlp:
-            # Check if texts are empty or too short for meaningful vectors
-            if not text1 or not text2 or len(text1) < 3 or len(text2) < 3:
-                return 0.0
+        # Start with safe default of string similarity using SequenceMatcher
+        try:
+            if self.nlp:
+                # Check if texts are empty or too short for meaningful vectors
+                if not text1 or not text2 or len(text1) < 3 or len(text2) < 3:
+                    return 0.0
+                    
+                doc1 = self.nlp(text1)
+                doc2 = self.nlp(text2)
                 
-            doc1 = self.nlp(text1)
-            doc2 = self.nlp(text2)
-            
-            # Check if documents have vectors before calculating similarity
-            if doc1.vector_norm and doc2.vector_norm:
-                return doc1.similarity(doc2)
-            else:
-                # Fallback to string matching if vectors are empty
-                return SequenceMatcher(None, text1, text2).ratio()
-        return SequenceMatcher(None, text1, text2).ratio()
+                # Check if documents have vectors before calculating similarity
+                if doc1.vector_norm and doc2.vector_norm:
+                    try:
+                        similarity = doc1.similarity(doc2)
+                        # Ensure returned similarity is valid (not negative)
+                        if similarity < 0:
+                            logger.warning(f"Negative similarity detected: {similarity}. Using string matching instead.")
+                            return SequenceMatcher(None, text1, text2).ratio()
+                        return similarity
+                    except ValueError as e:
+                        logger.warning(f"Error in vector similarity calculation: {e}. Falling back to string matching.")
+                        return SequenceMatcher(None, text1, text2).ratio()
+                else:
+                    # Fallback to string matching if vectors are empty
+                    return SequenceMatcher(None, text1, text2).ratio()
+            return SequenceMatcher(None, text1, text2).ratio()
+        except Exception as e:
+            logger.warning(f"Error in text similarity calculation: {e}. Using default similarity of 0.0")
+            return 0.0
 
     def _calculate_topic_distribution(self, topics: List[str]) -> Dict[str, float]:
         """Calculate normalized topic frequencies"""
@@ -858,6 +974,8 @@ def evaluate_conversations(
     human_ai_convo: List[Dict[str, str]],
     default_convo: List[Dict[str, str]],
     goal: str,
+    ai_model: str = None,
+    human_model: str = None,
 ) -> ArbiterResult:
     """Compare and evaluate three conversation modes"""
     """
@@ -938,9 +1056,10 @@ def evaluate_conversations(
             formatted_human_ai_convo = human_ai_convo
             formatted_default_convo = default_convo
             
-            # Generate report with ground assertions
+            # Generate report with ground assertions and model information
             result = grounder.ground_assertions(
-                formatted_ai_ai_convo, formatted_human_ai_convo, formatted_default_convo, goal
+                formatted_ai_ai_convo, formatted_human_ai_convo, formatted_default_convo, goal,
+                ai_model=ai_model, human_model=human_model
             )
             
             # If flow analysis had errors, add a note to the HTML result

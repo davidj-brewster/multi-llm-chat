@@ -19,10 +19,20 @@ class SpacyModelSingleton:
         if cls._instance is None:
             try:
                 logger.info("Loading spaCy model...")
-                cls._instance = spacy.load("en_core_web_trf")
-                logger.info("SpaCy model loaded successfully")
+                # Try to load preferred model first, fallback to others if not available
+                try:
+                    cls._instance = spacy.load("en_core_web_lg")
+                    logger.info("SpaCy model 'en_core_web_lg' loaded successfully")
+                except OSError:
+                    try:
+                        cls._instance = spacy.load("en_core_web_trf")
+                        logger.info("SpaCy model 'en_core_web_trf' loaded successfully")
+                    except OSError:
+                        # Final fallback to md model which is smaller
+                        cls._instance = spacy.load("en_core_web_md")
+                        logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
             except Exception as e:
-                logger.warning(f"Could not load spaCy model: {e}")
+                logger.warning(f"Could not load any spaCy model: {e}")
                 cls._instance = None
         return cls._instance
 
@@ -81,15 +91,15 @@ class InstructionTemplates:
                 Connect different concepts and identify patterns.
                 Focus on building a coherent understanding.
                 """,
-                "goal_oriented_instructions": """{domain} - START CREATING OR UPDATING THE REQUESTED OUTPUT IMMEDIATELY
+                "goal_oriented_instructions": """{domain} - CREATE TASK OUTPUT BASED ON CONTINUING THE LAST VERSION (FROM USER PROMPT/MESSAGE HISTORY), DON'T GET STUCK ON IDEATING - GENERATE TASK OUTPUT!! - EXPLICITLY ANNOTATE ONE SENTENCE BEFORE AND AFTER YOUR OUTPUT WITH "<thinking>" tag TO DISCUSS THE TASK, PRIOR INPUT(S) AND YOUR APPROACH
 
-** Use <thinking> tags to discuss approaches, points of refinement/update to prior versions.
-For creative tasks: begin writing the content immediately.
-For coding tasks: start writing the code now.
-For analytical tasks: continue/produce the analysis directly.
+** Use <thinking> tags to discuss approaches but only minimally, focus on the task at hand. **
+For creative tasks: begin writing the content immediately or a full update/iteration to the last output in the prompt.
+For coding tasks: start writing the code now or a full update/iteration to the last output in the prompt.
+For analytical tasks: continue/produce the analysis directly or a full update/iteration to the last output in the prompt.
 
-** Focus on SHOWING rather than TELLING - create first, then refine.
-* You can use <thinking> tags to briefly outline your approach, but spend no more than 30 percent of your response on thinking and 70 percent on actual content creation *
+** Focus on SHOWING rather than TELLING - create first, then refine. ALWAYS add something to the output and summarise the full task output (story/code/analysis) at the end. **
+* You can use <thinking> tags to briefly outline your approach, or <meta> tags to discuss the task, but spend no more than 30 percent of your output on thinking/meta-discussions and 70 percent on actual content creation *
 """,
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.
