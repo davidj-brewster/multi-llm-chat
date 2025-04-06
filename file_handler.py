@@ -918,10 +918,10 @@ class ConversationMediaHandler:
             metadata.duration = duration
 
             # Process video at lower framerate and resolution
-            target_fps = 5  # Configurable
+            target_fps = 10  # Configurable
 
             # Use max_dimension from metadata if available
-            max_dimension = 768  # Default to 512 if not specified
+            max_dimension = 512 # Default to 512 if not specified
             if hasattr(metadata, "max_resolution") and metadata.max_resolution:
                 try:
                     # Parse max_resolution string

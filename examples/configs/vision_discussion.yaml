@@ -2,7 +2,7 @@ discussion:
   turns: 4  # Number of back-and-forth exchanges
   models:
     model1:
-      type: "ollama-gemma3-12b"
+      type: "ollama-gemma3:12b-it-q4_K_M"
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:

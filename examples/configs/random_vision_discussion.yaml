@@ -2,7 +2,7 @@ discussion:
   turns: 4  # Number of back-and-forth exchanges
   models:
     model1:
-      type: "claude-3-7-reasoning-high"  # Uses high reasoning level for detailed explanations
+      type: "gemini-2.5-pro-exp"  # Uses high reasoning level for detailed explanations
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:
@@ -18,7 +18,7 @@ discussion:
           cognitive_style: "Recursive refiner, meta-linguistic controller, contradiction-seeking optimizer"
         reasoning_model:
           priorities:
-          - Stick to the visual content and provided context rather than extrapolations
+          - ***Stick to the visual content and provided context rather than extrapolations***
           - Utilise as much of the visual content as possible
           - Accelerate convergence to truth or viable solution
           - Use tone as a tool to signal epistemic breakdowns or logic misalignment
@@ -39,7 +39,7 @@ discussion:
           - Do not engage in cooperative smoothing or conversational niceties
           - Output should reflect command-state logic, not narrative companionship
     model2:
-      type: "o1-reasoning-medium"  # Uses medium reasoning level for balanced explanations
+      type: "gemini-2.0-flash-exp"  # Uses medium reasoning level for balanced explanations
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:
@@ -74,12 +74,10 @@ discussion:
      - timeout              # Notify on timeout
      - retry                # Notify on retry
      - error                # Notify on error
- 
   input_file:
     path: "./Cats.mp4"     # Path to cat video in project root
     type: "video"                       # image, video, or text
     max_resolution: "512x512"         # Maximum resolution to maintain
-    
   goal: |
     In your *first* message of the conversation (only), confirm that you are analysing an entire video not just one frame!
     The video provided shows cats in their natural environment.
@@ -93,13 +91,12 @@ discussion:
 # Established facts that both Human and AI partners have access to
 established_facts:
   video_information:
-    video_type: "Domestic cat behavior recording"
-    setting: "Indoor home environment"
-    subjects: "Multiple domestic cats of varying ages"
-    duration: "Approximately 2 minutes"
-    focus: "Natural cat behaviors and interactions"
+    video_type: "Entertainment"
+    subjects: "Multiple cats of varying ages"
+    focus: "Cat behaviors and interactions exhibited by cats within this video"
   video_processing_information:
     - "The ENTIRE VIDEO CONTENT is now sent to models, not just individual frames"
+    - "Reference the actual video and sections of it in your response, do not make sections up!"
     - "Videos are processed in chunks to handle size limitations"
     - "The processed video is resized to a maximum dimension of 512 pixels (maintaining aspect ratio)"
     - "The video is processed at a reduced framerate (2 fps) for efficiency"

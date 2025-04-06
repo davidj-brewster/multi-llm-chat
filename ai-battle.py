@@ -114,54 +114,54 @@ GEMINI_MODELS = {
 CLAUDE_MODELS = {
     # Base models (newest versions)
     "claude": {
-        "model": "claude-3-5-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": None,
         "extended_thinking": False,
     },
     "sonnet": {
-        "model": "claude-3-5-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": None,
         "extended_thinking": False,
     },
     "haiku": {
-        "model": "claude-3-5-haiku",
+        "model": "claude-3-5-haiku-latest",
         "reasoning_level": None,
         "extended_thinking": False,
     },
     # Specific versions
     "claude-3-5-sonnet": {
-        "model": "claude-3-5-sonnet",
+        "model": "claude-3-5-sonnet-latest",
         "reasoning_level": None,
         "extended_thinking": False,
     },
     "claude-3-5-haiku": {
-        "model": "claude-3-5-haiku",
+        "model": "claude-3-5-haiku-latest",
         "reasoning_level": None,
         "extended_thinking": False,
     },
     "claude-3-7": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "auto",
         "extended_thinking": False,
     },
     "claude-3-7-sonnet": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "auto",
         "extended_thinking": False,
     },
     # Claude 3.7 with reasoning levels
     "claude-3-7-reasoning": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "high",
         "extended_thinking": False,
     },
     "claude-3-7-reasoning-high": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "high",
         "extended_thinking": False,
     },
     "claude-3-7-reasoning-medium": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "medium",
         "extended_thinking": False,
     },
@@ -177,13 +177,13 @@ CLAUDE_MODELS = {
     },
     # Claude 3.7 with extended thinking
     "claude-3-7-extended": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "high",
         "extended_thinking": True,
         "budget_tokens": 8000,
     },
     "claude-3-7-extended-deep": {
-        "model": "claude-3-7-sonnet",
+        "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "high",
         "extended_thinking": True,
         "budget_tokens": 16000,

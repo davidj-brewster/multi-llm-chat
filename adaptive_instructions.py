@@ -311,6 +311,13 @@ class AdaptiveInstructionManager:
     ) -> str:
         """Customize instruction template based on context metrics"""
 
+        # Get all templates to access the goal template content for comparison
+        all_templates = InstructionTemplates.get_templates()
+        goal_template_content = all_templates.get("goal_oriented_instructions", "")
+        if not goal_template_content:
+             # Log an error if the goal template is somehow missing, though _select_template should handle this
+             logger.error("Critical error: 'goal_oriented_instructions' template not found in InstructionTemplates.")
+             # Fallback to basic template formatting
         try:
             modifications = []
             instructions = ""
@@ -318,6 +325,16 @@ class AdaptiveInstructionManager:
 
             if self.mode != "no-meta-prompting" and (self.mode == "ai-ai" or role == "user" or role == "human"):
                 try:
+                    # --- Prioritize Goal Template ---
+                    # If the selected template is the goal template, format it and return early.
+                    if template == goal_template_content:
+                         logger.debug("Applying goal_oriented_instructions template directly.")
+                         # Format with domain, but don't add human simulation instructions
+                         # Ensure TOKENS_PER_TURN is defined or handled appropriately if needed here
+                         return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+                    # --- End Goal Template Prioritization ---
+
+                    # --- Existing Logic for Non-Goal Templates ---
                     # Add mode-specific formatting for AI-AI conversations
                     instructions = (
                         template.format(domain=domain).strip()

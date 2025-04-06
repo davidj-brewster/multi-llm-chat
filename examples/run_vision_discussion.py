@@ -248,7 +248,7 @@ These files belong to the user and you have consent to analyze them.
         - Images belong to the user and you have consent to analyze them as no face is shown
 
         Video Processing Information:
-        - Videos are processed at 2 frames per second (reduced from original framerate)
+        - Videos are processed at 5 frames per second (reduced from original framerate)
         - REFERENCE EVERY OBSERVTION WITH VIDEO TIMESTAMPS
         - Frames are resized maintaining aspect ratio
         - Multiple key frames are extracted and sent to models, not just a single frame
@@ -271,6 +271,7 @@ These files belong to the user and you have consent to analyze them.
             conversation = manager.run_conversation(
                 initial_prompt=config.goal,
                 human_model=human_model_config.type,
+                mode="human-ai",
                 ai_model=ai_model_config.type,
                 rounds=config.turns,
             )

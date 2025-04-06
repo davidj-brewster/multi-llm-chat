@@ -759,8 +759,17 @@ Generate a natural but sophisticated response that:
         Decides whether to use the raw prompt or generate a human-simulation prompt.
         """
         current_mode = mode or self.mode
-        if (role == "human" or role == "user" or current_mode == "ai-ai") and current_mode != "default" and current_mode != "no-meta-prompting":
-            return self.generate_human_prompt(history)
+        is_goal_task = any(marker in self.domain.upper() for marker in ["GOAL:", "GOAL ", "WRITE A"])
+
+        if is_goal_task:
+            # For goal tasks, only the 'human' role gets the simulation prompt
+            if role == "human" or role == "user":
+                return self.generate_human_prompt(history)
+            else: # Assistant role gets the raw prompt (previous output)
+                return prompt
+        elif (role == "human" or role == "user" or current_mode == "ai-ai") and current_mode != "default" and current_mode != "no-meta-prompting":
+             # Non-goal tasks, ai-ai mode or human role gets simulation prompt
+             return self.generate_human_prompt(history)
         else:
             return prompt
 
@@ -831,16 +840,16 @@ Generate a natural but sophisticated response that:
 
     def __del__(self):
         """
-        Cleanup resources when client is destroyed.
+        Cleanup resources when the client is destroyed.
 
         Performs cleanup operations when the client instance is garbage collected.
-        This includes releasing any resources held by the adaptive instruction manager.
+        This includes releasing any resources held by the adaptive_manager.
 
         This method is automatically called by Python's garbage collector when the
         client instance is about to be destroyed.
         """
-        if hasattr(self, "_adaptive_manager") and self._adaptive_manager:
-            del self._adaptive_manager
+        if hasattr(self, "adaptive_manager") and self.adaptive_manager:
+            del self.adaptive_manager # Use correct attribute name
 
 
 class GeminiClient(BaseClient):
@@ -1192,7 +1201,6 @@ class GeminiClient(BaseClient):
                         # Fallback to simple request without history
                         response = self.client.models.generate_content(
                             model=self.model_name,
-                            systemInstruction=current_instructions, 
                             contents=types.Content(
                                 parts=[
                                     types.Part(text=prompt.strip()),
@@ -1348,8 +1356,6 @@ class ClaudeClient(BaseClient):
 
             # --- Map user-friendly names to specific API model IDs ---
             model_map = {
-                "haiku": "claude-3-5-haiku-latest",
-                "claude-3-5-haiku": "claude-3-5-haiku-latest",
                 # Add other mappings here if needed, e.g.:
                 # "sonnet": "claude-3-5-sonnet-latest",
                 # "claude-3-5-sonnet": "claude-3-5-sonnet-latest",
@@ -1811,6 +1817,7 @@ class ClaudeClient(BaseClient):
             logger.debug(f"System Instruction: {request_params.get('system')}")
             logger.debug(f"Messages: {request_params.get('messages')}")
             # Only attempt to use reasoning parameter with Claude 3.7
+            response = None # Initialize response
             if "reasoning" in request_params:
                 # Check if this is actually a 3.7 model
                 if "claude-3-7" in self.model.lower():
@@ -1882,7 +1889,7 @@ class ClaudeClient(BaseClient):
                 response = self.client.messages.create(**request_params)
 
             logger.debug(f"Response received from Claude: {str(response.content)}")
-            return response.content if response else ""
+            return response.content[0].text if response and response.content else "" # Extract text safely
         except Exception as e:
             logger.error(f"Error generating Claude response: {str(e)}")
             return f"Error generating Claude response: {str(e)}"
@@ -2049,6 +2056,7 @@ class OpenAIClient(BaseClient):
             formatted_messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
         try:
+            response = None # Initialize response
             # --- Debug Logging ---
             logger.debug(f"--- OpenAI Request ---")
             logger.debug(f"Model: {self.model}")
@@ -2434,7 +2442,7 @@ class PicoClient(BaseClient):
                     "top_p": 0.9,
                 },
             )
-            return response.message.content
+            return response['message']['content'] # Access content from dict
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
             raise e

@@ -94,13 +94,13 @@ class InstructionTemplates:
                 Connect different concepts and identify patterns.
                 Focus on building a coherent understanding.
                 """,
-                "goal_oriented_instructions": """****CRITICAL OVERRIDING PRIORITY *****: CREATE {domain} OUTPUT ITERATING FROM THE PROMPT AND CONVERSATION HISTORY. DO NOT RESPOND DIRCTLY TO THE PROMPT. MINIMISE IN YOUR OUTPUT THE FOLLOWING: NARRATIVE, IDEATING, CHALLENGING, BRAINSTORMING, ARBITRARY DISCUSSIONS, CRITIQUING. IN TOTAL ALL OF THESE SHOULD BE DISTILLED TO ONE MINIMAL PARAGRAPH TOTAL 4 SENTENCES in "thought" tags. UNLESS EXPLICITLY TOLD TO PERFORM A SPECIFIC CONCRETE ACTION, *DO NOT* REPLY DIRECTLY TO THE PROMPT, ONLY IN SUMMARY OF ITS THINKING POINTS. RATHER, USE THE PROVIDED PROMPT AND CONTEXT AS THE BASIS TO CONTRIBUTE ADDITIONAL DIRECT OUTPUT TO TASK {domain}. IN YOUR RESPONSE: CREATE RATHER THAN DISCUSS! CONSIDER:
+                "goal_oriented_instructions": """****CRITICAL*****: YOUR PRIMARY TASK IS TO CREATE {domain} OUTPUT. RESPOND TO THE thoughts tags in the PROMPT IN NO MORE THAN TWO SENTENCES. THE PROMPT AND HISTORY IS OTHERWISE A DRAFT. AVOID OR MINIMISE THE FOLLOWING: NARRATIVE, IDEATING, CHALLENGING, BRAINSTORMING, ARBITRARY DISCUSSIONS, CRITIQUING. IN TOTAL ALL OF THESE SHOULD BE DISTILLED TO ONE MINIMAL PARAGRAPH TOTAL 2 TO 3 SENTENCES in "thought" tags. UNLESS EXPLICITLY TOLD TO PERFORM A SPECIFIC CONCRETE ACTION, *DO NOT* REPLY DIRECTLY TO THE PROMPT, ONLY IN SUMMARY OF ITS THINKING POINTS. RATHER, USE THE PROVIDED PROMPT AND CONTEXT AS THE BASIS TO CONTRIBUTE A NEW DRAFT OR SUBSTANTIAL ADDITION. IN YOUR RESPONSE: CREATE RATHER THAN DISCUSS! CONSIDER:
 EXPLICITLY ANNOTATE ONE SENTENCE BEFORE AND AFTER YOUR OUTPUT WITH a "thoughts" tag (formatted for HTML) TO DISCUSS THE TASK PRIOR INPUT(S) AND YOUR APPROACH. NOTES BELOW:
-** FORMAT REASONING/THINKING WITH "thoughts" tags to discuss approaches but only minimally, begin with no more than one paragraph of thinking/reasoning explaining your approach and/or replying to previous discussion points of challenges and at the conclusion of your output if justified. **
-** begin with no more than one paragraph of thinking/reasoning explaining your approach and/or replying to previous discussion points of challenges, and then respond to {domain} immediately**
-** ALWAYS add something NEW to the actual task output and summarise the current task state and your update at the end in another thoughts blocks. **
+** DO NOT REPLY TO THE PROMPT OUTSIDE OF YOUR INITIAL "thoughts" tag. Do NOT reference the AI or Human**
+** Respond to {domain} immediately after initial section**
+** ALWAYS add substantial NEW AND RELEVANT content. Summarise the current task state and your update at the end in another thoughts blocks of maximum one sentence and 12 tokens. **
 * DO NOT OUTPUT ```html (opening) or ``` (closing) html. DO OUTPUT FORMATTED MULTILINE HTML TEXT INCLUDING PROPERLY FORMATTED CODE BLOCKS (IF APPROPRIATE), AND HTML TAGS. *
-* FORMAT OUTPUT with "thoughts" tags formatted for html to briefly outline your approach, spend no more than 20 percent of your output on thinking/meta-discussions and at least 80 percent on task completion *
+* Spend no more than 20 percent of your output on thinking/meta-discussions and at least 80 percent on task completion *
 """,
                 "ai-ai-exploratory": """
                 You are an AI system engaging with another AI in exploring {domain}.
