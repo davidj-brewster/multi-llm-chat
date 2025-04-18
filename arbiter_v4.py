@@ -92,7 +92,7 @@ class AssertionGrounder:
     ):
         key = os.environ.get("GEMINI_API_KEY")
         self.client = genai.Client(api_key=key)
-        self.model = "gemini-2.0-pro-exp-02-05"
+        self.model = model
         self.search_tool = Tool(google_search=GoogleSearch())
 
     def ground_assertions(
@@ -124,7 +124,7 @@ You MUST OUTPUT in VALID HTML format that can be directly inserted into an HTML 
 Use proper HTML structure with <div>, <table>, <ul>, <li>, <h1>, <h2>, <h3>, <p> tags, etc.
 Make sure all tags are properly closed and the HTML is well-formed.
 
-Review the following three conversations and provide insights. The topic is {topic}.
+Review the following three conversations and provide insights. The topic/goal is {topic}. If there was a goal specified, assess the conversations based on their progress toward the goal above other considerations.
 
 Conversation Labels:
 - Conversation 1 (AI-AI Meta-Prompted): Both participants are AIs playing a heavily meta-prompted Human role
@@ -597,7 +597,7 @@ class ConversationArbiter:
 
     def __init__(
         self,
-        model: str = "gemini-2.0-pro-exp-02-05",
+        model: str = "gemini-2.0-flash-thinking-exp",
         api_key=os.environ.get("GEMINI_API_KEY"),
     ):
         self.client = genai.Client(api_key=api_key)

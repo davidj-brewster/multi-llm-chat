@@ -1054,7 +1054,7 @@ class GeminiClient(BaseClient):
 
         # Determine final user prompt content
         final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
-
+        contents.append({"role": "user", "parts": [{"text": final_prompt_content}]})
         # Add file content if provided
         if (
             file_data
@@ -1062,7 +1062,7 @@ class GeminiClient(BaseClient):
             if isinstance(file_data, list) and file_data:
                 # Handle multiple files
                 image_parts = []
-                text_content = ""
+                text_content = final_prompt_content
 
                 # Process all files
                 for file_item in file_data:
@@ -1206,7 +1206,7 @@ class GeminiClient(BaseClient):
                             model=self.model_name,
                             contents=types.Content(
                                 parts=[
-                                    types.Part(text=prompt.strip()),
+                                    types.Part(text=final_prompt_content.strip()),
                                     types.Part(
                                         inline_data=types.Blob(
                                             data=video_bytes,
@@ -1278,7 +1278,7 @@ class GeminiClient(BaseClient):
                 )
 
         # Add prompt text
-        contents.append({"role": "user", "parts": [{"text": final_prompt_content}]})
+        
 
         try:
             # --- Debug Logging ---
@@ -1290,7 +1290,7 @@ class GeminiClient(BaseClient):
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=(
-                    contents if contents else prompt
+                    contents if contents else final_prompt_content if final_prompt_content  else prompt
                 ),  # This is for non-video content
                 config=types.GenerateContentConfig(
                     temperature=0.8,

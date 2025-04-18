@@ -43,7 +43,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
 HUMAN_MODEL = "gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "gpt-4.1-mini" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+AI_MODEL = "gpt-4.1-nano" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=3
 
 # Set environment variables for these model names so arbiter can use them
@@ -51,9 +51,10 @@ os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 2048
+TOKENS_PER_TURN = 3192
 MAX_TOKENS = TOKENS_PER_TURN
-
+DEFAULT_PROMPT = """Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
+"""
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -65,8 +66,8 @@ logger = logging.getLogger(__name__)
 # Model templates for accessing different model versions with reasoning levels
 OPENAI_MODELS = {
     # Base models (text-only with reasoning support)
-    "o1": {"model": "o1", "reasoning_level": "auto", "multimodal": False},
-    "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": False},
+    "o1": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
+    "o3": {"model": "o3", "reasoning_level": "medium", "multimodal": True},
     # O1 with reasoning levels (text-only)
     "o1-reasoning-high": {
         "model": "o1",
@@ -93,6 +94,7 @@ OPENAI_MODELS = {
     },
     "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": True},
     "o4-mini": {"model": "o4-mini", "reasoning_level": "medium", "multimodal": True},
+    "o4-mini-high": {"model": "o4-mini", "reasoning_level": "high", "multimodal": True},
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
     "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
@@ -742,7 +744,7 @@ class ConversationManager:
                 self.conversation_history.append(
                     {"role": "assistant", "content": response}
                 )
-            print(f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
+            logger.info(f"\n\n\n{mapped_role.upper()}: {response}\n\n\n")
 
         except Exception as e:
             error_str = str(e)
@@ -1706,9 +1708,7 @@ async def save_metrics_report(
 async def main():
     """Main entry point."""
     rounds = DEFAULT_ROUNDS
-    initial_prompt = """"
-	GOAL: Write a short story about a detective solving a mystery.
-"""
+    initial_prompt = DEFAULT_PROMPT
     openai_api_key = os.getenv("OPENAI_API_KEY")
     claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
@@ -1722,20 +1722,16 @@ async def main():
     if any(model in ai_model.lower() or model in human_model.lower() for model in ["claude", "sonnet", "haiku"]):
         if not anthropic_api_key:
             logger.critical("ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
-            print("ERROR: ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
             return
     
-    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt", "openai", "o1", "o3"]):
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt", "openai", "o1", "o3", "o4"]):
         if not openai_api_key:
             logger.critical("OPENAI_API_KEY environment variable is not set but required for OpenAI models")
-            print("ERROR: OPENAI_API_KEY environment variable is not set but required for OpenAI models")
             return
     
-    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gemini"]):
-        if not gemini_api_key:
-            logger.critical("GOOGLE_API_KEY environment variable is not set but required for Gemini models")
-            print("ERROR: GOOGLE_API_KEY environment variable is not set but required for Gemini models")
-            return
+    if not gemini_api_key:
+        logger.critical("GOOGLE_API_KEY environment variable is not set but required for Gemini models including the Arbiter")
+        return
 
     # Create manager with no cloud API clients by default
     manager = ConversationManager(
@@ -1992,7 +1988,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             human_model=human_model,
         )
 
-        print(arbiter_report)
+        #print(arbiter_report)
 
         # Generate reports
         await save_arbiter_report(arbiter_report)
