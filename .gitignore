@@ -16,4 +16,7 @@ wheels/
 .vscode
 processed_files
 *html
-
+conversations
+conv-*
+arbiter_*
+metrics_*

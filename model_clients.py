@@ -9,13 +9,16 @@ from google import genai
 from google.genai import types
 from openai import OpenAI
 from anthropic import Anthropic
-from ollama import AsyncClient, ChatResponse, chat
+from ollama import ChatResponse
+from ollama import Client
+from langchain_ollama import ChatOllama
+from langchain.prompts import HumanMessagePromptTemplate as HumanMessage
+from langchain.prompts import SystemMessagePromptTemplate as SystemMessage
+#from langchain.prompts import MessagesPlaceholder
 import requests
 from adaptive_instructions import AdaptiveInstructionManager
 from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
-import logging
-from ollama import Client
 
 logger = logging.getLogger(__name__)
 
@@ -1920,6 +1923,7 @@ class OpenAIClient(BaseClient):
         api_key = os.environ.get("OPENAI_API_KEY")
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
+        self.last_response_id = None
         self.use_responses_api = True  # Flag to use the new responses API
         # Models that work well with the responses API
         self.responses_compatible_models = [
@@ -1928,6 +1932,10 @@ class OpenAIClient(BaseClient):
             "o3",
             "gpt-4o",
             "gpt-4o-mini",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "o4-mini",
+            "gpt-4.1-nano"
         ]
         # Set up reasoning capabilities
         self.reasoning_level = "auto"  # Default level
@@ -1980,7 +1988,7 @@ class OpenAIClient(BaseClient):
         if history:
             for msg in history:
                 # Map roles correctly for OpenAI API (Corrected Indentation)
-                role_map = {"user": "user", "human": "user", "assistant": "assistant", "system": "system"}
+                role_map = {"user": "user", "human": "user", "assistant": "assistant", "system": "developer"}
                 mapped_role = role_map.get(msg["role"])
                 if mapped_role:  # Only include roles OpenAI understands
                     formatted_messages.append({"role": mapped_role, "content": msg["content"]})
@@ -1989,7 +1997,7 @@ class OpenAIClient(BaseClient):
         if file_data:
             if isinstance(file_data, list) and file_data:
                 # Format for OpenAI's vision API with multiple images
-                content_parts = [{"type": "text", "text": prompt}]
+                content_parts = [{"type": "message", "text": prompt}]
 
                 # Add all images
                 for file_item in file_data:
@@ -2013,9 +2021,9 @@ class OpenAIClient(BaseClient):
                             text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
 
                 # Update the text part with combined text content
-                content_parts[0]["text"] = text_content
+                content_parts[0]["message"] = text_content
 
-                formatted_messages.append({"role": "user", "content": content_parts})
+                formatted_messages.append({"role": "user", "text": content_parts})
             else:
                 if isinstance(file_data, dict) and "type" in file_data:
                     if file_data["type"] == "image" and "base64" in file_data:
@@ -2026,7 +2034,7 @@ class OpenAIClient(BaseClient):
                                 {
                                     "role": "user",
                                     "content": [
-                                        {"type": "text", "text": final_prompt_content}, # Use final prompt content
+                                        {"type": "message", "text": final_prompt_content}, # Use final prompt content
                                         {
                                             "type": "image_url",
                                             "image_url": {
@@ -2068,7 +2076,7 @@ class OpenAIClient(BaseClient):
             )
 
             if (
-                self.use_responses_api and model_supports_responses and False
+                self.use_responses_api and model_supports_responses
             ):  # Temporarily disable responses API
                 # Use the newer responses API
                 logger.info(f"Using responses API with model {self.model}")
@@ -2089,7 +2097,7 @@ class OpenAIClient(BaseClient):
 
                 if not last_user_message:
                     # Fallback if no user message found
-                    last_user_message = {"role": "user", "content": prompt}
+                    last_user_message = {"role": "user", "content": final_prompt_content}
 
                 # Handle multimodal content
                 content_param = []
@@ -2101,7 +2109,7 @@ class OpenAIClient(BaseClient):
                     for item in last_user_message["content"]:
                         if item.get("type") == "text":
                             converted_content.append(
-                                {"type": "text", "text": item["text"]}
+                                {"type": "message", "message": item["text"]}
                             )
                         elif item.get("type") == "image":
                             # Handle image in the OpenAI-specific format
@@ -2117,7 +2125,7 @@ class OpenAIClient(BaseClient):
                 # Handle if file_data contains multiple images
                 elif file_data and isinstance(file_data, list):
                     # First add the text prompt
-                    converted_content = [{"type": "text", "text": prompt}]
+                    converted_content = [{"type": "message", "text": final_prompt_content}]
 
                     # Then add each image
                     for item in file_data:
@@ -2145,8 +2153,8 @@ class OpenAIClient(BaseClient):
                 ):
                     mime_type = file_data.get("mime_type", "image/jpeg")
                     content_param = [
-                        {"type": "text", "text": prompt},
-                        {
+                        {"role": "user", "type": "text", "message": final_prompt_content},
+                        {"role": "user", 
                             "type": "image",
                             "image_url": {
                                 "url": f"data:{mime_type};base64,{file_data['base64']}"
@@ -2157,7 +2165,7 @@ class OpenAIClient(BaseClient):
                 elif isinstance(last_user_message["content"], str):
                     # Simple text content
                     content_param = [
-                        {"type": "text", "text": last_user_message["content"]}
+                        {"role": "user", "content": last_user_message["content"]}
                     ]
 
                 # Check if content is too large and needs chunking
@@ -2223,7 +2231,7 @@ class OpenAIClient(BaseClient):
 
                             # Add chunked text items
                             for chunk in chunks:
-                                chunked_content.append({"type": "text", "text": chunk})
+                                chunked_content.append({"type": "message", "text": chunk})
                                 logger.debug(
                                     f"Created text chunk of {len(chunk)} chars"
                                 )
@@ -2239,7 +2247,91 @@ class OpenAIClient(BaseClient):
                 # Use the actual model name, don't override it
                 # The responses API is having issues, so let's fall back to the chat completions API
                 # This would be updated when the responses API is fully available and documented
-                self.use_responses_api = False
+                self.use_responses_api = True
+
+                try:
+                    if self.last_response_id:
+                        # actually invoke the new endpoint
+                        response = self.client.responses.create(
+                            model=self.model,
+                            input=content_param,   # or content=…, per SDK spec
+                            instructions=current_instructions,
+                            max_output_tokens=3192,
+                            temperature=0.7,
+                            timeout=90,
+                            stream=False,
+                            previous_response_id=self.last_response_id,
+                        )
+                        self.last_response_id = response.id
+                    else:
+                        # first time, no previous response
+                        response = self.client.responses.create(
+                            model=self.model,
+                            input=content_param,
+                            instructions=current_instructions,
+                            max_output_tokens=3192,
+                            temperature=0.7,
+                            timeout=90,
+                            stream=False,
+                        )
+                        self.last_response_id = response.id
+                    # parse the assistant’s reply
+                    if hasattr(response, "content"):
+                        resp = response.json()
+                        answer = resp["content"]["text"]        
+                        print ("answer", answer)                
+                        return answer
+                    # 1) New‑style: `.data`
+                    if hasattr(response, "data"):
+                        for msg in response.data:
+                            if msg.role == "assistant":
+                                return "".join(part.text for part in msg.content if part.type == "text")
+
+                    # 2) Chat‑style: `.choices`
+                    if hasattr(response, "choices"):
+                        # assume first choice is what you want
+                        choice = response.choices[0]
+                        # newer SDK chat choices use .message.content
+                        if hasattr(choice, "message"):
+                            return choice.message.content
+                        # or older: choice.text
+                        if hasattr(choice, "text"):
+                            return choice.text
+
+                    if hasattr(response, "output"):
+                        # assume first choice is what you want
+                        #print (response.output["content"].text)
+                        def extract_all_text(messages): #unused, keep for later if needed..
+                            snippets = []
+                            for msg in messages:
+                                for part in msg.content:
+                                    if hasattr(part, "text"):
+                                        snippets.append(part.text)
+                            # join with spacing so multiple parts don’t run together
+                            return "\n\n".join(snippets)
+
+                        return response.output[0].content[0].text
+                        #choice = response.output.content.text #choices[0]
+                        return all_text
+                        # newer SDK chat choices use .message.content
+                        if hasattr(choice, "message"):
+                            return choice.message.content
+                        # or older: choice.text
+                        if hasattr(choice, "text"):
+                            return choice.text
+
+                    # 3) Last fallback: raw JSON
+                    body = response.json()
+                    # navigate body to find text under e.g. ['choices'][0]['message']['content']
+                    try:
+                        return body["choices"][0]["message"]["content"]
+                    except Exception:
+                        return str(body)
+                except Exception as e:
+                    logger.warning(f"Responses API failed ({e}), falling back")
+                    self.use_responses_api = False
+                    # now let it drop into the existing ChatCompletion logic
+
                 logger.info(
                     "Falling back to chat completions API due to responses API limitations"
                 )
@@ -2304,15 +2396,33 @@ class OpenAIClient(BaseClient):
                 )
 
                 # O1/O3 model with reasoning support
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=formatted_messages,
-                    temperature=1.0,
-                    max_tokens=13192,
-                    reasoning_effort=reasoning_effort,
-                    timeout=90,
-                    stream=False,
-                )
+                if self.last_response_id:
+                    # actually invoke the new endpoint
+                    response = self.client.responses.create(
+                        model=self.model,
+                        input=content_param,
+                        reasoning=self.reasoning_level,
+                        instructions=current_instructions,
+                        max_output_tokens=13192,
+                        temperature=1.0,
+                        stream=False,
+                        previous_response_id=self.last_response_id,
+                    )
+                    self.last_response_id = response.id
+                else:
+                    response = self.client.responses.create(
+                        model=self.model,
+                        input=content_param,
+                        temperature=1.0,
+                        instructions=current_instructions,
+                        reasoning=self.reasoning_level,
+                        max_output_tokens=13192,
+                        #max_tokens=13192,
+                        #reasoning_effort=reasoning_effort,
+                        timeout=90,
+                        stream=False,
+                    )
+                    self.last_response_id = response.id
                 return response.choices[0].message.content
             else:
                 response = self.client.chat.completions.create(
@@ -2587,7 +2697,139 @@ class MLXClient(BaseClient):
                 return f"Error: {e}"
 
 
+
 class OllamaClient(BaseClient):
+    """Client for local Ollama model interactions using LangChain."""
+
+    def __init__(self, mode: str, domain: str, role: str = None, model: str = "phi4:latest"):
+        super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
+        self.base_url = "http://localhost:11434" # Store for potential use, though ChatOllama handles it
+        try:
+            self.lc_client = ChatOllama(
+                model=self.model,
+                temperature=0.7, # Default temperature
+                # base_url=self.base_url # ChatOllama defaults to localhost:11434
+                # Add other default options if needed, e.g., num_ctx, seed
+            )
+            logger.info(f"Initialized LangChain Ollama client for model: {self.model}")
+        except Exception as e:
+            logger.error(f"Failed to initialize LangChain ChatOllama: {e}", exc_info=True)
+            self.lc_client = None # Ensure client is None if init fails
+            raise # Re-raise the exception to signal failure
+
+    def test_connection(self) -> bool:
+        """Test Ollama connection via LangChain client."""
+        if not self.lc_client:
+            logger.error("LangChain Ollama client not initialized.")
+            return False
+        try:
+            # Use a simple invoke call to test
+            self.lc_client.invoke("Hi")
+            logger.info("Ollama (LangChain) connection test successful")
+            return True
+        except Exception as e:
+            logger.error(f"Ollama (LangChain) connection test failed: {e}", exc_info=True)
+            return False
+
+    def generate_response(
+        self,
+        prompt: str,
+        system_instruction: str = None,
+        history: List[Dict[str, str]] = None,
+        file_data: Any = None, # Can be Dict or List[Dict]
+        model_config: Optional[ModelConfig] = None,
+        mode: str = None,
+        role: str = None,
+    ) -> str:
+        """Generate a response from your local Ollama model using LangChain."""
+        if not self.lc_client:
+            logger.error("LangChain Ollama client not initialized. Cannot generate response.")
+            return "Error: Ollama client not initialized."
+
+        if role: self.role = role
+        if mode: self.mode = mode
+        history = history if history is not None else []
+
+        # Use base class helpers to determine instructions and final prompt
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
+
+        # Prepare LangChain messages
+        lc_messages = []
+        if current_instructions:
+            lc_messages.append(SystemMessage(content=current_instructions))
+
+        for msg in history:
+            msg_role = msg.get("role")
+            msg_content = msg.get("content", "")
+            if msg_role in ["user", "human"]:
+                lc_messages.append(HumanMessage(content=msg_content))
+            elif msg_role == "assistant":
+                lc_messages.append(AIMessage(content=msg_content))
+            # Ignore system messages in history as it's handled above
+
+        # Prepare final user message content (text + optional images)
+        user_message_content_parts = [] # Use a list for multimodal content
+        user_message_content_parts.append({"type": "text", "text": final_prompt_content})
+
+        images_base64 = []
+        if file_data:
+            # Normalize file_data to always be a list
+            processed_files = file_data if isinstance(file_data, list) else [file_data]
+            for item in processed_files:
+                if isinstance(item, dict):
+                    if item.get("type") == "image" and "base64" in item:
+                        images_base64.append(item["base64"])
+                    elif item.get("type") == "video" and "key_frames" in item:
+                        # Treat video frames as images
+                        images_base64.extend([f["base64"] for f in item.get("key_frames", []) if "base64" in f])
+                    # Note: LangChain ChatOllama might not support raw video chunks directly
+
+        for img_b64 in images_base64:
+            # LangChain expects image URLs in this format for Ollama
+            user_message_content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"} # Assuming JPEG
+            })
+
+        # Add the final HumanMessage with potentially multimodal content
+        lc_messages.append(HumanMessage(content=user_message_content_parts))
+
+        # Prepare request options from model_config
+        request_options = {}
+        config_to_use = model_config if model_config else ModelConfig() # Use default if None
+
+        if config_to_use.temperature is not None:
+            request_options["temperature"] = config_to_use.temperature
+        if config_to_use.max_tokens is not None:
+            # LangChain's ChatOllama uses num_predict for max tokens
+            request_options["num_predict"] = config_to_use.max_tokens
+        if config_to_use.stop_sequences:
+            request_options["stop"] = config_to_use.stop_sequences
+        if hasattr(config_to_use, 'seed') and config_to_use.seed is not None:
+             request_options["seed"] = config_to_use.seed
+        # Add other Ollama options if needed and supported by ChatOllama
+        # e.g., top_k, top_p, num_ctx - check ChatOllama documentation
+
+        try:
+            logger.debug(f"--- Ollama (LangChain) Request ---")
+            logger.debug(f"Model: {self.model}")
+            # Log messages carefully, avoiding excessive length if needed
+            # logger.debug(f"Messages: {[m.to_json() for m in lc_messages]}")
+            logger.debug(f"Options: {request_options}")
+
+            response = self.lc_client.invoke(lc_messages, **request_options)
+
+            logger.debug(f"--- Ollama (LangChain) Response ---")
+            logger.debug(f"Content: {response.content[:200]}...") # Log snippet
+
+            return response.content
+        except Exception as e:
+            logger.error(f"Ollama (LangChain) generate_response error: {e}", exc_info=True)
+            return f"Error generating response via LangChain: {e}"
+
+
+class OllamaClientLegacy(BaseClient):
     """Client for local Ollama model interactions"""
 
     # Initialize the client

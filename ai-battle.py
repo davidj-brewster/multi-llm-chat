@@ -16,7 +16,7 @@ import io
 import asyncio
 
 # Local imports
-from configuration import load_config, DiscussionConfig, detect_model_capabilities
+from configuration import load_config, detect_model_capabilities
 from configdataclasses import FileConfig, DiscussionConfig
 from arbiter_v4 import evaluate_conversations, VisualizationGenerator
 from file_handler import ConversationMediaHandler
@@ -42,8 +42,8 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-HUMAN_MODEL = "haiku" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "gemini-2.0-flash-thinking-exp" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+HUMAN_MODEL = "gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+AI_MODEL = "gpt-4.1-mini" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=3
 
 # Set environment variables for these model names so arbiter can use them
@@ -78,33 +78,34 @@ OPENAI_MODELS = {
         "reasoning_level": "medium",
         "multimodal": False,
     },
-    "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": False},
+    "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": True},
+    "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": True},
     # O3 with reasoning levels (text-only)
     "o3-reasoning-high": {
         "model": "o3",
         "reasoning_level": "high",
-        "multimodal": False,
+        "multimodal": True,
     },
     "o3-reasoning-medium": {
         "model": "o3",
         "reasoning_level": "medium",
-        "multimodal": False,
-    },
-    "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": False},
-    # Multimodal models without reasoning parameter
-    "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
-    "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
-    "gpt-4o-mini": {
-        "model": "gpt-4o-mini",
-        "reasoning_level": None,
         "multimodal": True,
     },
+    "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": True},
+    "o4-mini": {"model": "o4-mini", "reasoning_level": "medium", "multimodal": True},
+    # Multimodal models without reasoning parameter
+    "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
+    "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
+    "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
+    "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
+    "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
 }
 
 # Gemini model configurations
 GEMINI_MODELS = {
     "gemini-2.0-pro": {"model": "gemini-2.0-pro-exp-02-05", "multimodal": True},
     "gemini-2.5-pro-exp": {"model": "gemini-2.5-pro-exp-03-25", "multimodal": True},
+    "gemini-2.5-flash-preview": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
     "gemini-2.0-flash-exp": {"model": "gemini-2.0-flash-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
