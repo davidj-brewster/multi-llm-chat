@@ -88,7 +88,7 @@ class AssertionGrounder:
     def __init__(
         self,
         api_key: str = os.environ.get("GEMINI_API_KEY"),
-        model: str = "gemini-2.0-pro-exp-02-05",
+        model: str = "gemini-2.5-flash-preview",
     ):
         key = os.environ.get("GEMINI_API_KEY")
         self.client = genai.Client(api_key=key)
