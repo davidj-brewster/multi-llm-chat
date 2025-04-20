@@ -20,3 +20,7 @@ conversations
 conv-*
 arbiter_*
 metrics_*
+*.png
+*.avi
+*.jpg
+*.jpeg

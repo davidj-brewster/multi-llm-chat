@@ -88,7 +88,7 @@ class AssertionGrounder:
     def __init__(
         self,
         api_key: str = os.environ.get("GEMINI_API_KEY"),
-        model: str = "gemini-2.5-flash-preview",
+        model: str = "gemini-2.0-flash-thinking-exp",
     ):
         key = os.environ.get("GEMINI_API_KEY")
         self.client = genai.Client(api_key=key)
@@ -428,7 +428,7 @@ CONVERSATION 3 (Non-Metaprompted):
                     with open(gemini_filename, "w") as f:
                         f.write(full_html)
                     
-                    logger.info(f"Raw Gemini output saved as {gemini_filename}")
+                    logger.debug(f"Raw Gemini output saved as {gemini_filename}")
                 else:
                     logger.warning("Template format doesn't contain a single '%s' placeholder")
             except Exception as e:
@@ -492,7 +492,7 @@ CONVERSATION 3 (Non-Metaprompted):
                                 # Basic check if it looks like a winner statement and not just tags
                                 if winner_text and not winner_text.startswith("<"): 
                                    extracted_winner = winner_text[:250] + ('...' if len(winner_text) > 250 else '') # Limit length slightly more
-                                   logger.info(f"Extracted winner statement: {extracted_winner}")
+                                   logger.debug(f"Extracted winner statement: {extracted_winner}")
                                 else:
                                     logger.warning("Found <p> tag after Comparative Analysis, but content seems invalid or empty.")
                         else:

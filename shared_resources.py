@@ -135,7 +135,7 @@ class MemoryManager:
         SpacyModelSingleton.cleanup()
         VectorizerSingleton._instance = None
         InstructionTemplates._instance = None
-        logger.info("All shared resources cleaned up")
+        logger.debug("All shared resources cleaned up")
 
     @staticmethod
     def get_memory_usage() -> str:

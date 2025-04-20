@@ -19,18 +19,18 @@ SUPPORTED_MODELS = {
         "claude-3-7",
         "claude-3-7-latest",
         "claude-3-7-sonnet-latest",
-        "claude-3-5-sonnet-latest",
         "claude-3-7-sonnet",
         "claude-3-7-reasoning",
         "claude-3-7-reasoning-medium",
         "claude-3-7-reasoning-low",
-        "claude-3-7-reasoning-none",
     ],
     "gemini": [
         "gemini*",
         "gemini-2-flash-lite",
+        "gemini-2.5-flash-exp",
         "gemini-2.5-pro",
         "gemini-2.5-pro-exp",
+        "gemini-2.5-pro-preview-03-25",
         "gemini-2-pro",
         "gemini-2-reasoning",
         "gemini-2.0-flash-exp",
@@ -39,6 +39,10 @@ SUPPORTED_MODELS = {
     "openai": [
         "gpt-4-vision",
         "gpt-4o",
+        "gpt-4.1",
+        "gpt*",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
         "chatgpt-latest",
         "o1",
         "o3",
@@ -49,6 +53,10 @@ SUPPORTED_MODELS = {
         "o3-reasoning-medium",
         "o3-reasoning-low",
     ],
+    "gpt-4.1": ["gpt-4.1"],  # All Ollama models supported
+    "o4-mini": ["o4-mini"],  # All Ollama models supported
+    "o4-mini-high": ["o4-mini-high"],  # All Ollama models supported
+    "o3": ["o3"],  # All Ollama models supported
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"],  # All MLX models supported
 }
@@ -81,7 +89,7 @@ SUPPORTED_FILE_TYPES = {
     },
 }
 logger = getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 @dataclass
@@ -544,7 +552,7 @@ class DiscussionConfig:
                 name: ModelConfig(**config) if isinstance(config, dict) else config
                 for name, config in self.models.items()
             }
-        logger.info(f"Models: {self.models}")
+        logger.debug(f"Models: {self.models}")
 
         # Convert timeouts dict to TimeoutConfig
         if isinstance(self.timeouts, dict):

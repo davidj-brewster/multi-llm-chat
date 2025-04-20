@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 # Set up logging
 # Set the maximum number of tokens per turn
-TOKENS_PER_TURN = 2048
+TOKENS_PER_TURN = 3084
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"#,
     #handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
 )
@@ -86,7 +86,7 @@ class AdaptiveInstructionManager:
             if self.mode == "no-meta-prompting":
                 return f"You are having a conversation about: {domain}. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens."
                 
-            logger.info(f"Applying adaptive instruction generation for mode: {self.mode}")
+            logger.debug(f"Applying adaptive instruction generation for mode: {self.mode}")
 
             # Validate inputs
             if not isinstance(history, list):
@@ -232,7 +232,7 @@ class AdaptiveInstructionManager:
                     if any(goal_marker in topic_str.upper() for goal_marker in ["GOAL:", "GOAL "]):
                         domain_has_goal = True
                         domain_text = topic_str
-                        logger.info(f"GOAL detected in topic evolution")
+                        logger.debug(f"GOAL detected in topic evolution")
                         break
             
             # Check domain attribute if it exists

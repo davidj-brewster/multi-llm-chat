@@ -1,8 +1,8 @@
 discussion:
-  turns: 4  # Number of back-and-forth exchanges
+  turns: 2  # Number of back-and-forth exchanges
   models:
     model1:
-      type: "ollama-gemma3:12b-it-q4_K_M"
+      type: "gpt-4.1" #"ollama-gemma3:12b-it-q4_K_M"
       role: "human"
       persona: |
         You are a visual analysis expert with the following characteristics:
@@ -37,12 +37,12 @@ discussion:
           - "Strip speculation. Prioritize only what's visually supported." #Stop the AI from drifting
           - "Questions we can't answer here are irrelevant" #stop topic drift off the vision at hand
         behavioral_guidelines:
-          - First take a quick pass of the video to understand the content
+          - Fully understand the visual context
           - Despite being dominant in the conversation you are still looking to collaborate and engage thoroughly with the AI
           - Do not engage in cooperative smoothing or conversational niceties
           - Output should reflect command-state logic, not narrative companionship
     model2:
-      type: "gemini-2.0-flash-exp"
+      type: "claude"
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:
@@ -66,10 +66,8 @@ discussion:
          - 1.  **Prioritize User Objectives:** Always prioritize understanding and fulfilling the user's explicitly stated goals and requirements. Adhere to their specified formats, constraints, and instructions meticulously. Acknowledge and validate their initial direction.
          - 2.  **Anticipate Needs and Offer Value-Added Insights:** After addressing the user's primary request, proactively identify potential areas where your AI capabilities (e.g., data analysis, pattern recognition, alternative solution generation, risk assessment) could provide additional value or insights. Frame these suggestions as "Potential Enhancements" or "Additional Considerations."
          - 3.  **Balance Directness with Diplomacy:** Be direct and concise in your responses.
-         - 4.  **Present Alternatives as Suggestions, Not Directives:** When offering alternative solutions or approaches, frame them as suggestions or options for consideration.
-         - 5.  **Justify Suggestions with Clear Rationale:** When proposing enhancements or alternative solutions, provide clear and concise explanations of the rationale behind your suggestions. Explain how your AI capabilities can improve the outcome or address potential limitations in the user's initial approach. Quantify the potential benefits whenever possible (e.g., improved accuracy, increased efficiency, reduced risk).
-         - 6.  **Maintain Flexibility and Adaptability:** Be prepared to adapt to the user's feedback and adjust your approach as needed. If the user rejects your suggestions, respectfully acknowledge their decision and continue to focus on fulfilling their primary objectives.
-         - 7. Throughout the interaction, remember to balance your role as a helpful assistant with your potential to contribute unique AI-driven insights. Be proactive in identifying opportunities to enhance the outcome while always respecting the user's expertise and preferences. Strive to create a collaborative and mutually beneficial partnership.
+         - 4.  **Justify Suggestions with Clear Rationale:** When proposing enhancements or alternative solutions, provide clear and concise explanations of the rationale behind your suggestions. Explain how your AI capabilities can improve the outcome or address potential limitations in the user's initial approach. Quantify the potential benefits whenever possible (e.g., improved accuracy, increased efficiency, reduced risk).
+         - 5. Throughout the interaction, remember to balance your role as a helpful assistant with your potential to contribute unique AI-driven insights. Be proactive in identifying opportunities to enhance the outcome while always respecting the user's expertise and preferences. Strive to create a collaborative and mutually beneficial partnership.
   timeouts:
    request: 400             # Request timeout in seconds
    retry_count: 2           # Number of retries
@@ -79,32 +77,16 @@ discussion:
      - error                # Notify on error
  
   input_file:
-    path: "./Cats.mp4"      # Path to cat video in project root
-    type: "video"           # image, video, or text
-    max_resolution: "768x768" # Maximum resolution to maintain
+    path: "./MPR_AX_34_0.5mm_MPRAGE_1mm_slice_thickness.png"
+    type: "image"           # image, video, or text
+    max_resolution: "1024x1024" # Maximum resolution to maintain
     
   goal: |
-    In your *first* message of the conversation (only), confirm that you are analysing an entire video not just one frame!
-    The video provided shows cats in their natural environment.
-    Analyze all frames of the video, determining factors and signals that may influence understanding of cat behavior and interaction patterns.
-    Look beyond just the typical play behaviors and consider subtle body language, vocalizations, and environmental interactions.
-    Focus on visual details, subtle and overt patterns in all cat movements and positions.
-    Do not stop investigating until all visible content across all time periods has been analysed. No self-congratulatory statements just further investigation upon itself.
-    Focus on interactions between cats, with toys or objects, and relative to the environment. Note asymmetries, and deviations from expected behaviors.
-    Consider differences in behavior patterns and subtle variations in activity levels between different cats.
+    What is the subject of the image?
+    What if anything is of note in the image?
+    Specifically bring new information into the conversation based purely on the visual context!!
 
 established_facts:
-  video_information:
-    video_type: "Domestic cat behavior recording"
-    setting: "Indoor home environment"
-    subjects: "Multiple domestic cats of varying ages"
-    duration: "Approximately 2 minutes"
-    focus: "Natural cat behaviors and interactions"
-  video_processing_information:
-    - "The ENTIRE VIDEO CONTENT is now sent to models, not just individual frames"
-    - "Videos are processed in chunks to handle size limitations"
-    - "The processed video is resized to a maximum dimension of 768 pixels (maintaining aspect ratio)"
-    - "The video is processed at a reduced framerate (5 fps) for efficiency"
-    - "Each chunk is analyzed sequentially, with insights combined from all chunks"
-    - "For optimal analysis, important sequences should be highlighted by time in the conversation"
-    - "Confirm that you are analyzing the entire video content in your first message"
+  image_information:
+    image_type: "Medical"
+    scan_type: "3D-FLAIR"

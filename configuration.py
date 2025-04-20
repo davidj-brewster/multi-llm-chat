@@ -41,14 +41,13 @@ class SystemInstructionsError(ConfigurationError):
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 # Supported model configurations
 SUPPORTED_MODELS = {
     "claude": [
         "claude",
         "sonnet",
         "haiku",
-        "claude-3-5-sonnet",
         "claude-3-5-haiku",
         "claude-3-7",
         "claude-3-7-sonnet",
@@ -59,6 +58,8 @@ SUPPORTED_MODELS = {
     ],
     "gemini": [
         "gemini-2-flash-lite",
+        "gemini-2.5-flash-exp",
+        "gemini-2.5-pro-preview-03-25",
         "gemini-2-pro",
         "gemini-2-reasoning",
         "gemini-2.0-flash-exp",
@@ -67,8 +68,14 @@ SUPPORTED_MODELS = {
     "openai": [
         "gpt-4-vision",
         "gpt-4o",
+        "gpt-4.1",
+        "gpt*",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
         "o1",
         "o3",
+        "o4-mini",
+        "o4-mini-high",
         "o1-reasoning-high",
         "o1-reasoning-medium",
         "o1-reasoning-low",

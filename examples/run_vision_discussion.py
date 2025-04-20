@@ -56,17 +56,17 @@ async def main():
     )
 
     logger.info(f"Starting vision discussion with config: {config_path}")
+    # Ensure the configuration file exists
+    if not os.path.exists(config_path):
+        logger.error(f"Configuration file not found: {config_path}")
+        return
+        
     # Get file paths from command line if provided
     file_paths = (
         sys.argv[2:]
         if len(sys.argv) >= 2
         else sys.argv[1] if len(sys.argv) == 1 else []
     )
-
-    # Ensure the configuration file exists
-    if not os.path.exists(config_path):
-        logger.error(f"Configuration file not found: {config_path}")
-        return
 
     try:
         # Initialize conversation manager from configuration
@@ -76,7 +76,7 @@ async def main():
 
         # Get configuration details
         config = manager.config
-        logger.info(f"Running discussion with goal: {config.goal}")
+        logger.info(f"SYSTEM: {config.goal}")
 
         # Get model information
         models = list(config.models.items())
@@ -97,27 +97,33 @@ async def main():
             r in human_model_type
             for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]
         ):
-            logger.info(f"Human model supports reasoning: {human_model_type}")
+            logger.debug(f"Human model supports reasoning: {human_model_type}")
 
             # Extract reasoning level from model name if present
             reasoning_levels = ["high", "medium", "low", "none"]
             for level in reasoning_levels:
                 if level in human_model_type:
-                    logger.info(f"Human model using reasoning level: {level}")
+                    logger.debug(f"Human model using reasoning level: {level}")
                     break
+                    
+        # Log model information for UI status tracking
+        logger.info(f"Processing with model: {human_model_config.type}")
 
         if any(
             r in ai_model_type
             for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]
         ):
-            logger.info(f"AI model supports reasoning: {ai_model_type}")
+            logger.debug(f"AI model supports reasoning: {ai_model_type}")
 
             # Extract reasoning level from model name if present
             reasoning_levels = ["high", "medium", "low", "none"]
             for level in reasoning_levels:
                 if level in ai_model_type:
-                    logger.info(f"AI model using reasoning level: {level}")
+                    logger.debug(f"AI model using reasoning level: {level}")
                     break
+                    
+        # Log model information for UI status tracking
+        logger.info(f"Processing with model: {ai_model_config.type}")
 
         # Override file paths if provided via command line
         if file_paths:
@@ -145,19 +151,17 @@ async def main():
                     file_configs.append(file_config)
                     logger.info(f"Created file config with type: {file_metadata.type}")
 
-                # For backward compatibility with single file
+                # Handle file configuration more explicitly
                 if len(file_configs) == 1:
-                    # Just use the first file directly
+                    # For single file, only set input_file (avoid setting both which causes confusion)
                     config.input_file = file_configs[0]
+                    config.input_files = None  # Clear any existing input_files to avoid ambiguity
                     logger.info(f"Using single file: {config.input_file.path}")
                 else:
-                    # Create a proper MultiFileConfig object
+                    # For multiple files, only set input_files
                     config.input_files = MultiFileConfig(files=file_configs)
+                    config.input_file = None  # Clear any existing input_file to avoid ambiguity
                     logger.info(f"Using multiple files: {len(file_configs)} files")
-
-                # For backward compatibility, also set input_file to the first file
-                if file_configs:
-                    config.input_file = file_configs[0]
 
                 logger.info(f"Created multi-file config with {len(file_configs)} files")
 
@@ -172,7 +176,7 @@ async def main():
                 # Check if input files are specified
                 if config.input_files:
                     files_list = config.input_files.files
-                    logger.info(f"Using multiple input files: {len(files_list)} files")
+                    logger.debug(f"Using multiple input files: {len(files_list)} files")
 
                     # Ensure all input files exist
                     for file_config in files_list:
@@ -216,17 +220,28 @@ These files belong to the user and you have consent to analyze them.
                         files_list[0] if len(files_list) == 1 else config.input_files
                     )
 
-                    conversation = manager.run_conversation_with_file(
-                        initial_prompt=initial_prompt,
-                        human_model=human_model_config.type,
-                        ai_model=ai_model_config.type,
-                        mode="human-ai",  # Use AI-AI mode for both models
-                        file_config=file_config_to_use,
-                        rounds=config.turns,
-                    )
-                    logger.info(
-                        f"Multi-file conversation completed with {len(conversation)} messages"
-                    )
+                    try:
+                        conversation = manager.run_conversation_with_file(
+                            initial_prompt=initial_prompt,
+                            human_model=human_model_config.type,
+                            ai_model=ai_model_config.type,
+                            mode="ai-ai",  # Use AI-AI mode for both models
+                            file_config=file_config_to_use,
+                            rounds=config.turns,
+                        )
+                        
+                        # Log completion for UI status tracking
+                        logger.info(f"Completed processing with model: {human_model_config.type}")
+                        logger.info(f"Completed processing with model: {ai_model_config.type}")
+                        
+                        logger.info(
+                            f"Multi-file conversation completed with {len(conversation)} messages"
+                        )
+                    except Exception as e:
+                        # Log error for UI status tracking
+                        logger.error(f"Error with model {human_model_config.type}: {str(e)}")
+                        logger.error(f"Error with model {ai_model_config.type}: {str(e)}")
+                        raise
 
                 elif config.input_file:
                     logger.info(
@@ -239,48 +254,231 @@ These files belong to the user and you have consent to analyze them.
                         return
 
                     # Run conversation with single file
-                    logger.info(f"Starting file-based conversation")
-                    logger.debug(f"File config: {config.input_file}")
-                    conversation = manager.run_conversation_with_file(
-                        initial_prompt=f"""Analyse this video in detail. Discuss and build upon your findings, consider the type of video, how it might have been captured, whether it represents a medical, landscape, portrait, screen capture, AI generated or perhaps other type of scene. 
-                        Discuss any relevant signals and abnormalities observed. In your first message, confirm that you see a VIDEO not a STILL IMAGE
-        ESTABLISHED FACTS:
-        - Images belong to the user and you have consent to analyze them as no face is shown
+                    # Get file type and prepare a more specific prompt
+                    file_type = os.path.splitext(config.input_file.path)[1].lower()
+                    is_image = file_type in ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+                    
+                    # Create a more specific prompt including file name
+                    file_name = os.path.basename(config.input_file.path)
+                    prompt = f"""Analyze this {file_type} file in detail: {file_name}
+                    
+You are seeing a single file from path: {config.input_file.path}
 
-        Video Processing Information:
-        - Videos are processed at 5 frames per second (reduced from original framerate)
-        - REFERENCE EVERY OBSERVTION WITH VIDEO TIMESTAMPS
-        - Frames are resized maintaining aspect ratio
-        - Multiple key frames are extracted and sent to models, not just a single frame
-        - For optimal analysis, important sequences should be highlighted by time in the conversation
-        """,
-                        human_model=human_model_config.type,
-                        ai_model=ai_model_config.type,
-                        mode="ai-ai",  # Use AI-AI mode for both models
-                        file_config=config.input_file,  # config.input_file,
-                        rounds=config.turns,
-                    )
-                    logger.info(
-                        f"File-based conversation completed with {len(conversation)} messages"
-                    )
+IMPORTANT INSTRUCTIONS:
+1. START by describing exactly what you visually see in the image in detail - the specific visual content, colors, objects, etc.
+2. BE EXTREMELY LITERAL and describe every visual element present.
+3. AVOID making assumptions beyond what's visually apparent.
+4. CONFIRM that you can see the image by describing its specific contents.
+5. If you see animals, describe: their types, colors, positions, what they're doing.
+6. If you see a setting/location, describe it in detail: indoor/outdoor, environment type, notable features.
+7. ONLY AFTER describing what you see, proceed to analyze any patterns, objects, or unusual aspects.
+
+Discuss any relevant signals and abnormalities observed.
+                    """
+                    
+                    logger.info(f"Starting file-based conversation with file: {file_name}")
+                    logger.debug(f"File config: {config.input_file}")
+                    logger.info(f"Verified file exists at: {config.input_file.path}")
+                    
+                    # Use the more specific prompt
+                    try:
+                        conversation = manager.run_conversation_with_file(
+                            initial_prompt=prompt,
+                            human_model=human_model_config.type,
+                            ai_model=ai_model_config.type,
+                            mode="ai-ai",  # Use AI-AI mode for both models
+                            file_config=config.input_file,
+                            rounds=config.turns,
+                        )
+                        
+                        # Log completion for UI status tracking
+                        logger.info(f"Completed processing with model: {human_model_config.type}")
+                        logger.info(f"Completed processing with model: {ai_model_config.type}")
+                        
+                        logger.info(
+                            f"File-based conversation completed with {len(conversation)} messages"
+                        )
+                    except Exception as e:
+                        # Log error for UI status tracking
+                        logger.error(f"Error with model {human_model_config.type}: {str(e)}")
+                        logger.error(f"Error with model {ai_model_config.type}: {str(e)}")
+                        raise
             except Exception as e:
                 logger.error(f"Error processing file: {e}")
                 return
         else:
-            # Run standard conversation without file
-            conversation = manager.run_conversation(
-                initial_prompt=config.goal,
-                human_model=human_model_config.type,
-                mode="human-ai",
-                ai_model=ai_model_config.type,
-                rounds=config.turns,
-            )
-            logger.debug(
-                f"Standard conversation completed with {len(conversation)} messages"
-            )
-            logger.info(
-                f"Standard conversation completed with {len(conversation)} messages"
-            )
+            # Check if input files are specified in the configuration file instead of command line
+            if config.input_file and config.input_file.path:
+                # Resolve path relative to project root
+                file_path = config.input_file.path
+                # If path is relative (starts with ./ or ../), resolve it relative to project root
+                if file_path.startswith('./') or file_path.startswith('../'):
+                    # Get the absolute path of the current script
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    # Get the project root directory (parent of examples directory)
+                    project_root = os.path.dirname(script_dir)
+                    # Resolve the path relative to project root
+                    file_path = os.path.normpath(os.path.join(project_root, file_path))
+                    # Update the config with the resolved path
+                    config.input_file.path = file_path
+                
+                logger.info(f"Using input_file from configuration: {config.input_file.path}")
+                
+                # Ensure the file exists
+                if not os.path.exists(config.input_file.path):
+                    logger.error(f"Input file from configuration not found: {config.input_file.path}")
+                    return
+                
+                # Process the file using the media handler to get accurate metadata
+                file_metadata = manager.media_handler.process_file(config.input_file.path)
+                logger.info(f"File processed: {file_metadata.type}, {file_metadata.mime_type}")
+                
+                # Create a proper FileConfig object with the processed file information
+                file_config = FileConfig(
+                    path=config.input_file.path,
+                    type=file_metadata.type,
+                    max_resolution="512x512",  # Set consistent resolution for all models
+                )
+                
+                # Update the config with the newly created FileConfig
+                config.input_file = file_config
+                
+                logger.info(f"Verified file exists: {config.input_file.path}")
+                
+                # Run conversation with the file from configuration
+                # Get file type and prepare a more specific prompt
+                file_type = os.path.splitext(config.input_file.path)[1].lower()
+                is_image = file_type in ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+                
+                # Create a more specific prompt including file name
+                file_name = os.path.basename(config.input_file.path)
+                prompt = f"""Analyze this {file_type} file in detail: {file_name}
+                
+You are seeing a single file from path: {config.input_file.path}
+
+If this is an image, first describe what you see in the image, then analyze any patterns, objects, or details.
+IMPORTANT: Directly describe what you actually see in the image or file provided.
+
+Discuss any relevant signals and abnormalities observed.
+                """
+                
+                logger.info(f"Starting file-based conversation with configured file: {file_name}")
+                logger.debug(f"File config from configuration: {config.input_file}")
+                logger.info(f"Using FileConfig with type: {config.input_file.type}, max_resolution: {config.input_file.max_resolution}")
+                
+                try:
+                    conversation = manager.run_conversation_with_file(
+                        initial_prompt=prompt,
+                        human_model=human_model_config.type,
+                        ai_model=ai_model_config.type,
+                        mode="ai-ai",  # Use AI-AI mode for both models
+                        file_config=config.input_file,
+                        rounds=config.turns,
+                    )
+                    
+                    # Log completion for UI status tracking
+                    logger.info(f"Completed processing with model: {human_model_config.type}")
+                    logger.info(f"Completed processing with model: {ai_model_config.type}")
+                    
+                    logger.info(
+                        f"File-based conversation completed with {len(conversation)} messages"
+                    )
+                except Exception as e:
+                    # Log error for UI status tracking
+                    logger.error(f"Error with model {human_model_config.type}: {str(e)}")
+                    logger.error(f"Error with model {ai_model_config.type}: {str(e)}")
+                    raise
+                
+            elif config.input_files and config.input_files.files:
+                logger.info(f"Using input_files from configuration: {len(config.input_files.files)} files")
+                
+                # Ensure all input files exist
+                files_exist = True
+                for file_config in config.input_files.files:
+                    if not os.path.exists(file_config.path):
+                        logger.error(f"Input file from configuration not found: {file_config.path}")
+                        files_exist = False
+                
+                if not files_exist:
+                    return
+                
+                # Determine if all files are images
+                files_list = config.input_files.files
+                all_images = all(file.type == "image" for file in files_list)
+                
+                # Set the appropriate prompt based on file types
+                if all_images:
+                    initial_prompt = f"""Analyze these images in detail. Discuss and build upon your findings, considering what each image shows, how they might relate to each other, and any relevant signals or abnormalities observed.
+                    
+In your first message, confirm that you can see MULTIPLE IMAGES, and describe each one briefly.
+
+ESTABLISHED FACTS:
+- Images belong to the user and you have consent to analyze them as no face is shown
+"""
+                else:
+                    initial_prompt = f"""Analyze these files in detail. Discuss and build upon your findings, considering what each file shows, how they might relate to each other, and any relevant information observed.
+
+In your first message, confirm that you can see MULTIPLE FILES, and describe each one briefly.
+
+ESTABLISHED FACTS:
+These files belong to the user and you have consent to analyze them.
+"""
+                
+                # Run conversation with multiple files from configuration
+                logger.info(f"Starting multi-file conversation with configured files")
+                logger.debug(f"Multi-file config from configuration: {config.input_files}")
+                
+                try:
+                    # Use the configuration directly
+                    conversation = manager.run_conversation_with_file(
+                        initial_prompt=initial_prompt,
+                        human_model=human_model_config.type,
+                        ai_model=ai_model_config.type,
+                        mode="ai-ai",  # Use AI-AI mode for both models
+                        file_config=config.input_files,
+                        rounds=config.turns,
+                    )
+                    
+                    # Log completion for UI status tracking
+                    logger.info(f"Completed processing with model: {human_model_config.type}")
+                    logger.info(f"Completed processing with model: {ai_model_config.type}")
+                    
+                    logger.info(
+                        f"Multi-file conversation with configured files completed with {len(conversation)} messages"
+                    )
+                except Exception as e:
+                    # Log error for UI status tracking
+                    logger.error(f"Error with model {human_model_config.type}: {str(e)}")
+                    logger.error(f"Error with model {ai_model_config.type}: {str(e)}")
+                    raise
+                
+            else:
+                # No files specified in command line or configuration, run standard conversation
+                logger.info("No files specified in command line or configuration, running standard conversation")
+                try:
+                    conversation = manager.run_conversation(
+                        initial_prompt=config.goal,
+                        human_model=human_model_config.type,
+                        mode="human-ai",
+                        ai_model=ai_model_config.type,
+                        rounds=config.turns,
+                    )
+                    
+                    # Log completion for UI status tracking
+                    logger.info(f"Completed processing with model: {human_model_config.type}")
+                    logger.info(f"Completed processing with model: {ai_model_config.type}")
+                    
+                    logger.debug(
+                        f"Standard conversation completed with {len(conversation)} messages"
+                    )
+                    logger.info(
+                        f"Standard conversation completed with {len(conversation)} messages"
+                    )
+                except Exception as e:
+                    # Log error for UI status tracking
+                    logger.error(f"Error with model {human_model_config.type}: {str(e)}")
+                    logger.error(f"Error with model {ai_model_config.type}: {str(e)}")
+                    raise
 
         # Get file data for saving with conversation
         file_data = None

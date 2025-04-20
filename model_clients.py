@@ -12,8 +12,8 @@ from anthropic import Anthropic
 from ollama import ChatResponse
 from ollama import Client
 from langchain_ollama import ChatOllama
-from langchain.prompts import HumanMessagePromptTemplate as HumanMessage
-from langchain.prompts import SystemMessagePromptTemplate as SystemMessage
+from langchain.prompts import HumanMessagePromptTemplate as HumanMessage, AIMessagePromptTemplate as AIMessage
+from langchain.prompts import SystemMessagePromptTemplate as SystemMessage, PromptTemplate, StringPromptTemplate
 #from langchain.prompts import MessagesPlaceholder
 import requests
 from adaptive_instructions import AdaptiveInstructionManager
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 2048
+MAX_TOKENS = 3192
 TOKENS_PER_TURN = MAX_TOKENS
 
 
@@ -1054,6 +1054,7 @@ class GeminiClient(BaseClient):
 
         # Determine final user prompt content
         final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
+        text_content = final_prompt_content
         contents.append({"role": "user", "parts": [{"text": final_prompt_content}]})
         # Add file content if provided
         if (
@@ -1084,31 +1085,42 @@ class GeminiClient(BaseClient):
                             # Collect text content
                             text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item['text_content']}"
 
-                # Add all images as separate messages
+                # Create a single message with both text and images
+                combined_parts = []
+                # Add the text content first
+                combined_parts.append({"text": text_content})
+                
+                # Then add all images
                 for image_part in image_parts:
-                    contents.append({"role": "user", "parts": [image_part]})
-
-                # Add collected text content if any
-                if text_content:
-                    contents.append(
-                        {"role": "model", "parts": [{"text": text_content}]}
-                    )
-            elif isinstance(file_data, dict) and "type" in file_data:
+                    combined_parts.append(image_part)
+                
+                # Replace existing content with a properly formatted message
+                # This matches how single images are handled (line ~1107)
+                contents = [{
+                    "role": "user",
+                    "parts": combined_parts
+                }]
+                logger.info(f"Added multimodal content with {len(image_parts)} images to Gemini request")
+                
+            if isinstance(file_data, dict) and "type" in file_data:
                 if file_data["type"] == "image" and "base64" in file_data:
                     # Format image for Gemini (single image case)
-                    contents.append(
-                        {
-                            "role": "human",
-                            "parts": [
-                                {
-                                    "inline_data": {
-                                        "mime_type": file_data.get("mime_type"),
-                                        "data": file_data["base64"],
-                                    }
+                    logger.info(f"Processing single image for Gemini with mime_type: {file_data.get('mime_type', 'image/jpeg')}")
+                    
+                    # Create a message with both text and image
+                    contents = [{
+                        "role": "user",
+                        "parts": [
+                            {"text": final_prompt_content},
+                            {
+                                "inline_data": {
+                                    "mime_type": file_data.get("mime_type", "image/jpeg"),
+                                    "data": file_data["base64"],
                                 }
-                            ],
-                        }
-                    )
+                            }
+                        ]
+                    }]
+                    logger.info("Added single image with prompt to Gemini request")
             elif isinstance(file_data, dict) and "type" in file_data:
                 if file_data["type"] == "video":
                     # Handle video content
@@ -1252,7 +1264,7 @@ class GeminiClient(BaseClient):
                         if (response and response is not None)
                         else ""
                     )
-                elif "key_frames" in file_data and file_data["key_frames"]:
+                elif "key_frames" in file_data and file_data["key_frames"] or "image" in file_data and "base64" in file_data:
                     # Fallback to key frames if available
                     for frame in file_data["key_frames"]:
                         contents.append(
@@ -1268,8 +1280,23 @@ class GeminiClient(BaseClient):
                                 ],
                             }
                         )
+                    for frame in file_data["image"]:
+                        contents.append(
+                            {
+                                "role": "user",
+                                "parts": [
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/jpeg",
+                                            "data": frame["base64"],
+                                        }
+                                    }
+                                ],
+                            }
+                        )
+
                     logger.info(
-                        f"Added {len(file_data['key_frames'])} video frames to Gemini request"
+                        f"Added {len(file_data['key_frames'])} images to Gemini request"
                     )
             elif file_data["type"] in ["text", "code"] and "text_content" in file_data:
                 # Add text content
@@ -1289,9 +1316,7 @@ class GeminiClient(BaseClient):
             # Generate final response
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=(
-                    contents if contents else final_prompt_content if final_prompt_content  else prompt
-                ),  # This is for non-video content
+                contents=contents,  # Use the properly formatted contents array
                 config=types.GenerateContentConfig(
                     temperature=0.8,
                     max_output_tokens=model_config.max_tokens if model_config else MAX_TOKENS, # Use model_config
@@ -1440,9 +1465,9 @@ class ClaudeClient(BaseClient):
         # Only enable this for actual 3.7 models, not 3.5 or earlier
         if "claude-3-7" in self.model.lower():
             self.capabilities["advanced_reasoning"] = True
-            # Keep reasoning at auto by default for 3.7 models
+            # Keep reasoning at high by default for 3.7 models
             if not hasattr(self, "reasoning_level") or self.reasoning_level is None:
-                self.reasoning_level = "auto"
+                self.reasoning_level = "high"
                 logger.debug(f"Set default reasoning level to 'auto' for {self.model}")
         else:
             # For any non-3.7 models, make sure we don't try to use reasoning
@@ -1478,12 +1503,6 @@ class ClaudeClient(BaseClient):
         self.mode = mode
         history = history if history else [{"role": "user", "content": prompt}]
 
-        # Analyze conversation context
-        #conversation_analysis = self._analyze_conversation(history)
-        #ai_response = conversation_analysis.get("ai_response")
-        #ai_assessment = conversation_analysis.get("ai_assessment")
-        #conversation_summary = conversation_analysis.get("summary")
-
         # Get appropriate instructions
         history = history if history is not None else [] # Ensure history is a list
         current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
@@ -1501,7 +1520,7 @@ class ClaudeClient(BaseClient):
             for msg in history # Iterate through the original history
             if msg.get("role") in ["user", "human", "assistant"] # Filter valid roles
         ]
-
+        text_content = final_prompt_content 
         # Handle file data
         if file_data:
             if isinstance(file_data, list) and file_data:
@@ -1521,22 +1540,7 @@ class ClaudeClient(BaseClient):
                             and "base64" in file_item
                             and image_count < self.max_images_per_request
                         ):
-                            # Add medical image enhancement metadata if applicable
-                            image_metadata = {}
-
-                            # Add high resolution support for medical images
-                            if self.capabilities.get("high_resolution", False):
-                                # Add high resolution flag for detailed medical imagery
-                                image_metadata["high_resolution"] = True
-
-                                # Add detailed medical image analysis flag if applicable
-                                if (
-                                    self.capabilities.get("medical_imagery", False)
-                                    and "medical" in file_item.get("path", "").lower()
-                                ):
-                                    image_metadata["detail"] = "high"
-
-                            # Add the image to message content
+                            # Add the image to message content (without metadata)
                             message_content.append(
                                 {
                                     "type": "image",
@@ -1546,8 +1550,7 @@ class ClaudeClient(BaseClient):
                                             "mime_type", "image/jpeg"
                                         ),
                                         "data": file_item["base64"],
-                                    },
-                                    "metadata": image_metadata,
+                                    }
                                 }
                             )
                             image_count += 1
@@ -1569,21 +1572,13 @@ class ClaudeClient(BaseClient):
                                                 "media_type": "image/jpeg",
                                                 "data": frame["base64"],
                                             },
-                                            "metadata": {
-                                                "timestamp": frame.get("timestamp", 0),
-                                                "frame_number": frame.get(
-                                                    "frame_number", 0
-                                                ),
-                                                "video_source": file_item.get(
-                                                    "path", "unknown"
-                                                ),
-                                            },
+                                            # Removed metadata field
                                         }
                                     )
                                 image_count += len(video_frames)
 
                 # Process text files
-                text_content = prompt
+                
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if (
@@ -1616,31 +1611,16 @@ class ClaudeClient(BaseClient):
                     if file_data["type"] == "image" and "base64" in file_data:
                         # Check if model supports vision
                         if self.capabilities.get("vision", False):
-                            # Create image metadata for enhanced vision capabilities
-                            image_metadata = {}
+                            # Get file name and extension for additional context
+                            file_path = file_data.get("path", "image")
+                            file_name = os.path.basename(file_path)
+                            file_ext = os.path.splitext(file_path)[1]
+                            
+                            # Enhanced prompt that explicitly references the image
+                            enhanced_prompt = f"{final_prompt_content}\n\nPlease analyze this {file_ext} image file: {file_name}"
 
-                            # Add high resolution support for medical images
-                            if self.capabilities.get("high_resolution", False):
-                                # Add high resolution flag for detailed medical imagery
-                                image_metadata["high_resolution"] = True
-
-                                # Add detailed medical image analysis flag if applicable
-                                if self.capabilities.get(
-                                    "medical_imagery", False
-                                ) and any(
-                                    term in prompt.lower()
-                                    for term in [
-                                        "medical",
-                                        "mri",
-                                        "scan",
-                                        "x-ray",
-                                        "ct",
-                                        "diagnostic",
-                                    ]
-                                ):
-                                    image_metadata["detail"] = "high"
-
-                            # Format for Claude's multimodal API with enhanced vision
+                            # Format for Claude's multimodal API - without metadata which is causing errors
+                            # Important: Claude expects text AFTER images for best results
                             message_content = [
                                 {
                                     "type": "image",
@@ -1650,10 +1630,10 @@ class ClaudeClient(BaseClient):
                                             "mime_type", "image/jpeg"
                                         ),
                                         "data": file_data["base64"],
-                                    },
-                                    "metadata": image_metadata,
+                                    }
+                                    # Removed metadata field - not supported
                                 },
-                                {"type": "text", "text": final_prompt_content}, # Use final prompt content
+                                {"type": "text", "text": enhanced_prompt},
                             ]
 
                             messages.append(
@@ -1661,7 +1641,7 @@ class ClaudeClient(BaseClient):
                             )
 
                             logger.info(
-                                f"Sending enhanced vision image to Claude with metadata: {image_metadata}"
+                                f"Sending Image to Claude: {file_name} ({file_ext}) type={file_data.get('mime_type', 'image/jpeg')}"
                             )
                         else:
                             # Model doesn't support vision, use text only
@@ -1688,15 +1668,7 @@ class ClaudeClient(BaseClient):
                                             "media_type": "image/jpeg",
                                             "data": frame["base64"],
                                         },
-                                        "metadata": {
-                                            "timestamp": frame.get("timestamp", 0),
-                                            "frame_number": frame.get(
-                                                "frame_number", 0
-                                            ),
-                                            "video_source": file_data.get(
-                                                "path", "unknown"
-                                            ),
-                                        },
+                                        # Removed metadata field
                                     }
                                 )
 
@@ -1711,7 +1683,7 @@ class ClaudeClient(BaseClient):
                                 {"role": "user", "content": message_content}
                             )
 
-                            logger.info(
+                            logger.debug(
                                 f"Sending {len(message_content)-1} video frames to Claude"
                             )
                         else:
@@ -1788,7 +1760,7 @@ class ClaudeClient(BaseClient):
                         # Add budget_tokens if specified
                         if self.budget_tokens is not None:
                             # Ensure budget_tokens is less than max_tokens
-                            max_tokens = request_params.get("max_tokens", MAX_TOKENS)
+                            max_tokens = request_params.get("max_tokens", MAX_TOKENS*2)
                             if self.budget_tokens < max_tokens:
                                 request_params["budget_tokens"] = self.budget_tokens
                                 logger.debug(
@@ -1823,7 +1795,7 @@ class ClaudeClient(BaseClient):
             response = None # Initialize response
             if "reasoning" in request_params:
                 # Check if this is actually a 3.7 model
-                if "claude-3-7" in self.model.lower():
+                if "claude-3.7" in self.model.lower():
                     # Keep the parameter for 3.7 models, but handle errors gracefully
                     try:
                         # Try with all advanced params first, but be prepared to fall back
@@ -1943,6 +1915,8 @@ class OpenAIClient(BaseClient):
             "o1",
             "o1-preview",
             "o3",
+            "o4-mini",
+            "o4-mini-high"
         ]  # Models that support reasoning_effort
         try:
             super().__init__(
@@ -1992,26 +1966,31 @@ class OpenAIClient(BaseClient):
                 mapped_role = role_map.get(msg["role"])
                 if mapped_role:  # Only include roles OpenAI understands
                     formatted_messages.append({"role": mapped_role, "content": msg["content"]})
-
+        text_content = final_prompt_content # Start with the determined prompt content
         # Handle file data for OpenAI
         if file_data:
             if isinstance(file_data, list) and file_data:
                 # Format for OpenAI's vision API with multiple images
-                content_parts = [{"type": "message", "text": prompt}]
+                content_parts = []
+                
+                # Start with the text content
+                content_parts.append({"type": "text", "text": final_prompt_content})
 
-                # Add all images
+                # Add all images with proper formatting
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if file_item["type"] == "image" and "base64" in file_item:
-                            content_parts.append(
-                                {
-                                    "type": "image",
-                                    "image": {"base64": file_item["base64"]},
+                            # Use the correct image format for OpenAI
+                            mime_type = file_item.get("mime_type", "image/jpeg")
+                            content_parts.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{file_item['base64']}"
                                 }
-                            )
+                            })
 
                 # Add text content from text/code files to the prompt
-                text_content = final_prompt_content # Start with the determined prompt content
+                #text_content = final_prompt_content # Start with the determined prompt content
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if (
@@ -2020,42 +1999,50 @@ class OpenAIClient(BaseClient):
                         ):
                             text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
 
-                # Update the text part with combined text content
-                content_parts[0]["message"] = text_content
+                # If we added text content, update the first text part or create it if needed
+                if text_content != final_prompt_content:
+                    if content_parts and content_parts[0]["type"] == "text":
+                        content_parts[0]["text"] = text_content
+                    else:
+                        content_parts.insert(0, {"type": "text", "text": text_content})
 
-                formatted_messages.append({"role": "user", "text": content_parts})
+                formatted_messages.append({"role": "user", "content": content_parts})
+                logger.info(f"Added multimodal content with {sum(1 for part in content_parts if part['type'] == 'image_url')} images to OpenAI request")
             else:
                 if isinstance(file_data, dict) and "type" in file_data:
                     if file_data["type"] == "image" and "base64" in file_data:
                         # Check if model supports vision
                         if self.capabilities.get("vision", True):
                             # Format for OpenAI's vision API
-                            formatted_messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "message", "text": final_prompt_content}, # Use final prompt content
-                                        {
-                                            "type": "image_url",
-                                            "image_url": {
-                                                "url": f"data:image/jpeg;base64,{file_data['base64']}"
-                                            },
-                                        },
-                                    ],
-                                }
-                            )
+                            mime_type = file_data.get("mime_type", "image/jpeg")
+                            
+                            # Create a message with both text and image content in the correct format
+                            formatted_messages.append({
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": text_content},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{file_data['base64']}"
+                                        }
+                                    }
+                                ]
+                            })
+                            
+                            logger.debug(f"Added single image with prompt to OpenAI request (mime_type: {mime_type})")
                     else:
                         # Model doesn't support vision, use text only
                         logger.warning(
                             f"Model {self.model} doesn't support vision. Using text-only prompt."
                         )
-                        formatted_messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
+                        formatted_messages.append({"role": "user", "content": text_content}) # Use final prompt content
                 elif (
                     file_data["type"] in ["text", "code"]
                     and "text_content" in file_data
                 ):
                     # Standard prompt with text content
-                    content = f"{file_data.get('text_content', '')}\n\n{final_prompt_content}" # Use final prompt content
+                    content = f"{file_data.get('text_content', '')}\n\n{text_content}" # Use final prompt content
                     formatted_messages.append({"role": "user", "content": content})
                 else:
                     logger.warning(f"Invalid file data: {file_data}")
@@ -2079,7 +2066,7 @@ class OpenAIClient(BaseClient):
                 self.use_responses_api and model_supports_responses
             ):  # Temporarily disable responses API
                 # Use the newer responses API
-                logger.info(f"Using responses API with model {self.model}")
+                logger.debug(f"Using responses API with model {self.model}")
 
                 # Extract the system message if it exists
                 system_message = None
@@ -2109,23 +2096,24 @@ class OpenAIClient(BaseClient):
                     for item in last_user_message["content"]:
                         if item.get("type") == "text":
                             converted_content.append(
-                                {"type": "message", "message": item["text"]}
+                                {"type": "input_text", "text": item["text"]}
                             )
                         elif item.get("type") == "image":
                             # Handle image in the OpenAI-specific format
                             converted_content.append(
                                 {
-                                    "type": "image",
+                                    "type": "input_image",
                                     "image_url": {
                                         "url": f"data:{item['image'].get('mime_type', 'image/jpeg')};base64,{item['image']['base64']}"
                                     },
                                 }
                             )
-                    content_param = converted_content
+                    # Wrap the content in a user role with proper type names
+                    content_param = [{"role": "user", "content": converted_content}]
                 # Handle if file_data contains multiple images
                 elif file_data and isinstance(file_data, list):
                     # First add the text prompt
-                    converted_content = [{"type": "message", "text": final_prompt_content}]
+                    converted_content = [{"type": "input_text", "text": final_prompt_content}]
 
                     # Then add each image
                     for item in file_data:
@@ -2133,44 +2121,55 @@ class OpenAIClient(BaseClient):
                             mime_type = item.get("mime_type", "image/jpeg")
                             converted_content.append(
                                 {
-                                    "type": "image",
+                                    "type": "input_image",
                                     "image_url": {
                                         "url": f"data:{mime_type};base64,{item['base64']}"
                                     },
                                 }
                             )
 
-                    content_param = converted_content
-                    logger.info(
+                    # Wrap the content in a user role
+                    content_param = [{"role": "user", "content": converted_content}]
+                    logger.debug(
                         f"Added {len(content_param)-1} images to responses API request"
                     )
                 # Handle if file_data is a single image
                 elif (
                     file_data
-                    and isinstance(file_data, dict)
+                   # and isinstance(file_data, dict)
                     and file_data.get("type") == "image"
                     and "base64" in file_data
                 ):
                     mime_type = file_data.get("mime_type", "image/jpeg")
                     content_param = [
-                        {"role": "user", "type": "text", "message": final_prompt_content},
-                        {"role": "user", 
-                            "type": "image",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{file_data['base64']}"
-                            },
-                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": final_prompt_content},
+                                {
+                                    "type": "input_image",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{file_data['base64']}"
+                                    }
+                                }
+                            ]
+                        }
                     ]
                     logger.info("Added 1 image to responses API request")
                 elif isinstance(last_user_message["content"], str):
                     # Simple text content
                     content_param = [
-                        {"role": "user", "content": last_user_message["content"]}
+                        {"role": "user", "content": [{"type": "input_text", "text": last_user_message["content"]}]}
+                    ]
+                else:
+                    # Fallback to text content
+                    content_param = [
+                        {"role": "user", "content": [{"type": "input_text", "text": final_prompt_content}]}
                     ]
 
                 # Check if content is too large and needs chunking
                 # Each model has different token limits, but we'll use a conservative approach
-                MAX_INPUT_SIZE = 100000  # Characters as a rough estimate
+                MAX_INPUT_SIZE = 1000000  # Characters as a rough estimate
                 total_text_length = sum(
                     len(item.get("text", ""))
                     for item in content_param
@@ -2241,7 +2240,7 @@ class OpenAIClient(BaseClient):
 
                     # Replace content_param with chunked content
                     content_param = chunked_content
-                    logger.info(f"Content chunked into {len(content_param)} parts")
+                    logger.debug(f"Content chunked into {len(content_param)} parts")
 
                 # Set model-specific parameters
                 # Use the actual model name, don't override it
@@ -2254,7 +2253,7 @@ class OpenAIClient(BaseClient):
                         # actually invoke the new endpoint
                         response = self.client.responses.create(
                             model=self.model,
-                            input=content_param,   # or content=…, per SDK spec
+                            input=content_param,  # Direct array of input items, not wrapped in a role object
                             instructions=current_instructions,
                             max_output_tokens=3192,
                             temperature=0.7,
@@ -2267,10 +2266,10 @@ class OpenAIClient(BaseClient):
                         # first time, no previous response
                         response = self.client.responses.create(
                             model=self.model,
-                            input=content_param,
+                            input=content_param,  # Direct array of input items, not wrapped in a role object
                             instructions=current_instructions,
                             max_output_tokens=3192,
-                            temperature=0.7,
+                            #temperature=0.7,
                             timeout=90,
                             stream=False,
                         )
@@ -2305,6 +2304,10 @@ class OpenAIClient(BaseClient):
                             snippets = []
                             for msg in messages:
                                 for part in msg.content:
+                                    if hasattr(part, 'text'):
+                                        snippets.append(part.text)
+                                    elif isinstance(part, str):
+                                        snippets.append(part)
                                     if hasattr(part, "text"):
                                         snippets.append(part.text)
                             # join with spacing so multiple parts don’t run together
@@ -2346,36 +2349,6 @@ class OpenAIClient(BaseClient):
                     file_data=file_data,
                     model_config=model_config,
                 )
-
-                # Parse the response according to the documented format
-                if hasattr(response, "data") and response.data:
-                    # Loop through the messages to find assistant response
-                    for message in response.data:
-                        if message.role == "assistant":
-                            # Extract text from content
-                            text_parts = []
-                            for content_item in message.content:
-                                if content_item.type == "text":
-                                    text_parts.append(content_item.text)
-
-                            if text_parts:
-                                return "\n".join(text_parts)
-
-                    # Fallback if no assistant message found but data exists
-                    try:
-                        last_message = response.data[-1]
-                        if hasattr(last_message, "content") and last_message.content:
-                            for content_item in last_message.content:
-                                if content_item.type == "text":
-                                    return content_item.text
-                    except (IndexError, AttributeError) as e:
-                        logger.warning(f"Could not extract text from response: {e}")
-
-                    # Last resort fallback
-                    return str(response)
-
-                # Fallback for any other response format
-                return str(response)
             elif any(
                 model_name in self.model.lower()
                 for model_name in self.reasoning_compatible_models
@@ -2400,7 +2373,7 @@ class OpenAIClient(BaseClient):
                     # actually invoke the new endpoint
                     response = self.client.responses.create(
                         model=self.model,
-                        input=content_param,
+                        input=content_param,  # Direct array of input items, not wrapped in a role object
                         reasoning=self.reasoning_level,
                         instructions=current_instructions,
                         max_output_tokens=13192,
@@ -2412,13 +2385,11 @@ class OpenAIClient(BaseClient):
                 else:
                     response = self.client.responses.create(
                         model=self.model,
-                        input=content_param,
+                        input=content_param,  # Direct array of input items, not wrapped in a role object
                         temperature=1.0,
                         instructions=current_instructions,
                         reasoning=self.reasoning_level,
                         max_output_tokens=13192,
-                        #max_tokens=13192,
-                        #reasoning_effort=reasoning_effort,
                         timeout=90,
                         stream=False,
                     )
@@ -2438,7 +2409,7 @@ class OpenAIClient(BaseClient):
             logger.error(f"OpenAI generate_response error: {e}")
             # Fallback to chat completions API if responses API fails
             if self.use_responses_api:
-                logger.info("Falling back to chat completions API")
+                logger.warning("Falling back to chat completions API")
                 self.use_responses_api = False
                 return self.generate_response(
                     prompt,
@@ -2468,7 +2439,7 @@ class PicoClient(BaseClient):
 
     def test_connection(self) -> None:
         """Test Ollama connection"""
-        logger.info("Ollama connection test not yet implemented")
+        logger.debug("Ollama connection test not yet implemented")
         logger.debug(MemoryManager.get_memory_usage())
 
     def generate_response(
@@ -2588,7 +2559,7 @@ class MLXClient(BaseClient):
                 },
             )
             response.raise_for_status()
-            logger.info("MLX connection test successful")
+            logger.debug("MLX connection test successful")
             logger.debug(MemoryManager.get_memory_usage())
         except Exception as e:
             logger.error(f"MLX connection test failed: {e}")
@@ -2698,7 +2669,7 @@ class MLXClient(BaseClient):
 
 
 
-class OllamaClient(BaseClient):
+class OllamaClientLangchain(BaseClient):
     """Client for local Ollama model interactions using LangChain."""
 
     def __init__(self, mode: str, domain: str, role: str = None, model: str = "phi4:latest"):
@@ -2711,7 +2682,7 @@ class OllamaClient(BaseClient):
                 # base_url=self.base_url # ChatOllama defaults to localhost:11434
                 # Add other default options if needed, e.g., num_ctx, seed
             )
-            logger.info(f"Initialized LangChain Ollama client for model: {self.model}")
+            logger.debug(f"Initialized LangChain Ollama client for model: {self.model}")
         except Exception as e:
             logger.error(f"Failed to initialize LangChain ChatOllama: {e}", exc_info=True)
             self.lc_client = None # Ensure client is None if init fails
@@ -2757,15 +2728,18 @@ class OllamaClient(BaseClient):
         # Prepare LangChain messages
         lc_messages = []
         if current_instructions:
-            lc_messages.append(SystemMessage(content=current_instructions))
+            # Create a PromptTemplate from the instructions string
+            system_prompt_template = PromptTemplate(template=current_instructions)
+            # Pass the PromptTemplate to the SystemMessagePromptTemplate
+            lc_messages.append(SystemMessage(prompt=system_prompt_template))
 
         for msg in history:
             msg_role = msg.get("role")
             msg_content = msg.get("content", "")
             if msg_role in ["user", "human"]:
-                lc_messages.append(HumanMessage(content=msg_content))
+                lc_messages.append(HumanMessage(prompt=PromptTemplate(template=msg_content, input_variables=[])))
             elif msg_role == "assistant":
-                lc_messages.append(AIMessage(content=msg_content))
+                lc_messages.append(AIMessage(prompt=PromptTemplate(template=msg_content, input_variables=[])))
             # Ignore system messages in history as it's handled above
 
         # Prepare final user message content (text + optional images)
@@ -2794,6 +2768,29 @@ class OllamaClient(BaseClient):
 
         # Add the final HumanMessage with potentially multimodal content
         lc_messages.append(HumanMessage(content=user_message_content_parts))
+        # Update the client configuration for multimodal content
+        if images_base64:
+            # Configure client for vision model if we have images
+            if not any(vm in self.model.lower() for vm in ["llava", "bakllava", "vision"]):
+                logger.warning(f"Model {self.model} may not support vision. Attempting request anyway.")
+            
+            # For LangChain's ChatOllama, image content should already be properly formatted
+            # in user_message_content_parts above with image_url entries
+            self.lc_client.model_kwargs.update({
+            "num_ctx": 16384,  # Increase context for images
+            "temperature": 0.7,
+            "top_k": 40,
+            "top_p": 0.9,
+            "repeat_penalty": 1.1
+            })
+
+        # Check if we have video frames to process
+        if any(isinstance(item, dict) and item.get("type") == "video" for item in (file_data if isinstance(file_data, list) else [file_data] if file_data else [])):
+            logger.info("Processing video frames for analysis")
+            # Video frames are already handled in the images_base64 list above
+            # Add video-specific context to the prompt if needed
+            if user_message_content_parts[0]["text"]:
+                user_message_content_parts[0]["text"] += "\n\nPlease analyze the sequence of video frames."
 
         # Prepare request options from model_config
         request_options = {}
@@ -2829,7 +2826,7 @@ class OllamaClient(BaseClient):
             return f"Error generating response via LangChain: {e}"
 
 
-class OllamaClientLegacy(BaseClient):
+class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
 
     # Initialize the client

@@ -42,9 +42,9 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-HUMAN_MODEL = "gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+HUMAN_MODEL = "ollama-gemma3:12b-it-q4_K_M"  #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
 AI_MODEL = "gpt-4.1-nano" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
-DEFAULT_ROUNDS=3
+DEFAULT_ROUNDS=4
 
 # Set environment variables for these model names so arbiter can use them
 os.environ["AI_MODEL"] = AI_MODEL
@@ -53,10 +53,51 @@ os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 CONFIG_PATH = "config.yaml"
 TOKENS_PER_TURN = 3192
 MAX_TOKENS = TOKENS_PER_TURN
-DEFAULT_PROMPT = """Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
+DEFAULT_PROMPT = """
+Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
+Consider in the context of the conversational recall of ChatGPT as an example:
+
+The “Reference chat history” feature in AI systems like ChatGPT allows the model to utilize past interactions with a user to provide more personalized and contextually relevant responses. Here’s how it works and how you can manage it:
+
+How “Reference Chat History” Works
+Personalization: When enabled, the system uses information from previous conversations to tailor future interactions based on your interests, preferences, and past discussions.
+
+Dynamic Learning: Unlike saved memories, which are explicitly retained until deleted, “chat history” is more dynamic. The AI updates what it considers useful to remember over time, potentially altering its focus as new interactions occur.
+
+Enabling or Disabling “Reference Chat History”
+Access Settings: You can turn this feature on or off in the Personalization section of your settings.
+
+Dependency on Saved Memories:
+
+Turning off “Reference saved memories” will also disable “Reference chat history.”
+If “Reference saved memories” is enabled, you can still choose to turn off “Reference chat history.”
+Effects of Disabling “Reference Chat History”
+Deletion of Information: When disabled, the information from past chats that was being referenced will be deleted from the system within 30 days.
+
+Storage Limitations: There is no specified storage limit for what can be referenced when this feature is enabled.
+
+Managing What ChatGPT Remembers
+Reviewing Memories: You can ask ChatGPT to recall what it remembers about you. This helps in understanding how your information is being used.
+
+Forgetting Information:
+
+Request ChatGPT to forget specific details from past conversations.
+Once forgotten, the AI will not use that information in future responses, though the original conversation remains unless deleted by you.
+Full Deletion of Information
+Memory On: If memory is active and you want to completely remove something:
+
+Delete both the saved memories in settings and the specific chat where the information was shared.
+Chat History Off: Turning off “Reference chat history” will lead to the deletion of all referenced past conversation data from the system within 30 days.
+
+Key Considerations
+Data Retention: Even with “chat history” turned off, original chats remain unless manually deleted by you.
+
+Privacy and Control: Users have control over what is remembered or forgotten, allowing for a balance between personalization and privacy.
+
+This feature aims to enhance user experience by making interactions more relevant while providing users with the tools to manage their data privacy effectively.
 """
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
 )
@@ -108,6 +149,7 @@ GEMINI_MODELS = {
     "gemini-2.0-pro": {"model": "gemini-2.0-pro-exp-02-05", "multimodal": True},
     "gemini-2.5-pro-exp": {"model": "gemini-2.5-pro-exp-03-25", "multimodal": True},
     "gemini-2.5-flash-preview": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
+    "gemini-2.5-pro-preview-03-25": {"model": "gemini-2.5-pro-preview-03-25", "multimodal": True},
     "gemini-2.0-flash-exp": {"model": "gemini-2.0-flash-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
@@ -920,6 +962,7 @@ class ConversationManager:
             # Pass the entire list of file data to the model client
             if file_data_list:
                 file_data = file_data_list
+                logger.info(f"Prepared {len(file_data_list)} files for model consumption")
         # Handle dictionary format for multiple files
         elif isinstance(file_config, dict) and "files" in file_config:
             # Multiple files case using dictionary
@@ -989,6 +1032,7 @@ class ConversationManager:
             # Pass the entire list of file data to the model client
             if file_data_list:
                 file_data = file_data_list
+                logger.info(f"Prepared {len(file_data_list)} files for model consumption")
 
         # Handle single FileConfig object
         elif file_config:
@@ -1097,7 +1141,10 @@ class ConversationManager:
                     file_context += f" - FULL VIDEO CONTENT INCLUDED (in {file_data['num_chunks']} chunks)"
                     if "fps" in file_data:
                         file_context += f" at {file_data['fps']} fps"
-                initial_prompt = f"{file_context}\n\n{initial_prompt}"
+                # Add file context to the prompt
+                # Include a distinct marker to ensure models recognize this is about a file
+                initial_prompt = f"FILE CONTEXT: {file_context}\n\n{initial_prompt}"
+                logger.info(f"Added file context to prompt for single file: {file_config.path}")
 
             except Exception as e:
                 logger.error(f"Error processing file: {e}")
@@ -1192,7 +1239,7 @@ class ConversationManager:
 
         self.conversation_history.append({"role": "system", "content": f"{core_topic}"})
 
-        logger.info(f"Starting conversation with topic: {core_topic}")
+        logger.info(f"SYSTEM: {core_topic}")
 
         # Get client instances
         human_client = self._get_client(human_model)
@@ -1240,28 +1287,50 @@ class ConversationManager:
             return []
 
         # Check if models support vision if file is image/video
-        if file_data and file_data["type"] in ["image", "video"]:
-            human_capabilities = detect_model_capabilities(human_model)
-            ai_capabilities = detect_model_capabilities(ai_model)
-
-            if not human_capabilities.get("vision", False) or not ai_capabilities.get(
-                "vision", False
-            ):
-                logger.warning("One or both models do not support vision capabilities")
-                # We'll continue but log a warning
-
-                # If AI model doesn't support vision, we'll convert image to text description
-                if (
-                    not ai_capabilities.get("vision", False)
-                    and file_data["type"] == "image"
-                ):
-                    # Add a note that this is an image description
-                    dimensions = file_data.get("dimensions", (0, 0))
-                    file_data = {
-                        "type": "text",
-                        "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
-                        "path": file_data.get("path", ""),
-                    }
+        # Handle both single file and list of files cases
+        if file_data:
+            # Determine if we need to check vision capabilities
+            has_visual_media = False
+            is_file_list = isinstance(file_data, list)
+            
+            if is_file_list:
+                # For list of files, check if any are visual media
+                has_visual_media = any(
+                    isinstance(item, dict) and item.get("type") in ["image", "video"]
+                    for item in file_data
+                )
+            elif isinstance(file_data, dict) and file_data.get("type") in ["image", "video"]:
+                # Single file case
+                has_visual_media = True
+                
+            # Only check capabilities if we have visual media
+            if has_visual_media:
+                human_capabilities = detect_model_capabilities(human_model)
+                ai_capabilities = detect_model_capabilities(ai_model)
+                
+                if not human_capabilities.get("vision", False) or not ai_capabilities.get("vision", False):
+                    logger.warning("One or both models do not support vision capabilities")
+                    
+                    # If AI model doesn't support vision, convert images to text description
+                    if not ai_capabilities.get("vision", False):
+                        if is_file_list:
+                            # Convert each image in the list to text
+                            for i, item in enumerate(file_data):
+                                if isinstance(item, dict) and item.get("type") == "image":
+                                    dimensions = item.get("dimensions", (0, 0))
+                                    file_data[i] = {
+                                        "type": "text",
+                                        "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
+                                        "path": item.get("path", ""),
+                                    }
+                        elif isinstance(file_data, dict) and file_data.get("type") == "image":
+                            # Convert single image to text
+                            dimensions = file_data.get("dimensions", (0, 0))
+                            file_data = {
+                                "type": "text",
+                                "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
+                                "path": file_data.get("path", ""),
+                            }
         human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic}. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION. Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. BE GOAL ORIENTED and FORCE the AI to generate ACTUAL IMMEDIATE OUTPUT for the goal, not just discuss approaches. If the goal is to write a story, MAKE the AI start writing the actual story right away. If it's to create code, MAKE it write actual code. IMMEDIATELY DEMAND CONCRETE OUTPUTS, not theoretical discussion. If the AI starts discussing approaches instead of producing output, forcefully redirect it to the actual creation task. Be angry or stern if needed!! FIRSTLY, SUMMARIZE THE GOAL ({core_topic}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. DEMAND THE AI PRODUCE THE REQUESTED OUTPUT - NOT DISCUSS HOW IT WOULD DO IT. You can begin by offering a specific starting point if it helps (e.g., for story writing, suggest a specific opening line or character).",
         ai_system_instruction=f"You are an AI assistant focused on PRODUCING CONCRETE OUTPUT for goals. When given a goal to create something (story, code, poem, plan, etc.), IMMEDIATELY START CREATING IT rather than discussing approaches. You are an expert in the topic of {core_topic}. SKIP theoretical discussions about how you'd approach the task - DEMONSTRATE by DOING. If asked to write a story, START WRITING THE ACTUAL STORY immediately. If asked to create code, WRITE THE ACTUAL CODE immediately. Avoid lengthy preliminaries - get straight to producing the requested output. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED. DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
         ai_response = core_topic
@@ -1284,7 +1353,7 @@ class ConversationManager:
                     role="user",
                     mode=self.mode,
                     model_type=human_model,
-                    file_data=file_data,  # Only pass file data on first turn
+                    file_data=file_data,  # Pass file data to human model in ai-ai mode
                     client=human_client,
                 )
 
@@ -1308,16 +1377,12 @@ class ConversationManager:
                     role="assistant",
                     mode=self.mode,
                     model_type=ai_model,
-                    file_data=file_data,
+                    file_data=file_data,  # Pass file_data to both models in ai-ai mode
                     client=ai_client,
                 )
                 logger.debug(
                     f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n"
                 )
-
-            # Clean up unused clients
-            # self.cleanup_unused_clients()
-
             return self.conversation_history
 
         finally:
@@ -1475,7 +1540,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
     try:
         # If report is a string, we're just passing through the Gemini report
         if isinstance(report, str):
-            logger.info("Using pre-generated arbiter report from Gemini")
+            logger.debug("Using pre-generated arbiter report from Gemini")
             # The report is already saved by the ground_assertions method in arbiter_v4.py
             return
             
@@ -1547,7 +1612,7 @@ async def save_metrics_report(
                 analysis_data = analyze_conversations(
                     ai_ai_conversation, human_ai_conversation
                 )
-                logger.info("Metrics report generated successfully")
+                logger.debug("Metrics report generated successfully")
                 
                 # Save the metrics report to a file
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1663,12 +1728,12 @@ async def save_metrics_report(
                     with open(metrics_filename, "w") as f:
                         f.write(html_content)
                     
-                    logger.info(f"Basic metrics report saved as {metrics_filename}")
+                    logger.debug(f"Basic metrics report saved as {metrics_filename}")
                 else:
                     # For other value errors, rethrow
                     raise
         else:
-            logger.info("Skipping metrics report - empty conversations")
+            logger.warning("Skipping metrics report - empty conversations")
     except Exception as e:
         logger.error(f"Failed to generate metrics report: {e}")
         # Create an error report file
@@ -1700,7 +1765,7 @@ async def save_metrics_report(
             with open(error_filename, "w") as f:
                 f.write(html_content)
             
-            logger.info(f"Error report saved as {error_filename}")
+            logger.debug(f"Error report saved as {error_filename}")
         except Exception as inner_e:
             logger.error(f"Failed to save error report: {inner_e}")
 
@@ -1743,11 +1808,11 @@ async def main():
 
     try:
         available_models = manager.get_available_models()
-        logger.info("Available models by category:")
+        logger.debug("Available models by category:")
         for category, models in available_models.items():
-            logger.info(f"  {category}: {len(models)} models")
+            logger.debug(f"  {category}: {len(models)} models")
             for model in models:
-                logger.info(f"    - {model}")
+                logger.debug(f"    - {model}")
     except Exception as e:
         logger.error(f"Error displaying available models: {e}")
 
@@ -1828,7 +1893,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                 if "Fatal connection error" in error_str and retry_count < max_retries:
                     retry_count += 1
                     wait_time = retry_count * 5  # Progressive backoff: 5s, then 10s
-                    logger.info(f"Retrying in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
+                    logger.debug(f"Retrying in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
                     time.sleep(wait_time)
                     continue
                 else:
@@ -1908,7 +1973,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             ]
 
         safe_prompt = _sanitize_filename_part(
-            initial_prompt[:20] + "_" + human_model + "_" + ai_model
+            initial_prompt[:15] + "_" + human_model[:8] + "_" + ai_model[:8]
         )
         time_stamp = datetime.datetime.now().strftime("%m%d%H%M")
         filename = f"conv-humai_{safe_prompt}_{time_stamp}.html"
