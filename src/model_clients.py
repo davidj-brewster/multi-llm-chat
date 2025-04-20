@@ -1578,9 +1578,32 @@ class ClaudeClient(BaseClient):
                                 image_count += len(video_frames)
 
                 # Process text files
-                
+                if "image" in file_item and file_item["image"]:
+                    for frame in file_item["image"][
+                        : self.max_images_per_request - image_count
+                    ]:
+                        message_content.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": file_item.get(
+                                        "mime_type", "image/jpeg"
+                                    ),
+                                    "data": file_item["base64"],
+                                }
+                            }
+                        )
+                    image_count += len(video_frames)               
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
+                        if (
+                            file_item["type"] in ["text", "code"]
+                            and "text_content" in file_item
+                        ):
+                            text_content = f"{text_content}\n\n[File content: {file_item.get('path', '')}]\n\n{file_item['text_content']}"
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "image" in file_item:
                         if (
                             file_item["type"] in ["text", "code"]
                             and "text_content" in file_item
@@ -1656,7 +1679,7 @@ class ClaudeClient(BaseClient):
                         message_content = []
 
                         # Process key frames if available
-                        if "key_frames" in file_data and file_data["key_frames"]:
+                        if "key_frames" in file_data and file_data["key_frames"] or file_data["image"] and "base64" in file_data:
                             for i, frame in enumerate(
                                 file_data["key_frames"][: self.max_images_per_request]
                             ):
@@ -2061,6 +2084,8 @@ class OpenAIClient(BaseClient):
             model_supports_responses = any(
                 m in self.model.lower() for m in self.responses_compatible_models
             )
+            # Handle multimodal content
+            content_param = []
 
             if (
                 self.use_responses_api and model_supports_responses
@@ -2086,8 +2111,6 @@ class OpenAIClient(BaseClient):
                     # Fallback if no user message found
                     last_user_message = {"role": "user", "content": final_prompt_content}
 
-                # Handle multimodal content
-                content_param = []
 
                 # Process content based on its type
                 if isinstance(last_user_message["content"], list):
@@ -2111,6 +2134,28 @@ class OpenAIClient(BaseClient):
                     # Wrap the content in a user role with proper type names
                     content_param = [{"role": "user", "content": converted_content}]
                 # Handle if file_data contains multiple images
+                elif file_data and isinstance(file_data, dict):
+                    # First add the text prompt
+                    converted_content = [{"type": "input_text", "text": final_prompt_content}]
+
+                    # Then add each image
+                    for item in file_data:
+                        if item.get("type") == "image" and "base64" in item:
+                            mime_type = item.get("mime_type", "image/jpeg")
+                            converted_content.append(
+                                {
+                                    "type": "input_image",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{item['base64']}"
+                                    },
+                                }
+                            )
+
+                    # Wrap the content in a user role
+                    content_param = [{"role": "user", "content": converted_content}]
+                    logger.debug(
+                        f"Added {len(content_param)-1} images to responses API request"
+                    )
                 elif file_data and isinstance(file_data, list):
                     # First add the text prompt
                     converted_content = [{"type": "input_text", "text": final_prompt_content}]
@@ -2367,14 +2412,17 @@ class OpenAIClient(BaseClient):
                 logger.debug(
                     f"Using reasoning_effort={reasoning_effort} for model {self.model} (from reasoning_level={self.reasoning_level})"
                 )
-
-                # O1/O3 model with reasoning support
+                reasoning={
+                        "effort": "high",
+                        "summary": "detailed" # auto, concise, or detailed (currently only supported with o4-mini and o3)
+                }
+                # O1/O3/04-mini model with reasoning support
                 if self.last_response_id:
                     # actually invoke the new endpoint
                     response = self.client.responses.create(
                         model=self.model,
                         input=content_param,  # Direct array of input items, not wrapped in a role object
-                        reasoning=self.reasoning_level,
+                        reasoning=reasoning,
                         instructions=current_instructions,
                         max_output_tokens=13192,
                         temperature=1.0,
@@ -2388,8 +2436,8 @@ class OpenAIClient(BaseClient):
                         input=content_param,  # Direct array of input items, not wrapped in a role object
                         temperature=1.0,
                         instructions=current_instructions,
-                        reasoning=self.reasoning_level,
-                        max_output_tokens=13192,
+                        reasoning=reasoning,
+                        max_output_tokens=8192,
                         timeout=90,
                         stream=False,
                     )
@@ -2397,9 +2445,9 @@ class OpenAIClient(BaseClient):
                 return response.choices[0].message.content
             else:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.model,
                     messages=formatted_messages,
-                    temperature=0.8,
+                    temperature=0.7,
                     max_tokens=MAX_TOKENS,
                     timeout=90,
                     stream=False,

@@ -83,6 +83,12 @@ SUPPORTED_MODELS = {
         "o3-reasoning-medium",
         "o3-reasoning-low",
     ],
+    "gpt-4.1": ["gpt-4.1"],  # All Ollama models supported
+    "gpt-4.1-mini": ["gpt-4.1-mini"],  # All Ollama models supported
+    "gpt-4.1-nano": ["gpt-4.1-nano"],  # All Ollama models supported
+    "o4-mini": ["o4-mini"],  # All Ollama models supported
+    "o4-mini-high": ["o4-mini-high"],  # All Ollama models supported
+    "o3": ["o3"],  # All Ollama models supported
     "ollama": ["*"],  # All Ollama models supported
     "mlx": ["*"],  # All MLX models supported
 }
@@ -391,6 +397,18 @@ def detect_model_capabilities(model_config: Union[ModelConfig, str]) -> Dict[str
             "gemini-2.0-flash-exp",
             "chatgpt-latest",
             "gemini",
+            "gemma",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            "o4-mini",
+            "o4-mini-high",
+            "o1",
+            "o1-preview",
+            "o3",
+            "o3-reasoning-high",
+            "o3-reasoning-medium",
+            "o3-reasoning-low"
         ]
 
         # Ollama vision-capable models

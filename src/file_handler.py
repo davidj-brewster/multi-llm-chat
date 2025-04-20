@@ -191,7 +191,7 @@ class FileConfig:
                     "claude-3-7-reasoning-low",
                     "claude-3-7-reasoning-none",
                 ],
-                "openai": ["gpt-4", "gpt-4o"],
+                "openai": ["gpt-4", "gpt-4o","gpt4.1", "gpt4.1-mini", "gpt4.1-nano"],
                 "ollama": ["llava", "gemma3", "phi4"],
             },
         },

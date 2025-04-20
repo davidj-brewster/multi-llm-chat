@@ -54,6 +54,8 @@ SUPPORTED_MODELS = {
         "o3-reasoning-low",
     ],
     "gpt-4.1": ["gpt-4.1"],  # All Ollama models supported
+    "gpt-4.1-mini": ["gpt-4.1-mini"],  # All Ollama models supported
+    "gpt-4.1-nano": ["gpt-4.1-nano"],  # All Ollama models supported
     "o4-mini": ["o4-mini"],  # All Ollama models supported
     "o4-mini-high": ["o4-mini-high"],  # All Ollama models supported
     "o3": ["o3"],  # All Ollama models supported
@@ -415,9 +417,9 @@ class ModelConfig:
         if not provider:
             raise ValueError(f"Unsupported model type: {self.type}")
 
-        if provider not in ["ollama", "mlx"]:  # Local models support any variant
-            if self.type not in SUPPORTED_MODELS[provider]:
-                raise ValueError(f"Unsupported model variant: {self.type}")
+        #if provider not in ["ollama", "mlx"]:  # Local models support any variant
+        #    if self.type not in SUPPORTED_MODELS[provider]:
+        #        raise ValueError(f"Unsupported model variant: {self.type}")
 
         # Validate role
         if self.role not in ["human", "assistant"]:
@@ -580,3 +582,6 @@ class DiscussionConfig:
         # Convert input_file dict to FileConfig
         if isinstance(self.input_file, dict):
             self.input_file = FileConfig(**self.input_file)
+        elif self.input_file:
+            self.input_file = FileConfig(self.input_file)
+        logger.debug(f"Input file: {self.input_file}")
