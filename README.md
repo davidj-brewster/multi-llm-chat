@@ -2,6 +2,8 @@
 
 ## Overview
 
+The tl;dr is that Engagement quality is a stronger predictor of actual conversational ability than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness. It's much easier on our precious resources to train models on dialogue that billions of GPU compute hours i.e., to increase model size.
+
 AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
 
 - **Model Collaboration**: Multiple AI models working together in different roles
@@ -14,12 +16,10 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
 ## As a versatile AI client
 
 ### Multi-Model and Multi-modal client API Support!**
-  - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support, and new Messages API
+  - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support, and new Messages API and Reasoning efforts/tokens
   - Gemini (Flash/Pro/Thinking) - Multimodal w Video + Image support
-  - Claude Sonnet 3.7 thinking support with configurable thinking tokens
-  - OpenAI (GPT 4o/o1/o3/4.5 models) - Multimodal with Image support and new Response API
-  - o1 + o3 with reasoning effort configuration support
-  - Ollama (e.g., llama3.2-vision, gemma3, phi4, ...) - Multimodal incl. Video
+  - OpenAI (GPT 4o/o1/o3/4.5/4.1/o4 models) - Multimodal with Image support and new Response API with reasoning effort configuration support
+  - Ollama (e.g., llama3.2-vision, gemma3, phi4, ...) - Multimodal incl. Video via langchain or native ollama python API
   - MLX (Local inference on Apple Silicon)
   - Pico client via Ollama API
   - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
@@ -50,13 +50,13 @@ The framework employs multi-dimensional analysis to understand and optimize conv
 
 ### Context-Adaptive Adaptation
 
-The system dynamically evolves System instructions to each Model participant, based on the ContextVector:
+Dynamic System instructions to each Model participant, based on the ContextVector:
 
 * `semantic_coherence`
 
-Why: Measures how well consecutive messages relate to each other, indicating topic focus and logical flow. A low score suggests the conversation might be drifting, becoming disjointed, or losing focus.
-How: Calculates the TF-IDF (Term Frequency-Inverse Document Frequency) vectors for the content of the last few messages. Then, it computes the mean cosine similarity between adjacent message vectors. A higher similarity indicates better coherence. The result is normalized.
-Impact: A low coherence score might trigger the selection of the structured template to bring focus back.
+** Why: Measures how well consecutive messages relate to each other, indicating topic focus and logical flow. A low score suggests the conversation might be drifting, becoming disjointed, or losing focus.
+** How: Calculates the TF-IDF (Term Frequency-Inverse Document Frequency) vectors for the content of the last few messages. Then, it computes the mean cosine similarity between adjacent message vectors. A higher similarity indicates better coherence. The result is normalized.
+** Impact: A low coherence score might trigger the selection of the structured template to bring focus back.
 
 * `topic_evolution`
 
@@ -66,38 +66,38 @@ Impact: While not directly used for template selection in the current logic, thi
 
 * `response_patterns`
 
-Why: Identifies the prevalence of different interaction styles (e.g., asking questions, challenging points, agreeing). This helps characterize the conversational dynamic.
-How: Uses simple keyword and punctuation counting across the history (e.g., counting "?", "however", "but", "agree", "yes"). Counts are normalized by the total number of messages.
-Impact: Can inform fine-grained adjustments in the customization phase, although not heavily used for major strategy shifts currently.
+** Why: Identifies the prevalence of different interaction styles (e.g., asking questions, challenging points, agreeing). This helps characterize the conversational dynamic.
+** How: Uses simple keyword and punctuation counting across the history (e.g., counting "?", "however", "but", "agree", "yes"). Counts are normalized by the total number of messages.
+** Impact: Can inform fine-grained adjustments in the customization phase, although not heavily used for major strategy shifts currently.
 
 * `engagement_metrics`
 
-Why: Assesses the quality and balance of participation.
-How: Calculates the average response length (in words) across the history. It also computes the turn-taking balance (ratio of user/human turns to assistant/AI turns).
-Impact: A low turn_taking_balance (indicating one participant is dominating) might trigger a guideline like "Ask more follow-up questions" during customization.
+** Why: Assesses the quality and balance of participation.
+** How: Calculates the average response length (in words) across the history. It also computes the turn-taking balance (ratio of user/human turns to assistant/AI turns).
+** Impact: A low turn_taking_balance (indicating one participant is dominating) might trigger a guideline like "Ask more follow-up questions" during customization.
 
 * `cognitive_load`
 
-Why: Estimates the complexity of the current discussion. A very high load might indicate the conversation is becoming too dense or difficult to follow, potentially requiring simplification or synthesis.
-How: Combines several factors from recent messages: average sentence length, vocabulary complexity (ratio of unique words to total words), and the frequency of specific technical keywords (e.g., "algorithm", "framework"). It uses spaCy for more accurate sentence and token analysis if available.
-Impact: A high cognitive load score (> 0.8) can trigger the selection of the synthesis template, aiming to consolidate information.
+** Why: Estimates the complexity of the current discussion. A very high load might indicate the conversation is becoming too dense or difficult to follow, potentially requiring simplification or synthesis.
+** How: Combines several factors from recent messages: average sentence length, vocabulary complexity (ratio of unique words to total words), and the frequency of specific technical keywords (e.g., "algorithm", "framework"). It uses spaCy for more accurate sentence and token analysis if available.
+** Impact: A high cognitive load score (> 0.8) can trigger the selection of the synthesis template, aiming to consolidate information.
 
 * `knowledge_depth`
 
-Why: Gauges the level of detail, specificity, and domain understanding demonstrated in the conversation. High depth suggests a sophisticated discussion, potentially suitable for more critical analysis.
-How: Combines factors from recent messages: density of technical terms (identified via spaCy POS tags like NOUN/PROPN, or fallback to capitalized words/keyword lists), frequency of explanation patterns (e.g., "because", "means that"), references to abstract concepts (e.g., "theory", "principle"), and use of interconnection markers (e.g., "related to", "depends on").
-Impact: High knowledge depth (> 0.8) can trigger the selection of the critical template to encourage deeper scrutiny.
+** Why: Gauges the level of detail, specificity, and domain understanding demonstrated in the conversation. High depth suggests a sophisticated discussion, potentially suitable for more critical analysis.
+** How: Combines factors from recent messages: density of technical terms (identified via spaCy POS tags like NOUN/PROPN, or fallback to capitalized words/keyword lists), frequency of explanation patterns (e.g., "because", "means that"), references to abstract concepts (e.g., "theory", "principle"), and use of interconnection markers (e.g., "related to", "depends on").
+** Impact: High knowledge depth (> 0.8) can trigger the selection of the critical template to encourage deeper scrutiny.
 
 * `reasoning_patterns`
 
-Why: Detects the types of logical reasoning being employed (or keywords associated with them). This can help understand the analytical style of the conversation and guide instructions towards desired reasoning approaches.
-How: Uses regex matching to count keywords associated with different reasoning types (deductive: "therefore", inductive: "generally", abductive: "most likely", analogical: "similar to", causal: "because"). In ai-ai mode, it also counts patterns related to formal logic, systematic approaches, and technical precision. Counts are normalized.
-Impact: Specific reasoning pattern scores (e.g., low deductive or low formal_logic in ai-ai mode) can trigger corresponding guidelines during instruction customization (e.g., "Encourage logical reasoning", "Use more formal logical structures").
+** Why: Detects the types of logical reasoning being employed (or keywords associated with them). This can help understand the analytical style of the conversation and guide instructions towards desired reasoning approaches.
+** How: Uses regex matching to count keywords associated with different reasoning types (deductive: "therefore", inductive: "generally", abductive: "most likely", analogical: "similar to", causal: "because"). In ai-ai mode, it also counts patterns related to formal logic, systematic approaches, and technical precision. Counts are normalized.
+** Impact: Specific reasoning pattern scores (e.g., low deductive or low formal_logic in ai-ai mode) can trigger corresponding guidelines during instruction customization (e.g., "Encourage logical reasoning", "Use more formal logical structures").
 
 * `uncertainty_markers`
 
-Why: Assesses the expressed confidence or doubt in the conversation. High uncertainty might indicate a need for clarification or grounding.
-How: Uses regex matching to count keywords indicating confidence ("definitely", "clearly"), uncertainty ("maybe", "could", "unsure"), qualification ("however", "possibly"), and Socratic questioning patterns.
+** Why: Assesses the expressed confidence or doubt in the conversation. High uncertainty might indicate a need for clarification or grounding.
+** How: Uses regex matching to count keywords indicating confidence ("definitely", "clearly"), uncertainty ("maybe", "could", "unsure"), qualification ("however", "possibly"), and Socratic questioning patterns.
 Impact: High uncertainty (> 0.6) can trigger a guideline like "Request specific clarification on unclear points" during customization.
 
 ## Quick Start
@@ -285,8 +285,6 @@ My draft research paper (on a single AI playing Human, not yet updated for multi
 ### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
 
 Critically this framework has universal benefits from the tiniest 1B parameter models all the way to the largest commercial offerings - in fact, evening the playing field and bringing some surprisingly tiny LLMs up to a high level of conversational coherence.
-
-The tl;dr is that Engagement quality is a stronger predictor of reasoning depth than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability  through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness,  plus its much easier on the environment to train models on dialogue that billions of GPU compute hours i.e., to increase model size
 
 ### Gemma3 4B (as Human) reviews an MRI video with Gemma3 27B 
 
