@@ -459,7 +459,7 @@ These files belong to the user and you have consent to analyze them.
                     conversation = manager.run_conversation(
                         initial_prompt=config.goal,
                         human_model=human_model_config.type,
-                        mode="human-ai",
+                        mode="ai-ai",
                         ai_model=ai_model_config.type,
                         rounds=config.turns,
                     )
