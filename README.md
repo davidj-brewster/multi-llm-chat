@@ -178,8 +178,8 @@ conversation = await manager.run_conversation_with_file(
 
 Store your API keys in environment variables:
 ```bash
-export GEMINI_API_KEY="your-gemini-key"
-export CLAUDE_API_KEY="your-claude-key"
+export GEMINI_API_KEY="your-gemini-key"; export GOOGLE_API_KEY="$GEMINI_API_KEY" #sorry, need both for now..
+export ANTHROPIC_API_KEY="your-claude-key"
 export OPENAI_API_KEY="your-openai-key"
 ```
 
