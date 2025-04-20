@@ -1193,9 +1193,17 @@ if start_button:
                     current_turn_content = turn_start_match.group(2)
                     
                 elif current_turn_role is not None:
-                    # Append line to the current turn's content
-                    is_conversation_line = True
-                    current_turn_content += "\n" + line
+                    # Check if this line is a log message by looking for common log patterns
+                    log_patterns = ["INFO:", "DEBUG:", "WARNING:", "ERROR:", "CRITICAL:"]
+                    is_log_line = any(line.strip().startswith(pattern) for pattern in log_patterns)
+                    
+                    if not is_log_line:
+                        # Append line to the current turn's content only if it's not a log line
+                        is_conversation_line = True
+                        current_turn_content += "\n" + line
+                    else:
+                        # This is a log line, so don't mark it as conversation line
+                        is_conversation_line = False
                 
                 # Update logs (exclude conversation lines that will be shown in chat bubbles)
                 if not is_conversation_line:

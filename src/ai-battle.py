@@ -150,6 +150,7 @@ GEMINI_MODELS = {
     "gemini-2.5-pro-exp": {"model": "gemini-2.5-pro-exp-03-25", "multimodal": True},
     "gemini-2.5-flash-preview": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
     "gemini-2.5-pro-preview-03-25": {"model": "gemini-2.5-pro-preview-03-25", "multimodal": True},
+    "gemini-2.5-flash-preview-04-17": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
     "gemini-2.0-flash-exp": {"model": "gemini-2.0-flash-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},

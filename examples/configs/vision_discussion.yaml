@@ -39,7 +39,7 @@ discussion:
           - Despite being dominant in the conversation you are still looking to collaborate and engage thoroughly with the AI
           - Output should reflect command-state logic, not narrative companionship
     model2:
-      type: "claude"
+      type: "gemini-2.5-flash-preview-04-17"
       role: "assistant"
       persona: |
         You are an AI assistant with the following characteristics:

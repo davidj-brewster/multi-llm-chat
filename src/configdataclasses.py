@@ -31,6 +31,7 @@ SUPPORTED_MODELS = {
         "gemini-2.5-pro",
         "gemini-2.5-pro-exp",
         "gemini-2.5-pro-preview-03-25",
+        "gemini-2.5-flash-preview-04-17",
         "gemini-2-pro",
         "gemini-2-reasoning",
         "gemini-2.0-flash-exp",
