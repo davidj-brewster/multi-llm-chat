@@ -54,26 +54,21 @@ Dynamic System instructions to each Model participant, based on the ContextVecto
 
 * `semantic_coherence`
 
-** Why: Measures how well consecutive messages relate to each other, indicating topic focus and logical flow. A low score suggests the conversation might be drifting, becoming disjointed, or losing focus.
-
-** How: Calculates the TF-IDF (Term Frequency-Inverse Document Frequency) vectors for the content of the last few messages. Then, it computes the mean cosine similarity between adjacent message vectors. A higher similarity indicates better coherence. The result is normalized.
-** Impact: A low coherence score might trigger the selection of the structured template to bring focus back.
+- Why: Measures how well consecutive messages relate to each other, indicating topic focus and logical flow. A low score suggests the conversation might be drifting, becoming disjointed, or losing focus.
+- How: Calculates the TF-IDF (Term Frequency-Inverse Document Frequency) vectors for the content of the last few messages. Then, it computes the mean cosine similarity between adjacent message vectors. A higher similarity indicates better coherence. The result is normalized.
+- Impact: A low coherence score might trigger the selection of the structured template to bring focus back.
 
 * `topic_evolution`
 
-** Why: Tracks the main subjects being discussed and their relative prominence. Helps understand if the conversation is staying on the intended domain or shifting significantly.
-
-** How: Uses spaCy's noun chunking (if spaCy model is available and loaded) to identify key topics (nouns/noun phrases) in recent messages. If spaCy is unavailable, it falls back to simple word frequency analysis (counting non-numeric words longer than 3 characters). Counts are normalized into frequencies.
-
-** Impact: While not directly used for template selection in the current logic, this provides valuable debugging information and could be used for more advanced topic steering in the future. It also plays a role in detecting the GOAL: keyword if it appears within the message content.
+- Why: Tracks the main subjects being discussed and their relative prominence. Helps understand if the conversation is staying on the intended domain or shifting significantly.
+- How: Uses spaCy's noun chunking (if spaCy model is available and loaded) to identify key topics (nouns/noun phrases) in recent messages. If spaCy is unavailable, it falls back to simple word frequency analysis (counting non-numeric words longer than 3 characters). Counts are normalized into frequencies.
+- Impact: While not directly used for template selection in the current logic, this provides valuable debugging information and could be used for more advanced topic steering in the future. It also plays a role in detecting the GOAL: keyword if it appears within the message content.
 
 * `response_patterns`
 
-** Why: Identifies the prevalence of different interaction styles (e.g., asking questions, challenging points, agreeing). This helps characterize the conversational dynamic.
-
-** How: Uses simple keyword and punctuation counting across the history (e.g., counting "?", "however", "but", "agree", "yes"). Counts are normalized by the total number of messages.
-
-** Impact: Can inform fine-grained adjustments in the customization phase, although not heavily used for major strategy shifts currently.
+- Why: Identifies the prevalence of different interaction styles (e.g., asking questions, challenging points, agreeing). This helps characterize the conversational dynamic.
+- How: Uses simple keyword and punctuation counting across the history (e.g., counting "?", "however", "but", "agree", "yes"). Counts are normalized by the total number of messages.
+- Impact: Can inform fine-grained adjustments in the customization phase, although not heavily used for major strategy shifts currently.
 
 * `engagement_metrics`
 
@@ -85,35 +80,27 @@ Dynamic System instructions to each Model participant, based on the ContextVecto
 
 * `cognitive_load`
 
-** Why: Estimates the complexity of the current discussion. A very high load might indicate the conversation is becoming too dense or difficult to follow, potentially requiring simplification or synthesis.
-
-** How: Combines several factors from recent messages: average sentence length, vocabulary complexity (ratio of unique words to total words), and the frequency of specific technical keywords (e.g., "algorithm", "framework"). It uses spaCy for more accurate sentence and token analysis if available.
-
-** Impact: A high cognitive load score (> 0.8) can trigger the selection of the synthesis template, aiming to consolidate information.
+- Why: Estimates the complexity of the current discussion. A very high load might indicate the conversation is becoming too dense or difficult to follow, potentially requiring simplification or synthesis.
+- How: Combines several factors from recent messages: average sentence length, vocabulary complexity (ratio of unique words to total words), and the frequency of specific technical keywords (e.g., "algorithm", "framework"). It uses spaCy for more accurate sentence and token analysis if available.
+- Impact: A high cognitive load score (> 0.8) can trigger the selection of the synthesis template, aiming to consolidate information.
 
 * `knowledge_depth`
 
-** Why: Gauges the level of detail, specificity, and domain understanding demonstrated in the conversation. High depth suggests a sophisticated discussion, potentially suitable for more critical analysis.
-
-** How: Combines factors from recent messages: density of technical terms (identified via spaCy POS tags like NOUN/PROPN, or fallback to capitalized words/keyword lists), frequency of explanation patterns (e.g., "because", "means that"), references to abstract concepts (e.g., "theory", "principle"), and use of interconnection markers (e.g., "related to", "depends on").
-
-** Impact: High knowledge depth (> 0.8) can trigger the selection of the critical template to encourage deeper scrutiny.
+- Why: Gauges the level of detail, specificity, and domain understanding demonstrated in the conversation. High depth suggests a sophisticated discussion, potentially suitable for more critical analysis.
+- How: Combines factors from recent messages: density of technical terms (identified via spaCy POS tags like NOUN/PROPN, or fallback to capitalized words/keyword lists), frequency of explanation patterns (e.g., "because", "means that"), references to abstract concepts (e.g., "theory", "principle"), and use of interconnection markers (e.g., "related to", "depends on").
+- Impact: High knowledge depth (> 0.8) can trigger the selection of the critical template to encourage deeper scrutiny.
 
 * `reasoning_patterns`
 
-** Why: Detects the types of logical reasoning being employed (or keywords associated with them). This can help understand the analytical style of the conversation and guide instructions towards desired reasoning approaches.
-
-** How: Uses regex matching to count keywords associated with different reasoning types (deductive: "therefore", inductive: "generally", abductive: "most likely", analogical: "similar to", causal: "because"). In ai-ai mode, it also counts patterns related to formal logic, systematic approaches, and technical precision. Counts are normalized.
-
-** Impact: Specific reasoning pattern scores (e.g., low deductive or low formal_logic in ai-ai mode) can trigger corresponding guidelines during instruction customization (e.g., "Encourage logical reasoning", "Use more formal logical structures").
+- Why: Detects the types of logical reasoning being employed (or keywords associated with them). This can help understand the analytical style of the conversation and guide instructions towards desired reasoning approaches.
+- How: Uses regex matching to count keywords associated with different reasoning types (deductive: "therefore", inductive: "generally", abductive: "most likely", analogical: "similar to", causal: "because"). In ai-ai mode, it also counts patterns related to formal logic, systematic approaches, and technical precision. Counts are normalized.
+- Impact: Specific reasoning pattern scores (e.g., low deductive or low formal_logic in ai-ai mode) can trigger corresponding guidelines during instruction customization (e.g., "Encourage logical reasoning", "Use more formal logical structures").
 
 * `uncertainty_markers`
 
-** Why: Assesses the expressed confidence or doubt in the conversation. High uncertainty might indicate a need for clarification or grounding.
-
-** How: Uses regex matching to count keywords indicating confidence ("definitely", "clearly"), uncertainty ("maybe", "could", "unsure"), qualification ("however", "possibly"), and Socratic questioning patterns.
-
-** Impact: High uncertainty (> 0.6) can trigger a guideline like "Request specific clarification on unclear points" during customization.
+- Why: Assesses the expressed confidence or doubt in the conversation. High uncertainty might indicate a need for clarification or grounding.
+- How: Uses regex matching to count keywords indicating confidence ("definitely", "clearly"), uncertainty ("maybe", "could", "unsure"), qualification ("however", "possibly"), and Socratic questioning patterns.
+- Impact: High uncertainty (> 0.6) can trigger a guideline like "Request specific clarification on unclear points" during customization.
 
 ## Quick Start
 
