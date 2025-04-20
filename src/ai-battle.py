@@ -99,7 +99,7 @@ This feature aims to enhance user experience by making interactions more relevan
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
+    handlers=[logging.FileHandler("log/ai_battle.log"), logging.StreamHandler(sys.stdout)],
 )
 
 logger = logging.getLogger(__name__)

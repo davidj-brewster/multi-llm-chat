@@ -18,9 +18,9 @@ processed_files
 *html
 conversations
 conv-*
-arbiter_*
-metrics_*
 *.png
 *.avi
 *.jpg
 *.jpeg
+inputs/*
+log/*
