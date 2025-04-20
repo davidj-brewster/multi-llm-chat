@@ -2,7 +2,7 @@
 
 ## Overview
 
-The tl;dr is that Engagement quality is a stronger predictor of actual conversational ability than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness. It's much easier on our precious resources to train models on dialogue that billions of GPU compute hours i.e., to increase model size.
+The tl;dr is that Engagement quality is a stronger predictor of actual conversational ability than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness. It's much easier on our precious resources to train models on dialogue than spend billions of GPU compute hours i.e., to increase model size.
 
 AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
 
