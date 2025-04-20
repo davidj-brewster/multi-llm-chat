@@ -25,6 +25,10 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
   - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
   - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
 
+![image](https://github.com/user-attachments/assets/54a749ba-7903-46b7-9ed6-4d21769c5f5e)
+
+![image](https://github.com/user-attachments/assets/a7d3a605-98d4-45b2-b9fc-bed72e062eed)
+
 ### Workflow
 
 Basic workflow of the ai-battle.py script.
