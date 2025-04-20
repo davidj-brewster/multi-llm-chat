@@ -1013,19 +1013,44 @@ if start_button:
             # Initial status update
             update_model_status()
             
+            # Create shared variables for the keepalive mechanism
+            import threading
+            
+            # Create a thread-safe object to store last activity time
+            # This avoids accessing session_state from a background thread
+            class ThreadSafeActivityMonitor:
+                def __init__(self):
+                    self.last_activity = time.time()
+                    self.lock = threading.Lock()
+                
+                def update(self):
+                    with self.lock:
+                        self.last_activity = time.time()
+                
+                def get_time_since_last_activity(self):
+                    with self.lock:
+                        return time.time() - self.last_activity
+            
+            # Initialize the activity monitor
+            activity_monitor = ThreadSafeActivityMonitor()
+            
+            # Update with current activity
+            activity_monitor.update()
+            
             # Create a keepalive mechanism
             def start_keepalive():
                 while True:
                     # Check for activity timeout (5 min)
-                    current_time = time.time()
-                    if current_time - st.session_state.last_activity > 300:
-                        # If no activity for 5 minutes, mark models as error
-                        for model in st.session_state.model_status:
-                            if st.session_state.model_status[model].get("active", False):
-                                st.session_state.model_status[model]["active"] = False
-                                st.session_state.model_status[model]["error"] = "Timeout after 5 minutes of inactivity"
-                        # Update the status display
-                        update_model_status()
+                    time_since_activity = activity_monitor.get_time_since_last_activity()
+                    
+                    if time_since_activity > 300:
+                        # If no activity for 5 minutes, create a flag file to signal timeout
+                        # We'll check for this file in the main thread
+                        try:
+                            with open("model_timeout_flag.txt", "w") as f:
+                                f.write("timeout")
+                        except:
+                            pass  # Ignore any errors writing the flag file
                     
                     time.sleep(1)  # Update every second
             
@@ -1049,8 +1074,26 @@ if start_button:
                 # Add to raw log lines
                 st.session_state.raw_log_lines.append(line)
                 
-                # Update last activity timestamp
+                # Update last activity timestamp in both places
                 st.session_state.last_activity = time.time()
+                activity_monitor.update()
+                
+                # Check for timeout flag from the background thread
+                if os.path.exists("model_timeout_flag.txt"):
+                    try:
+                        # Remove the flag file
+                        os.remove("model_timeout_flag.txt")
+                        
+                        # Mark models as error
+                        for model in st.session_state.model_status:
+                            if st.session_state.model_status[model].get("active", False):
+                                st.session_state.model_status[model]["active"] = False
+                                st.session_state.model_status[model]["error"] = "Timeout after 5 minutes of inactivity"
+                        
+                        # Update the status display
+                        update_model_status()
+                    except:
+                        pass  # Ignore errors removing the file
                 
                 # Check for model processing status
                 model_start_match = re.search(r"Processing with model: ([^\s]+)", line)
