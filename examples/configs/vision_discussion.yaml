@@ -73,8 +73,8 @@ discussion:
      - error                # Notify on error
  
   input_file:
-    path: "./MPR_AX_34_0.5mm_MPRAGE_1mm_slice_thickness.png"
-    type: "image"           # image, video, or text
+    path: "./Cats.mp4"
+    type: "video"           # image, video, or text
     max_resolution: "1024x1024" # Maximum resolution to maintain
     
   goal: |
