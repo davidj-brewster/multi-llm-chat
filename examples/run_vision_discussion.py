@@ -221,11 +221,16 @@ These files belong to the user and you have consent to analyze them.
                     )
 
                     try:
+                        # Always force ai-ai mode for file-based conversations to ensure both models get the file
+                        # This is critical for vision tasks where both Human and AI roles need to see the images
+                        conversation_mode = "ai-ai"
+                        logger.info(f"Using {conversation_mode} mode for file-based conversation to ensure both participants can see the files")
+                        
                         conversation = manager.run_conversation_with_file(
                             initial_prompt=initial_prompt,
                             human_model=human_model_config.type,
                             ai_model=ai_model_config.type,
-                            mode="ai-ai",  # Use AI-AI mode for both models
+                            mode=conversation_mode,
                             file_config=file_config_to_use,
                             rounds=config.turns,
                         )
@@ -282,11 +287,15 @@ Discuss any relevant signals and abnormalities observed.
                     
                     # Use the more specific prompt
                     try:
+                        # Always use ai-ai mode for file-based conversations
+                        conversation_mode = "ai-ai"
+                        logger.info(f"Using {conversation_mode} mode for file-based conversation to ensure both participants can see the file")
+                        
                         conversation = manager.run_conversation_with_file(
                             initial_prompt=prompt,
                             human_model=human_model_config.type,
                             ai_model=ai_model_config.type,
-                            mode="ai-ai",  # Use AI-AI mode for both models
+                            mode=conversation_mode,
                             file_config=config.input_file,
                             rounds=config.turns,
                         )
@@ -430,11 +439,15 @@ These files belong to the user and you have consent to analyze them.
                 
                 try:
                     # Use the configuration directly
+                    # Always use ai-ai mode for file-based conversations
+                    conversation_mode = "ai-ai"
+                    logger.info(f"Using {conversation_mode} mode for multi-file conversation to ensure both participants can see the files")
+                    
                     conversation = manager.run_conversation_with_file(
                         initial_prompt=initial_prompt,
                         human_model=human_model_config.type,
                         ai_model=ai_model_config.type,
-                        mode="ai-ai",  # Use AI-AI mode for both models
+                        mode=conversation_mode,
                         file_config=config.input_files,
                         rounds=config.turns,
                     )

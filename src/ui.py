@@ -873,6 +873,25 @@ if start_button:
                 # Apply model overrides if models were changed in the UI
                 if hasattr(st.session_state, "human_model") and hasattr(st.session_state, "ai_model"):
                     model_was_overridden = False
+                    
+                    # Check if this is an image/file config - if so, force ai-ai mode
+                    has_images = False
+                    if "discussion" in config_data:
+                        if "input_file" in config_data["discussion"]:
+                            file_config = config_data["discussion"]["input_file"]
+                            if isinstance(file_config, dict) and file_config.get("type") == "image":
+                                has_images = True
+                        if "input_files" in config_data["discussion"]:
+                            files_config = config_data["discussion"]["input_files"]
+                            if isinstance(files_config, dict) and "files" in files_config:
+                                has_images = True
+                    
+                    # Force ai-ai mode for images
+                    if has_images:
+                        st.info("Images detected in configuration - forcing ai-ai mode for proper vision support")
+                        # Set explicit ai-ai mode in configuration
+                        config_data["discussion"]["mode"] = "ai-ai"
+                        
                     if "discussion" in config_data and "models" in config_data["discussion"]:
                         if st.session_state.human_model != "default":
                             # Override human model
@@ -940,6 +959,9 @@ if start_button:
                 
                 # Add image configuration if images were uploaded
                 if image_paths:
+                    # If we have images, ALWAYS use ai-ai mode to ensure both participants get the images
+                    mode = "ai-ai"  # Force ai-ai mode for image discussions
+                    
                     if len(image_paths) == 1:
                         # Single image - use input_file
                         default_config["discussion"]["input_file"] = {
