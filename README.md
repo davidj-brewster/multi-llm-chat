@@ -133,7 +133,7 @@ pip install -r requirements.txt
 # Install Ollama
 curl https://ollama.ai/install.sh | sh
 
-# Pull required models
+# Pull required models (optional - you can use LMStudio or any of the big Cloud vendors)
 ollama pull phi4:latest
 ollama pull llava:latest  # Vision-capable model
 ollama pull llama3.1-8b-lexi:latest
@@ -192,7 +192,7 @@ conversation = await manager.run_conversation_with_file(
 ```yaml
 discussion:
   input_file:
-    path: "./examples/sample_video.mp4"
+    path: "./Cats.mp4"
     type: "video"
     max_resolution: "1280x1280"
   established_facts:
@@ -214,7 +214,7 @@ conversation = await manager.run_conversation_with_file(
     initial_prompt="Analyze this MRI scan video and describe what you see",
     human_model="gemini-2.0-flash-exp",
     ai_model="ollama-llava",
-    file_config=FileConfig(path="./mri_scan.mp4", type="video")
+    file_config=FileConfig(path="./Cats.mp4", type="video")
 )
 ```
 
@@ -272,7 +272,7 @@ Simulate an advanced human interlocutor within AI-to-AI conversations, keeping t
 
 ## Theoretical underpinnings with examples
 
-My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/human-ai-conversational-prompting/blob/main/research-paper.md 
+My draft research paper (on a single AI playing Human, not yet updated for multi-configurable AIs): https://github.com/davidj-brewster/multi-llm-chat/blob/main/docs/research-paper.md 
 
 ### AI Reasoning Should Be Benchmarked on Adaptability in Dialogue-driven reasoning! 
 
@@ -282,8 +282,6 @@ Critically this framework has universal benefits from the tiniest 1B parameter m
 
 This dialogue is particularly entertaining because I based the "Human" prompt on the responses from ChatGPT, Claude.ai and Gemini about my own conversational style with them. This results in a very, very task-oriented, slightly sardonic, irritable and conversely highly engaged "Human" who completely dominated the MRI review with the "AI", despite Gemma 3 27B being clearly the more capable model from a technical point of view.
 On a technical level the meta-prompting of both AIs clearly advances this conversation extremely significantly, well beyond what I thought would be possible of such small self-hosted models, very impressive..
-
-https://raw.githack.com/davidj-brewster/autoadaptive-multi-ai-metaprompting/main/examples/vision_discussion_3D%20Rotational%20T2%20Flair%20movie.html
 
 ### Phi 4 local LLM dominates Claude Haiku 3.5!!
 
