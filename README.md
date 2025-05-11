@@ -1,4 +1,4 @@
-# AI Battle - Multi-Model Conversational Framework
+# AI Battle
 
 <table>
   <tr>
