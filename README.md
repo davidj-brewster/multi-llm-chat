@@ -1,6 +1,19 @@
 # AI Battle - Multi-Model Conversational Framework
 
-![image](https://github.com/user-attachments/assets/a7d3a605-98d4-45b2-b9fc-bed72e062eed)
+<table>
+  <tr>
+    <td align="center"><img height="180" alt="Example 3" src="https://github.com/user-attachments/assets/3be3373a-8c92-4aa5-85a1-b4c2afdabce8" /> 
+    </td>
+    <td>
+      <img height="180" src="https://github.com/user-attachments/assets/e4d2b766-a585-40e6-b37e-ac6b7b98f3d1" />
+      </td>
+  </tr>
+  <tr>
+    <td><img height="180" alt="Example 3" src="https://github.com/user-attachments/assets/b18cdc6d-7f5c-479f-9d1f-56ed183ae9c0" alt="Example 2" />
+    </td>
+    <td><img height="180" alt="Example 4" src="https://github.com/user-attachments/assets/6704fb20-88e6-4972-8779-eb4ca62b26f7" /></td>
+  </tr>
+</table>
 
 AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs.
 Simulating personas, adapting system instructions and parameters mid-conversation to k
