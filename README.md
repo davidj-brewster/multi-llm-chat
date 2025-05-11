@@ -1,6 +1,6 @@
-![image](https://github.com/user-attachments/assets/54a749ba-7903-46b7-9ed6-4d21769c5f5e)
-
 # AI Battle - Multi-Model Conversational Framework
+
+![image](https://github.com/user-attachments/assets/a7d3a605-98d4-45b2-b9fc-bed72e062eed)
 
 AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs.
 Simulating personas, adapting system instructions and parameters mid-conversation to k
@@ -14,6 +14,8 @@ Simulating personas, adapting system instructions and parameters mid-conversatio
 
 ## A versatile AI client
 
+![image](https://github.com/user-attachments/assets/54a749ba-7903-46b7-9ed6-4d21769c5f5e)
+
 ### Multi-Model and Multi-modal client API Support!**
   - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support, and new Messages API and Reasoning efforts/tokens
   - Gemini (Flash/Pro/Thinking) - Multimodal w Video + Image support
@@ -23,8 +25,6 @@ Simulating personas, adapting system instructions and parameters mid-conversatio
   - Pico client via Ollama API
   - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
   - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
-
-![image](https://github.com/user-attachments/assets/a7d3a605-98d4-45b2-b9fc-bed72e062eed)
 
 ### Workflow
 
