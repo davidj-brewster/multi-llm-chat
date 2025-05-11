@@ -1,19 +1,18 @@
+![image](https://github.com/user-attachments/assets/54a749ba-7903-46b7-9ed6-4d21769c5f5e)
+
 # AI Battle - Multi-Model Conversational Framework
 
-## Overview
+AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs.
+Simulating personas, adapting system instructions and parameters mid-conversation to k
 
-The tl;dr is that Engagement quality is a stronger predictor of actual conversational ability than simple Q&A performance, which is how models tend to be evaluated traditionally. AI development should focus on refining conversational adaptability through iterative engagement mechanisms. In practice, that means: Model size is an outdated indicator of usefulness. It's much easier on our precious resources to train models on dialogue than spend billions of GPU compute hours i.e., to increase model size.
+- **Collaboration or Battle**: Two AIs writing a story together, reviewing some code, deep diving into whats happening in a video of a medical scan, trying to outwit each other in an IQ test challenge, discussing philosophical and existential humanity, arguing over Mac vs PC? And you just provide a seed prompt and watch the AIs in realtime. 
+- **Adaptive**: A conversation manager subtly guides the conversation by detecting conversation state from metrics and adapting the system instruction sent to each model in real time
+- **Deep Analysis**: Multi-dimensional realtime conversation state management, grounded "post-mortem" by a third AI as arbiter - including Google Search powered scrutity of claims made by either AI - evaluates the conversation and each participant after the "debate" is finished. 
+- **Model agnostic**: Works just as well with a local model on Ollama as it does with any of the powerhouse LLMs. And it's fun to watch a 4B Gemma or 14B Phi3 model literally dominating a flagship model, applying logical pressure, calling out missing details, applying socratic techniques, and "asking the right questions" or even challenging interpretations. No one model can do this to itself, but two models.. 
+- **Configuration System**: YAML-based configuration for easy setup and customization of the "AI Actor" roles - as a "Human" (heavily meta-prompted) or "AI" - essentially the base model, unaware of the fact its debating another AI
+- **File-Based Discussions**: Support for images, videos, text, and code files in conversations between AIs!! 
 
-AI Battle is a framework for orchestrating dynamic conversations between multiple AI models. It enables:
-
-- **Model Collaboration**: Multiple AI models working together in different roles
-- **Adaptive Learning**: Dynamic instruction generation based on conversation context
-- **Deep Analysis**: Multi-dimensional context analysis and conversation assessment
-- **Flexible Deployment**: Support for both cloud and local model execution
-- **Configuration System**: YAML-based configuration for easy setup and customization
-- **File-Based Discussions**: Support for images, videos, text, and code files in conversations
-
-## As a versatile AI client
+## A versatile AI client
 
 ### Multi-Model and Multi-modal client API Support!**
   - Claude Sonnet/Haiku (Anthropic) - Multimodal with Image support, and new Messages API and Reasoning efforts/tokens
@@ -25,32 +24,22 @@ AI Battle is a framework for orchestrating dynamic conversations between multipl
   - LMStudio client via OpenAI API supporting GGUF and MLX model configurations
   - Direct llama.cpp (or anything exposing an OpenAI endpoint, e.g., OpenRouter)
 
-![image](https://github.com/user-attachments/assets/54a749ba-7903-46b7-9ed6-4d21769c5f5e)
-
 ![image](https://github.com/user-attachments/assets/a7d3a605-98d4-45b2-b9fc-bed72e062eed)
 
 ### Workflow
 
 Basic workflow of the ai-battle.py script.
 
-* User Input/Streamlit UI: Represents the user interacting with the script, either through command-line prompts or the Streamlit UI.
+* User Input/Streamlit UI: Give the conversatin a "seed" topic or goal either through command-line prompts, configuration file (which can include references to multiple images, videos, code files) or the Streamlit UI which also supports multimodal input.
 * ConversationManager: The central component that orchestrates the conversation flow.
 * HumanClient: One of the AI clients, configured to act as the "human" participant.
 * AIClient: Another AI client, acting as the "AI" participant in the conversation.
-* ConversationHistory: Stores the history of the conversation turns.
-
-The workflow proceeds as follows:
-
-* The ConversationManager receives input, either from the user or internally to start a conversation turn.
-* Based on the conversation turn, the ConversationManager directs the prompt to either the HumanClient or the AIClient.
-* The respective client generates a response using its AI model and sends it back to the ConversationManager.
-* The ConversationManager updates the ConversationHistory with the new turn.
-
-The framework employs multi-dimensional analysis to understand and optimize conversations:
+* Multi-dimensional (see below) turn-by-turn analysis to understand and optimize conversations, maintain coherence and subtly adjust system prompts/AI actor "personas"
+* Adjudication and feedback "post-mortem" by a third AI acting as "arbiter" after the debate/discussion is completed.
 
 ### Context-Adaptive Adaptation
 
-Dynamic System instructions to each Model participant, based on the ContextVector:
+What I called a ContextVector actively keeps track of:
 
 `semantic_coherence`
 - Why: Measures how well consecutive messages relate to each other, indicating topic focus and logical flow. A low score suggests the conversation might be drifting, becoming disjointed, or losing focus.
