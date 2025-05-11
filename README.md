@@ -1,5 +1,3 @@
-# AI Battle
-
 <table>
   <tr>
     <td align="center"><img height="200" alt="Example 3" src="https://github.com/user-attachments/assets/3be3373a-8c92-4aa5-85a1-b4c2afdabce8" /> 
@@ -15,8 +13,9 @@
   </tr>
 </table>
 
-AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs featuring simulated personas, adaptive conversation management to keep the conversation flowing. Results can be hilarious. Or genuinely insightful, you choose!
+# AI Battle
 
+AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs featuring simulated personas, adaptive conversation management to keep the conversation flowing. Results can be hilarious. Or genuinely insightful, you choose!
 - **Collaboration or Battle**: Two AIs writing a story together, reviewing some code, deep diving into whats happening in a video of a medical scan, trying to outwit each other in an IQ test challenge, discussing philosophical and existential humanity, arguing over Mac vs PC? And you just provide a seed prompt and watch the AIs in realtime. 
 - **Adaptive**: A conversation manager subtly guides the conversation by detecting conversation state from metrics and adapting the system instruction sent to each model in real time
 - **Deep Analysis**: Multi-dimensional realtime conversation state management, grounded "post-mortem" by a third AI as arbiter - including Google Search powered scrutity of claims made by either AI - evaluates the conversation and each participant after the "debate" is finished. 
