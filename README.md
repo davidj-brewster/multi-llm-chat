@@ -15,8 +15,7 @@
   </tr>
 </table>
 
-AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs.
-Simulating personas, adapting system instructions and parameters mid-conversation to k
+AI Battle is a framework for dynamic conversation, flowing and coherent discussions between AIs featuring simulated personas, adaptive conversation management to keep the conversation flowing. Results can be hilarious. Or genuinely insightful, you choose!
 
 - **Collaboration or Battle**: Two AIs writing a story together, reviewing some code, deep diving into whats happening in a video of a medical scan, trying to outwit each other in an IQ test challenge, discussing philosophical and existential humanity, arguing over Mac vs PC? And you just provide a seed prompt and watch the AIs in realtime. 
 - **Adaptive**: A conversation manager subtly guides the conversation by detecting conversation state from metrics and adapting the system instruction sent to each model in real time
