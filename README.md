@@ -9,9 +9,9 @@
       </td>
   </tr>
   <tr>
-    <td><img height="200" alt="Example 3" src="https://github.com/user-attachments/assets/b18cdc6d-7f5c-479f-9d1f-56ed183ae9c0" alt="Example 2" />
+    <td><img height="180" alt="Example 3" src="https://github.com/user-attachments/assets/b18cdc6d-7f5c-479f-9d1f-56ed183ae9c0" alt="Example 2" />
     </td>
-    <td><img height="200" alt="Example 4" src="https://github.com/user-attachments/assets/6704fb20-88e6-4972-8779-eb4ca62b26f7" /></td>
+    <td><img height="180" alt="Example 4" src="https://github.com/user-attachments/assets/6704fb20-88e6-4972-8779-eb4ca62b26f7" /></td>
   </tr>
 </table>
 
