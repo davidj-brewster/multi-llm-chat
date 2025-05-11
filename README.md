@@ -1,15 +1,15 @@
 <table>
   <tr>
-    <td align="center"><img height="200" alt="Example 3" src="https://github.com/user-attachments/assets/3be3373a-8c92-4aa5-85a1-b4c2afdabce8" /> 
+    <td align="center"><img height="170" alt="Example 3" src="https://github.com/user-attachments/assets/3be3373a-8c92-4aa5-85a1-b4c2afdabce8" /> 
     </td>
     <td>
-      <img height="200" src="https://github.com/user-attachments/assets/e4d2b766-a585-40e6-b37e-ac6b7b98f3d1" />
+      <img height="170" src="https://github.com/user-attachments/assets/e4d2b766-a585-40e6-b37e-ac6b7b98f3d1" />
       </td>
   </tr>
   <tr>
-    <td><img height="180" alt="Example 3" src="https://github.com/user-attachments/assets/b18cdc6d-7f5c-479f-9d1f-56ed183ae9c0" alt="Example 2" />
+    <td><img height="150" alt="Example 3" src="https://github.com/user-attachments/assets/b18cdc6d-7f5c-479f-9d1f-56ed183ae9c0" alt="Example 2" />
     </td>
-    <td><img height="180" alt="Example 4" src="https://github.com/user-attachments/assets/6704fb20-88e6-4972-8779-eb4ca62b26f7" /></td>
+    <td><img height="150" alt="Example 4" src="https://github.com/user-attachments/assets/6704fb20-88e6-4972-8779-eb4ca62b26f7" /></td>
   </tr>
 </table>
 
