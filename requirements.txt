@@ -121,7 +121,7 @@ safetensors==0.5.2
 scikit-learn==1.5.0
 scipy==1.15.2
 sentencepiece==0.2.0
-setuptools==77.0.3
+setuptools>=78.1.1
 shellingham==1.5.4
 six==1.17.0
 smart-open==7.1.0
