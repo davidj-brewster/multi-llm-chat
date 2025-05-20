@@ -1,7 +1,7 @@
 [project]
-name = "claude-gemini-chat"
+name = "multi-llm-chat"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI Battle orchestration - adversarial multi LLM conversations with autoadaptive prompting"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
