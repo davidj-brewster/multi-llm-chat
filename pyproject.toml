@@ -105,6 +105,7 @@ dependencies = [
     "spacy-curated-transformers==0.3.0",
     "spacytextblob>=5.0.0",
     "streamlit==1.41.1",
+    "sympy>=1.13.3",
     "tenacity==9.0.0",
     "textblob>=0.19.0",
     "thinc>=8.3.0,<9.0.0",
