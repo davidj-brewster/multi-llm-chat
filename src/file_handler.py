@@ -389,7 +389,7 @@ class ConversationMediaHandler:
                 logger.error(
                     f"Error processing file: {file_path} - {e} {type(e)} {traceback.format_exc()}"
                 )
-                raise e
+                # Removed "raise e" to allow processing of other files
         # Log summary
         logger.info(
             f"Processed {len(successful_files)} files successfully, {len(failed_files)} files failed"

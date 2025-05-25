@@ -155,6 +155,9 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
     "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
+    # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
+    "gemini-2.5-pro": {"model": "gemini-1.5-pro-latest", "multimodal": True},
+    "gemini-2.5-flash": {"model": "gemini-1.5-flash-latest", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -220,6 +223,38 @@ CLAUDE_MODELS = {
         "model": "claude-3-7-sonnet",
         "reasoning_level": "none",
         "extended_thinking": False,
+    },
+    # Claude 3 Opus (added)
+    "claude-3-opus": {
+        "model": "claude-3-opus-20240229",
+        "reasoning_level": "high", # Opus is powerful
+        "extended_thinking": False,
+    },
+    # Claude 3 Sonnet (specific version, added for completeness)
+    "claude-3-sonnet": { # This might conflict with "sonnet" if not careful with naming
+        "model": "claude-3-sonnet-20240229",
+        "reasoning_level": "medium",
+        "extended_thinking": False,
+    },
+    # Claude 3 Haiku (specific version, added for completeness)
+    "claude-3-haiku": { # This might conflict with "haiku"
+        "model": "claude-3-haiku-20240307",
+        "reasoning_level": "low",
+        "extended_thinking": False,
+    },
+    # Claude 3 Opus with extended thinking (added)
+    "claude-3-opus-extended": {
+        "model": "claude-3-opus-20240229",
+        "reasoning_level": "high",
+        "extended_thinking": True,
+        "budget_tokens": 16000, # Optional: Default budget
+    },
+    # Claude 3 Sonnet with extended thinking (added)
+    "claude-3-sonnet-extended": {
+        "model": "claude-3-sonnet-20240229",
+        "reasoning_level": "medium",
+        "extended_thinking": True,
+        "budget_tokens": 8000, # Optional: Default budget
     },
     # Claude 3.7 with extended thinking
     "claude-3-7-extended": {
@@ -394,8 +429,8 @@ class ConversationManager:
                     if model_config.get("extended_thinking", False):
                         budget_tokens = model_config.get("budget_tokens", None)
                         client.set_extended_thinking(True, budget_tokens)
-                        logger.debug(
-                            f"Enabled extended thinking with budget_tokens={budget_tokens} for {model_name}"
+                        logger.info( # Changed to info for better visibility
+                            f"Enabled extended thinking with budget_tokens={budget_tokens} for Claude model {model_name}"
                         )
 
                 # Handle OpenAI models using templates

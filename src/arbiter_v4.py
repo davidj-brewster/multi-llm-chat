@@ -717,6 +717,7 @@ class ConversationArbiter:
                 }
             else:
                 # Fallback to basic analysis
+                logger.info("spaCy model not available, using basic flow analysis.")
                 flow_metrics = self._basic_flow_analysis(messages)
 
             return flow_metrics
