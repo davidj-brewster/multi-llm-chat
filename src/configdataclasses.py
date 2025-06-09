@@ -7,7 +7,7 @@ from logging import getLogger
 import logging
 
 # Import consolidated constants from configuration.py
-from .configuration import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
+from configuration import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
 
 logger = getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -247,4 +247,3 @@ class DiscussionConfig:
             # If self.input_file was already a FileConfig object, it remains unchanged, which is correct.
         
         logger.debug(f"Input file: {self.input_file}")
-```
