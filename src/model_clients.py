@@ -1432,15 +1432,18 @@ class ClaudeClient(BaseClient):
                 internal reasoning. Must be less than max_tokens. Defaults to None,
                 which lets the API choose an appropriate budget.
         """
-        if not self.capabilities.get("advanced_reasoning", False):
-            logger.warning(
-                f"Extended thinking is only available for Claude 3.7 models. Ignoring setting for {self.model}."
-            )
-            return
+        # The capability check for "advanced_reasoning" might be too restrictive.
+        # Rely on ai-battle.py's explicit configuration for extended_thinking.
+        # If the API doesn't support it for a model, it will error out, which is acceptable.
+        # if not self.capabilities.get("advanced_reasoning", False):
+        #     logger.warning(
+        #         f"Extended thinking might not be supported for {self.model} based on current capability flags. Proceeding as configured."
+        #     )
+            # return # Decided to allow setting it and let API handle validity
 
         self.extended_thinking = enabled
         self.budget_tokens = budget_tokens
-        logger.debug(
+        logger.info( # Changed to info to match ai-battle.py log level for this message
             f"Set extended thinking={enabled}, budget_tokens={budget_tokens} for {self.model}"
         )
 
@@ -1451,31 +1454,36 @@ class ClaudeClient(BaseClient):
 
         # Claude 3.5 and newer models support video frames
         if any(
-            m in self.model.lower() for m in ["claude-3.5", "claude-3-5", "claude-3-7"]
+            m in self.model.lower() for m in ["claude-3.5", "claude-3-5", "claude-3-7", "opus", "sonnet"] # Added Opus and Sonnet for video frames too
         ):
             self.capabilities["video_frames"] = True
-            self.capabilities["high_resolution"] = True
-            self.capabilities["medical_imagery"] = True
+            self.capabilities["high_resolution"] = True # Assume newer models might have this
+            self.capabilities["medical_imagery"] = True # Assume newer models might have this
         else:
             self.capabilities["video_frames"] = False
             self.capabilities["high_resolution"] = False
             self.capabilities["medical_imagery"] = False
 
-        # Claude 3.7 and newer models support advanced reasoning
-        # Only enable this for actual 3.7 models, not 3.5 or earlier
-        if "claude-3-7" in self.model.lower():
+        # Models supporting 'reasoning' or 'thinking' parameters
+        # This includes Claude 3.7, and potentially Opus/Sonnet if API supports it.
+        # The 'thinking' parameter is the one for extended thinking.
+        # The 'reasoning' parameter is for different reasoning levels.
+        # For now, "advanced_reasoning" capability can signify support for either.
+        if any(m_part in self.model.lower() for m_part in ["claude-3-7", "claude-3-opus", "claude-3-sonnet"]):
             self.capabilities["advanced_reasoning"] = True
-            # Keep reasoning at high by default for 3.7 models
+            # Set a default reasoning_level if not already set by a more specific config.
+            # This can be overridden by the model config in ai-battle.py.
             if not hasattr(self, "reasoning_level") or self.reasoning_level is None:
-                self.reasoning_level = "high"
-                logger.debug(f"Set default reasoning level to 'auto' for {self.model}")
+                if "claude-3-7" in self.model.lower() or "opus" in self.model.lower():
+                    self.reasoning_level = "high" 
+                elif "sonnet" in self.model.lower():
+                    self.reasoning_level = "medium"
+                else:
+                    self.reasoning_level = "auto" # General default
+                logger.debug(f"Set default reasoning level to '{self.reasoning_level}' for {self.model}")
         else:
-            # For any non-3.7 models, make sure we don't try to use reasoning
             self.capabilities["advanced_reasoning"] = False
-            self.reasoning_level = None
-            logger.debug(
-                f"Disabled reasoning capabilities for {self.model} (only available for Claude 3.7)"
-            )
+            self.reasoning_level = None # Ensure it's None if not capable
 
     def generate_response(
         self,
@@ -1918,29 +1926,20 @@ class OpenAIClient(BaseClient):
         api_key = os.environ.get("OPENAI_API_KEY")
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
-        self.last_response_id = None
-        self.use_responses_api = True  # Flag to use the new responses API
-        # Models that work well with the responses API
+        self.last_response_id = None # For Responses API context chaining
+        self.use_responses_api = True  # Default to trying Responses API first
+        
+        # Models compatible with the experimental Responses API
         self.responses_compatible_models = [
-            "o1",
-            "o1-preview",
-            "o3",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "o4-mini",
-            "gpt-4.1-nano"
+            "o1", "o1-preview", "o3", "gpt-4o", "gpt-4o-mini", 
+            "gpt-4.1", "gpt-4.1-mini", "o4-mini", "gpt-4.1-nano"
         ]
-        # Set up reasoning capabilities
-        self.reasoning_level = "auto"  # Default level
+        # Models supporting the 'reasoning' parameter in the Responses API
         self.reasoning_compatible_models = [
-            "o1",
-            "o1-preview",
-            "o3",
-            "o4-mini",
-            "o4-mini-high"
-        ]  # Models that support reasoning_effort
+            "o1", "o1-preview", "o3", "o4-mini", "o4-mini-high"
+        ]
+        self.reasoning_level = "auto"  # Default reasoning level: "none", "low", "medium", "high", "auto"
+        
         try:
             super().__init__(
                 mode=mode, api_key=api_key, domain=domain, model=model, role=role
@@ -1951,524 +1950,193 @@ class OpenAIClient(BaseClient):
 
     def validate_connection(self) -> bool:
         """Test OpenAI API connection"""
-        self.instructions = self._get_initial_instructions()
+        logger.info(f"{self.__class__.__name__} connection validated (API key assumed valid if client initialized).")
         return True
+
+    def _prepare_responses_api_input(self, prompt_text: str, file_data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
+        """Prepares the 'input' parameter for the Responses API."""
+        current_turn_input_items = [{"type": "input_text", "text": prompt_text}]
+        if file_data:
+            files_to_process = file_data if isinstance(file_data, list) else [file_data]
+            for file_item in files_to_process:
+                if isinstance(file_item, dict):
+                    if file_item.get("type") == "image" and "base64" in file_item:
+                        if self.capabilities.get("vision", True): # Assume vision if not specified
+                            mime_type = file_item.get("mime_type", "image/jpeg")
+                            current_turn_input_items.append({
+                                "type": "input_image",
+                                "image_url": {"url": f"data:{mime_type};base64,{file_item['base64']}"}
+                            })
+                            logger.info(f"Added image {file_item.get('path', 'unknown')} to Responses API input.")
+                    elif file_item.get("type") in ["text", "code"] and "text_content" in file_item:
+                        # Prepend text/code file content to the main text part for simplicity
+                        current_turn_input_items[0]["text"] = (
+                            f"[Content from file: {file_item.get('path', 'unknown')}]\n"
+                            f"{file_item['text_content']}\n\n"
+                            f"{current_turn_input_items[0]['text']}"
+                        )
+        return current_turn_input_items
+
+    def _parse_responses_api_output(self, response: Any) -> str:
+        """Parses the output from the Responses API, trying various known structures."""
+        try:
+            # Most recent or intended structure (hypothetical, based on previous complex parsing)
+            if hasattr(response, "output") and response.output and isinstance(response.output, list):
+                if response.output[0].content and isinstance(response.output[0].content, list):
+                    if hasattr(response.output[0].content[0], "text"):
+                        return response.output[0].content[0].text
+            
+            # Fallback to data structure (if it's a list of messages)
+            if hasattr(response, "data") and response.data and isinstance(response.data, list):
+                for msg_item in response.data:
+                    if msg_item.role == "assistant" and hasattr(msg_item, "content") and isinstance(msg_item.content, list):
+                        # Assuming content is a list of parts, extract text from text parts
+                        text_parts = [part.text for part in msg_item.content if hasattr(part, "type") and part.type == "text" and hasattr(part, "text")]
+                        if text_parts:
+                            return "\n".join(text_parts)
+
+            # Fallback to choices structure (similar to Chat Completions)
+            if hasattr(response, "choices") and response.choices and isinstance(response.choices, list):
+                if hasattr(response.choices[0], "message") and hasattr(response.choices[0].message, "content"):
+                    return response.choices[0].message.content
+                if hasattr(response.choices[0], "text"): # Older structure
+                     return response.choices[0].text
+
+
+            # Fallback if it's a raw JSON response that needs to be parsed
+            if hasattr(response, "json") and callable(response.json):
+                body = response.json()
+                if "choices" in body and body["choices"] and "message" in body["choices"][0] and "content" in body["choices"][0]["message"]:
+                    return body["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"Error during Responses API output parsing: {e}")
+        
+        logger.warning("Could not parse Responses API output using known structures. Returning raw string.")
+        return str(response)
+
 
     def generate_response(
         self,
         prompt: str,
-        system_instruction: str,
+        system_instruction: str, 
         history: List[Dict[str, str]],
         role: str = None,
         mode: str = None,
-        file_data: Dict[str, Any] = None,
+        file_data: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
         model_config: Optional[ModelConfig] = None,
     ) -> str:
-        """Generate response using OpenAI API"""
-        if role:
-            self.role = role
-        if mode:
-            self.mode = mode
+        """Generate response using OpenAI API, attempting Responses API first then Chat Completions."""
+        if role: self.role = role
+        if mode: self.mode = mode
+        
+        current_model_config = model_config if model_config else ModelConfig()
+        # History is not directly used by Responses API which uses previous_response_id
+        # It will be used by the Chat Completions fallback path.
+        
+        current_instructions = self._determine_system_instructions(system_instruction, history, self.role, self.mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, self.role, self.mode)
 
-        history = history if history is not None else [] # Ensure history is a list
+        model_supports_responses = any(m_name in self.model.lower() for m_name in self.responses_compatible_models)
 
-        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
-        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
+        if self.use_responses_api and model_supports_responses:
+            logger.debug(f"Attempting OpenAI Responses API with model {self.model}")
+            
+            current_turn_input_items = self._prepare_responses_api_input(final_prompt_content, file_data)
+            
+            responses_api_params = {
+                "model": self.model,
+                "input": current_turn_input_items,
+                "instructions": current_instructions,
+                "max_output_tokens": current_model_config.max_tokens,
+                "temperature": current_model_config.temperature,
+                "timeout": 90, # Consider making configurable via ModelConfig or client property
+                "stream": False # Not using streaming for this implementation
+            }
+            if self.last_response_id:
+                responses_api_params["previous_response_id"] = self.last_response_id
+            
+            if any(m_name in self.model.lower() for m_name in self.reasoning_compatible_models):
+                reasoning_mapping = {"none": "low", "low": "low", "medium": "medium", "high": "high", "auto": "high"}
+                reasoning_effort = reasoning_mapping.get(self.reasoning_level, "high") # Default "auto" to "high"
+                responses_api_params["reasoning"] = {"effort": reasoning_effort, "summary": "detailed"}
+                logger.debug(f"Using reasoning_effort='{reasoning_effort}' for model {self.model} (from reasoning_level='{self.reasoning_level}')")
 
-        # Format messages for OpenAI API
-        formatted_messages = []
+            if current_model_config.seed is not None:
+                 responses_api_params["seed"] = current_model_config.seed
+            if current_model_config.stop_sequences:
+                 responses_api_params["stop"] = current_model_config.stop_sequences
 
-        # Add system message
-        formatted_messages.append({"role": "system", "content": current_instructions})
+            try:
+                response = self.client.responses.create(**responses_api_params)
+                self.last_response_id = response.id
+                return self._parse_responses_api_output(response)
+            except Exception as e: # Catch OpenAI specific errors if possible, e.g. openai.APIError
+                logger.warning(f"OpenAI Responses API failed for model {self.model} ({type(e).__name__}: {e}). Falling back to Chat Completions API.")
+                self.use_responses_api = False 
+                # Fall through to Chat Completions API
+        
+        # --- Chat Completions API Path (Default or Fallback) ---
+        logger.info(f"Using OpenAI Chat Completions API for model {self.model} (or as fallback).")
+        
+        chat_completions_messages = []
+        if current_instructions:
+            chat_completions_messages.append({"role": "system", "content": current_instructions})
 
-        # Add history messages
-        if history:
-            for msg in history:
-                # Map roles correctly for OpenAI API (Corrected Indentation)
-                role_map = {"user": "user", "human": "user", "assistant": "assistant", "system": "developer"}
-                mapped_role = role_map.get(msg["role"])
-                if mapped_role:  # Only include roles OpenAI understands
-                    formatted_messages.append({"role": mapped_role, "content": msg["content"]})
-        text_content = final_prompt_content # Start with the determined prompt content
-        # Handle file data for OpenAI
+        processed_history = history if history is not None else []
+        for msg_data in processed_history:
+            role_map = {"user": "user", "human": "user", "assistant": "assistant", "system": "system"}
+            mapped_role = role_map.get(msg_data["role"].lower())
+            if mapped_role:
+                # If content is a list (potentially from a previous OpenAI vision response), pass it as is for user roles.
+                if mapped_role == "user" and isinstance(msg_data.get("content"), list):
+                    chat_completions_messages.append({"role": "user", "content": msg_data["content"]})
+                elif isinstance(msg_data.get("content"), str): # Standard string content
+                    chat_completions_messages.append({"role": mapped_role, "content": msg_data["content"]})
+        
+        user_message_cc_parts = [{"type": "text", "text": final_prompt_content}]
         if file_data:
-            if isinstance(file_data, list) and file_data:
-                # Format for OpenAI's vision API with multiple images
-                content_parts = []
-                
-                # Start with the text content
-                content_parts.append({"type": "text", "text": final_prompt_content})
+            files_to_process = file_data if isinstance(file_data, list) else [file_data]
+            for file_item in files_to_process:
+                if isinstance(file_item, dict) and file_item.get("type") == "image" and "base64" in file_item:
+                    if self.capabilities.get("vision", True):
+                        mime_type = file_item.get("mime_type", "image/jpeg")
+                        user_message_cc_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime_type};base64,{file_item['base64']}"}
+                        })
+                elif isinstance(file_item, dict) and file_item.get("type") in ["text", "code"] and "text_content" in file_item:
+                     user_message_cc_parts[0]["text"] = (
+                        f"[Content from file: {file_item.get('path', 'unknown')}]\n"
+                        f"{file_item['text_content']}\n\n"
+                        f"{user_message_cc_parts[0]['text']}"
+                    )
+        
+        final_user_content_for_cc = user_message_cc_parts if len(user_message_cc_parts) > 1 or any(p["type"] == "image_url" for p in user_message_cc_parts) else final_prompt_content
+        chat_completions_messages.append({"role": "user", "content": final_user_content_for_cc})
 
-                # Add all images with proper formatting
-                for file_item in file_data:
-                    if isinstance(file_item, dict) and "type" in file_item:
-                        if file_item["type"] == "image" and "base64" in file_item:
-                            # Use the correct image format for OpenAI
-                            mime_type = file_item.get("mime_type", "image/jpeg")
-                            content_parts.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{file_item['base64']}"
-                                }
-                            })
+        request_params = {
+            "model": self.model,
+            "messages": chat_completions_messages,
+            "temperature": current_model_config.temperature,
+            "max_tokens": current_model_config.max_tokens,
+            "timeout": 90, # Consider making configurable
+            "stream": False
+        }
+        if current_model_config.stop_sequences:
+            request_params["stop"] = current_model_config.stop_sequences
+        if current_model_config.seed is not None:
+            request_params["seed"] = current_model_config.seed
 
-                # Add text content from text/code files to the prompt
-                #text_content = final_prompt_content # Start with the determined prompt content
-                for file_item in file_data:
-                    if isinstance(file_item, dict) and "type" in file_item:
-                        if (
-                            file_item["type"] in ["text", "code"]
-                            and "text_content" in file_item
-                        ):
-                            text_content += f"\n\n[File: {file_item.get('path', 'unknown')}]\n{file_item.get('text_content', '')}"
-
-                # If we added text content, update the first text part or create it if needed
-                if text_content != final_prompt_content:
-                    if content_parts and content_parts[0]["type"] == "text":
-                        content_parts[0]["text"] = text_content
-                    else:
-                        content_parts.insert(0, {"type": "text", "text": text_content})
-
-                formatted_messages.append({"role": "user", "content": content_parts})
-                logger.info(f"Added multimodal content with {sum(1 for part in content_parts if part['type'] == 'image_url')} images to OpenAI request")
-            else:
-                if isinstance(file_data, dict) and "type" in file_data:
-                    if file_data["type"] == "image" and "base64" in file_data:
-                        # Check if model supports vision
-                        if self.capabilities.get("vision", True):
-                            # Format for OpenAI's vision API
-                            mime_type = file_data.get("mime_type", "image/jpeg")
-                            
-                            # Create a message with both text and image content in the correct format
-                            formatted_messages.append({
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": text_content},
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": f"data:{mime_type};base64,{file_data['base64']}"
-                                        }
-                                    }
-                                ]
-                            })
-                            
-                            logger.debug(f"Added single image with prompt to OpenAI request (mime_type: {mime_type})")
-                    else:
-                        # Model doesn't support vision, use text only
-                        logger.warning(
-                            f"Model {self.model} doesn't support vision. Using text-only prompt."
-                        )
-                        formatted_messages.append({"role": "user", "content": text_content}) # Use final prompt content
-                elif (
-                    file_data["type"] in ["text", "code"]
-                    and "text_content" in file_data
-                ):
-                    # Standard prompt with text content
-                    content = f"{file_data.get('text_content', '')}\n\n{text_content}" # Use final prompt content
-                    formatted_messages.append({"role": "user", "content": content})
-                else:
-                    logger.warning(f"Invalid file data: {file_data}")
-        else:
-            # Standard prompt without file data
-            formatted_messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
+        logger.debug(f"--- OpenAI Chat Completions Request (Fallback/Default) ---")
+        logger.debug(f"Model: {request_params.get('model')}")
+        logger.debug(f"Messages count: {len(request_params.get('messages', []))}")
 
         try:
-            response = None # Initialize response
-            # --- Debug Logging ---
-            logger.debug(f"--- OpenAI Request ---")
-            logger.debug(f"Model: {self.model}")
-            # Note: System instruction is the first message in formatted_messages
-            logger.debug(f"Messages: {formatted_messages}")
-            # Check if current model supports responses API
-            model_supports_responses = any(
-                m in self.model.lower() for m in self.responses_compatible_models
-            )
-            # Handle multimodal content
-            content_param = []
-
-            if (
-                self.use_responses_api and model_supports_responses
-            ):  # Temporarily disable responses API
-                # Use the newer responses API
-                logger.debug(f"Using responses API with model {self.model}")
-
-                # Extract the system message if it exists
-                system_message = None
-                for msg in formatted_messages:
-                    if msg["role"] == "system":
-                        system_message = msg["content"]
-                        break
-
-                # Process the last user message - Responses API handles context internally
-                last_user_message = None
-                for msg in reversed(formatted_messages):
-                    if msg["role"] == "user":
-                        last_user_message = msg
-                        break
-
-                if not last_user_message:
-                    # Fallback if no user message found
-                    last_user_message = {"role": "user", "content": final_prompt_content}
-
-
-                # Process content based on its type
-                if isinstance(last_user_message["content"], list):
-                    # Already formatted for multimodal (e.g., images and text)
-                    converted_content = []
-                    for item in last_user_message["content"]:
-                        if item.get("type") == "text":
-                            converted_content.append(
-                                {"type": "input_text", "text": item["text"]}
-                            )
-                        elif item.get("type") == "image":
-                            # Handle image in the OpenAI-specific format
-                            converted_content.append(
-                                {
-                                    "type": "input_image",
-                                    "image_url": {
-                                        "url": f"data:{item['image'].get('mime_type', 'image/jpeg')};base64,{item['image']['base64']}"
-                                    },
-                                }
-                            )
-                    # Wrap the content in a user role with proper type names
-                    content_param = [{"role": "user", "content": converted_content}]
-                # Handle if file_data contains multiple images
-                elif file_data and isinstance(file_data, dict):
-                    # First add the text prompt
-                    converted_content = [{"type": "input_text", "text": final_prompt_content}]
-
-                    # Then add each image
-                    for item in file_data:
-                        if item.get("type") == "image" and "base64" in item:
-                            mime_type = item.get("mime_type", "image/jpeg")
-                            converted_content.append(
-                                {
-                                    "type": "input_image",
-                                    "image_url": {
-                                        "url": f"data:{mime_type};base64,{item['base64']}"
-                                    },
-                                }
-                            )
-
-                    # Wrap the content in a user role
-                    content_param = [{"role": "user", "content": converted_content}]
-                    logger.debug(
-                        f"Added {len(content_param)-1} images to responses API request"
-                    )
-                elif file_data and isinstance(file_data, list):
-                    # First add the text prompt
-                    converted_content = [{"type": "input_text", "text": final_prompt_content}]
-
-                    # Then add each image
-                    for item in file_data:
-                        if item.get("type") == "image" and "base64" in item:
-                            mime_type = item.get("mime_type", "image/jpeg")
-                            converted_content.append(
-                                {
-                                    "type": "input_image",
-                                    "image_url": {
-                                        "url": f"data:{mime_type};base64,{item['base64']}"
-                                    },
-                                }
-                            )
-
-                    # Wrap the content in a user role
-                    content_param = [{"role": "user", "content": converted_content}]
-                    logger.debug(
-                        f"Added {len(content_param)-1} images to responses API request"
-                    )
-                # Handle if file_data is a single image
-                elif (
-                    file_data
-                   # and isinstance(file_data, dict)
-                    and file_data.get("type") == "image"
-                    and "base64" in file_data
-                ):
-                    mime_type = file_data.get("mime_type", "image/jpeg")
-                    content_param = [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "input_text", "text": final_prompt_content},
-                                {
-                                    "type": "input_image",
-                                    "image_url": {
-                                        "url": f"data:{mime_type};base64,{file_data['base64']}"
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                    logger.info("Added 1 image to responses API request")
-                elif isinstance(last_user_message["content"], str):
-                    # Simple text content
-                    content_param = [
-                        {"role": "user", "content": [{"type": "input_text", "text": last_user_message["content"]}]}
-                    ]
-                else:
-                    # Fallback to text content
-                    content_param = [
-                        {"role": "user", "content": [{"type": "input_text", "text": final_prompt_content}]}
-                    ]
-
-                # Check if content is too large and needs chunking
-                # Each model has different token limits, but we'll use a conservative approach
-                MAX_INPUT_SIZE = 1000000  # Characters as a rough estimate
-                total_text_length = sum(
-                    len(item.get("text", ""))
-                    for item in content_param
-                    if item.get("type") == "text"
-                )
-
-                # If we have large text content, chunk it
-                if total_text_length > MAX_INPUT_SIZE and any(
-                    item.get("type") == "text" for item in content_param
-                ):
-                    logger.info(
-                        f"Input text size ({total_text_length} chars) exceeds threshold, chunking content"
-                    )
-
-                    # Find text items and chunk them
-                    chunked_content = []
-                    for item in content_param:
-                        if (
-                            item.get("type") == "text"
-                            and len(item.get("text", "")) > MAX_INPUT_SIZE / 2
-                        ):
-                            # Split large text into chunks of approximately 50k characters
-                            text = item["text"]
-                            chunk_size = int(MAX_INPUT_SIZE / 2)
-
-                            # Try to split on paragraph boundaries
-                            chunks = []
-                            current_pos = 0
-                            while current_pos < len(text):
-                                # Find the next paragraph boundary within our chunk size
-                                end_pos = min(current_pos + chunk_size, len(text))
-
-                                # If we're not at the end, try to find a paragraph break
-                                if end_pos < len(text):
-                                    # Look for double newline (paragraph break)
-                                    paragraph_break = text.rfind(
-                                        "\n\n", current_pos, end_pos
-                                    )
-                                    if paragraph_break != -1:
-                                        end_pos = paragraph_break + 2
-                                    else:
-                                        # Fall back to single newline
-                                        newline = text.rfind("\n", current_pos, end_pos)
-                                        if newline != -1:
-                                            end_pos = newline + 1
-                                        else:
-                                            # Last resort: split on sentence
-                                            sentence_end = max(
-                                                text.rfind(". ", current_pos, end_pos),
-                                                text.rfind("! ", current_pos, end_pos),
-                                                text.rfind("? ", current_pos, end_pos),
-                                            )
-                                            if sentence_end != -1:
-                                                end_pos = sentence_end + 2
-
-                                chunks.append(text[current_pos:end_pos])
-                                current_pos = end_pos
-
-                            # Add chunked text items
-                            for chunk in chunks:
-                                chunked_content.append({"type": "message", "text": chunk})
-                                logger.debug(
-                                    f"Created text chunk of {len(chunk)} chars"
-                                )
-                        else:
-                            # Keep non-text items (like images) or small text items
-                            chunked_content.append(item)
-
-                    # Replace content_param with chunked content
-                    content_param = chunked_content
-                    logger.debug(f"Content chunked into {len(content_param)} parts")
-
-                # Set model-specific parameters
-                # Use the actual model name, don't override it
-                # The responses API is having issues, so let's fall back to the chat completions API
-                # This would be updated when the responses API is fully available and documented
-                self.use_responses_api = True
-
-                try:
-                    if self.last_response_id:
-                        # actually invoke the new endpoint
-                        response = self.client.responses.create(
-                            model=self.model,
-                            input=content_param,  # Direct array of input items, not wrapped in a role object
-                            instructions=current_instructions,
-                            max_output_tokens=3192,
-                            temperature=0.7,
-                            timeout=90,
-                            stream=False,
-                            previous_response_id=self.last_response_id,
-                        )
-                        self.last_response_id = response.id
-                    else:
-                        # first time, no previous response
-                        response = self.client.responses.create(
-                            model=self.model,
-                            input=content_param,  # Direct array of input items, not wrapped in a role object
-                            instructions=current_instructions,
-                            max_output_tokens=3192,
-                            #temperature=0.7,
-                            timeout=90,
-                            stream=False,
-                        )
-                        self.last_response_id = response.id
-                    # parse the assistant’s reply
-                    if hasattr(response, "content"):
-                        resp = response.json()
-                        answer = resp["content"]["text"]        
-                        print ("answer", answer)                
-                        return answer
-                    # 1) New‑style: `.data`
-                    if hasattr(response, "data"):
-                        for msg in response.data:
-                            if msg.role == "assistant":
-                                return "".join(part.text for part in msg.content if part.type == "text")
-
-                    # 2) Chat‑style: `.choices`
-                    if hasattr(response, "choices"):
-                        # assume first choice is what you want
-                        choice = response.choices[0]
-                        # newer SDK chat choices use .message.content
-                        if hasattr(choice, "message"):
-                            return choice.message.content
-                        # or older: choice.text
-                        if hasattr(choice, "text"):
-                            return choice.text
-
-                    if hasattr(response, "output"):
-                        # assume first choice is what you want
-                        #print (response.output["content"].text)
-                        def extract_all_text(messages): #unused, keep for later if needed..
-                            snippets = []
-                            for msg in messages:
-                                for part in msg.content:
-                                    if hasattr(part, 'text'):
-                                        snippets.append(part.text)
-                                    elif isinstance(part, str):
-                                        snippets.append(part)
-                                    if hasattr(part, "text"):
-                                        snippets.append(part.text)
-                            # join with spacing so multiple parts don’t run together
-                            return "\n\n".join(snippets)
-
-                        return response.output[0].content[0].text
-                        #choice = response.output.content.text #choices[0]
-                        return all_text
-                        # newer SDK chat choices use .message.content
-                        if hasattr(choice, "message"):
-                            return choice.message.content
-                        # or older: choice.text
-                        if hasattr(choice, "text"):
-                            return choice.text
-
-                    # 3) Last fallback: raw JSON
-                    body = response.json()
-                    # navigate body to find text under e.g. ['choices'][0]['message']['content']
-                    try:
-                        return body["choices"][0]["message"]["content"]
-                    except Exception:
-                        return str(body)
-                except Exception as e:
-                    logger.warning(f"Responses API failed ({e}), falling back")
-                    self.use_responses_api = False
-                    # now let it drop into the existing ChatCompletion logic
-
-                logger.info(
-                    "Falling back to chat completions API due to responses API limitations"
-                )
-
-                # No need to continue with responses API logic
-                return self.generate_response(
-                    prompt=prompt,
-                    system_instruction=system_instruction,
-                    history=history,
-                    role=role,
-                    mode=mode,
-                    file_data=file_data,
-                    model_config=model_config,
-                )
-            elif any(
-                model_name in self.model.lower()
-                for model_name in self.reasoning_compatible_models
-            ):
-                # Maps our reasoning levels to OpenAI's reasoning_effort parameter
-                reasoning_mapping = {
-                    "none": "low",
-                    "low": "low",
-                    "medium": "medium",
-                    "high": "high",
-                    "auto": "high",  # Default to high for auto
-                }
-
-                # Get the appropriate reasoning_effort based on our reasoning_level
-                reasoning_effort = reasoning_mapping.get(self.reasoning_level, "high")
-                logger.debug(
-                    f"Using reasoning_effort={reasoning_effort} for model {self.model} (from reasoning_level={self.reasoning_level})"
-                )
-                reasoning={
-                        "effort": "high",
-                        "summary": "detailed" # auto, concise, or detailed (currently only supported with o4-mini and o3)
-                }
-                # O1/O3/04-mini model with reasoning support
-                if self.last_response_id:
-                    # actually invoke the new endpoint
-                    response = self.client.responses.create(
-                        model=self.model,
-                        input=content_param,  # Direct array of input items, not wrapped in a role object
-                        reasoning=reasoning,
-                        instructions=current_instructions,
-                        max_output_tokens=13192,
-                        temperature=1.0,
-                        stream=False,
-                        previous_response_id=self.last_response_id,
-                    )
-                    self.last_response_id = response.id
-                else:
-                    response = self.client.responses.create(
-                        model=self.model,
-                        input=content_param,  # Direct array of input items, not wrapped in a role object
-                        temperature=1.0,
-                        instructions=current_instructions,
-                        reasoning=reasoning,
-                        max_output_tokens=8192,
-                        timeout=90,
-                        stream=False,
-                    )
-                    self.last_response_id = response.id
-                return response.choices[0].message.content
-            else:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=formatted_messages,
-                    temperature=0.7,
-                    max_tokens=MAX_TOKENS,
-                    timeout=90,
-                    stream=False,
-                )
-                return response.choices[0].message.content
+            response = self.client.chat.completions.create(**request_params)
+            return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"OpenAI generate_response error: {e}")
-            # Fallback to chat completions API if responses API fails
-            if self.use_responses_api:
-                logger.warning("Falling back to chat completions API")
-                self.use_responses_api = False
-                return self.generate_response(
-                    prompt,
-                    system_instruction,
-                    history,
-                    role,
-                    mode,
-                    file_data,
-                    model_config,
-                )
-            raise e
+            logger.error(f"OpenAI Chat Completions API error: {e}")
+            raise
 
 
 class PicoClient(BaseClient):
@@ -2530,27 +2198,40 @@ class PicoClient(BaseClient):
             for vm in ["gemma3", "llava", "bakllava", "moondream", "llava-phi3"]
         )
 
-        # Handle file data for Ollama
-        images = None
-        if (
-            is_vision_model
-            and file_data
-            and file_data["type"] == "image"
-            and "base64" in file_data
-        ):
-            # Format for Ollama's vision API
-            images = file_data["path"]
-            messages.append({"role": "user", "content": images}) # Append image path to messages
-        elif (
-            is_vision_model
-            and file_data
-            and file_data["type"] == "video"
-            and "key_frames" in file_data
-            and file_data["key_frames"]
-        ): # Note: PicoClient video handling might be basic
-            images = [file_data["path"]]
-            prompt = f"{prompt}"
-            history.append({"role": "user", "content": images})
+        # Handle file data for PicoClient (Ollama-compatible)
+        if is_vision_model and file_data:
+            image_base64_list = []
+            if isinstance(file_data, list): # Handle list of files
+                for file_item in file_data:
+                    if isinstance(file_item, dict) and "type" in file_item:
+                        if file_item["type"] == "image" and "base64" in file_item:
+                            image_base64_list.append(file_item["base64"])
+                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
+                            for frame in file_item["key_frames"]:
+                                if "base64" in frame:
+                                    image_base64_list.append(frame["base64"])
+            elif isinstance(file_data, dict) and "type" in file_data: # Handle single file_data dict
+                if file_data["type"] == "image" and "base64" in file_data:
+                    image_base64_list.append(file_data["base64"])
+                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                    for frame in file_data["key_frames"]:
+                        if "base64" in frame:
+                            image_base64_list.append(frame["base64"])
+
+            if image_base64_list:
+                # Ensure the last message is a user message and add images to it
+                if messages and messages[-1]["role"] == "user":
+                    messages[-1]["images"] = image_base64_list
+                    # Ensure content (text prompt) is also part of this message
+                    # final_prompt_content is already in messages[-1]["content"]
+                else:
+                    # This case should ideally not happen if messages are structured correctly
+                    messages.append({
+                        "role": "user",
+                        "content": final_prompt_content, # final_prompt_content was already added
+                        "images": image_base64_list
+                    })
+                logger.info(f"Added {len(image_base64_list)} images to PicoClient request")
 
         try:
             # --- Debug Logging ---
@@ -2955,64 +2636,47 @@ class OllamaClient(BaseClient):
             ]
         )
 
-        # Handle file data for Ollama (Corrected Image Handling)
+        # Handle file data for Ollama
         if is_vision_model and file_data:
-            if isinstance(file_data, list) and file_data:
-                # Handle multiple files
-                all_images = []
+            image_base64_list = []
+            if isinstance(file_data, list) and file_data: # Handling list of file_data dicts
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if file_item["type"] == "image" and "base64" in file_item:
-                            all_images.append(file_item["base64"])
-                        elif (
-                            file_item["type"] == "video"
-                            and "key_frames" in file_item
-                            and file_item["key_frames"]
-                        ):
-                            all_images.extend(
-                                [frame["base64"] for frame in file_item["key_frames"]]
-                            )
-                        elif (
-                            file_item["type"] == "video" and "video_chunks" in file_item
-                        ):
-                            # For Ollama, we can send the entire video content since it's running locally
-                            # Combine all chunks into a single video content
-                            full_video_content = "".join(file_item["video_chunks"])
-                            logger.info(
-                                f"Added full video content to Ollama request ({len(full_video_content)} bytes)"
-                            )
-                            # Note: Currently, we're not handling video chunks in the multiple files case
-
-                if all_images:
-                    messages[-1]["images"] = all_images
-                    logger.info(f"Added {len(all_images)} images to Ollama request")
-            elif isinstance(file_data, dict) and "type" in file_data:
+                            image_base64_list.append(file_item["base64"])
+                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
+                            # Collect all base64 frames from this video file
+                            for frame in file_item["key_frames"]:
+                                if "base64" in frame:
+                                    image_base64_list.append(frame["base64"])
+                        # Video chunks are not processed into images field for Ollama here, key_frames are preferred.
+            
+            elif isinstance(file_data, dict) and "type" in file_data: # Handling single file_data dict
                 if file_data["type"] == "image" and "base64" in file_data:
-                    # Add the image directly to the *last* message in the messages list
-                    messages[-1]["images"] = [
-                        file_data["base64"]
-                    ]  # Correct image format
-                elif (
-                    file_data["type"] == "video"
-                    and "key_frames" in file_data
-                    and file_data["key_frames"]
-                ):
-                    # --- Key Change: Send *all* sampled frames ---
-                    messages[-1]["images"] = [
-                        frame["base64"] for frame in file_data["key_frames"]
-                    ]
-                elif file_data["type"] == "video" and "video_chunks" in file_data:
-                    # For Ollama, we can send the entire video content since it's running locally
-                    # Combine all chunks into a single video content
-                    full_video_content = "".join(file_data["video_chunks"])
+                    image_base64_list.append(file_data["base64"])
+                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
+                    # Collect all base64 frames from this video file
+                    for frame in file_data["key_frames"]:
+                        if "base64" in frame:
+                            image_base64_list.append(frame["base64"])
+                # Removed the "video_chunks" logic that incorrectly assigned to messages[-1]["video"]
 
-                    # Add the video content to the message
-                    # Note: This assumes Ollama can handle video content directly
-                    # If not, this will need to be modified to extract frames
-                    messages[-1]["video"] = full_video_content
-                    logger.info(
-                        f"Added full video content to Ollama request ({len(full_video_content)} bytes)"
-                    )
+            if image_base64_list:
+                # Ensure the last message is a user message and add images to it
+                if messages and messages[-1]["role"] == "user":
+                    # If "images" field already exists (e.g. from a previous file in a list), append. Otherwise, create.
+                    if "images" in messages[-1] and isinstance(messages[-1]["images"], list):
+                        messages[-1]["images"].extend(image_base64_list)
+                    else:
+                        messages[-1]["images"] = image_base64_list
+                else:
+                    # This case should ideally not happen with correct message structuring
+                    messages.append({
+                        "role": "user",
+                        "content": final_prompt_content, # final_prompt_content was already added
+                        "images": image_base64_list
+                    })
+                logger.info(f"Added/Appended {len(image_base64_list)} images to OllamaClient request's last user message.")
 
         try:
             # --- Debug Logging ---
@@ -3023,21 +2687,26 @@ class OllamaClient(BaseClient):
             # Use the chat() method
             response: ChatResponse = self.client.chat(
                 model=self.model,
-                messages=messages,  # Pass the correctly formatted messages
+                messages=messages,
                 stream=False,
-                options={
+                options={ # Default options, can be overridden by model_config
                     "num_ctx": 16384,
-                    "num_predict": 2048,
-                    "temperature": 0.7,
-                    "num_batch": 512,
-                    "top_k": 40,
-                    "use_mmap": True
+                    "num_predict": model_config.max_tokens if model_config and model_config.max_tokens else 2048,
+                    "temperature": model_config.temperature if model_config and model_config.temperature is not None else 0.7,
+                    "seed": model_config.seed if model_config and model_config.seed is not None else random.randint(0, 1000000),
+                    "stop": model_config.stop_sequences if model_config and model_config.stop_sequences else None,
+                    "num_batch": 512, # Common default
+                    "top_k": 40,      # Common default
+                    "use_mmap": True  # Common default
                 },
             )
-
-            return response.message.content
-
+            return response['message']['content'] # Corrected access for ollama versions <0.2.0
+                                                # For >=0.2.0, it's response.message.content
         except Exception as e:
             logger.error(f"Ollama generate_response error: {e}")
-            return f"Error generating response: {e}"
-            raise e
+            # Attempt to access response content even in case of some errors if possible
+            if hasattr(response, 'message') and hasattr(response.message, 'content'):
+                 return response.message.content
+            if isinstance(response, dict) and 'message' in response and 'content' in response['message']:
+                 return response['message']['content']
+            return f"Error generating response: {e}" # Return error string

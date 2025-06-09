@@ -1,5 +1,6 @@
-"""AI model conversation manager with memory optimizations."""
-
+"""
+AI model conversation manager with memory optimizations.
+"""
 import json
 import os
 import datetime
@@ -51,7 +52,7 @@ os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 3192
+TOKENS_PER_TURN = 4096
 MAX_TOKENS = TOKENS_PER_TURN
 DEFAULT_PROMPT = """
 Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
@@ -108,19 +109,6 @@ logger = logging.getLogger(__name__)
 OPENAI_MODELS = {
     # Base models (text-only with reasoning support)
     "o1": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
-    "o3": {"model": "o3", "reasoning_level": "medium", "multimodal": True},
-    # O1 with reasoning levels (text-only)
-    "o1-reasoning-high": {
-        "model": "o1",
-        "reasoning_level": "high",
-        "multimodal": False,
-    },
-    "o1-reasoning-medium": {
-        "model": "o1",
-        "reasoning_level": "medium",
-        "multimodal": False,
-    },
-    "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": True},
     "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": True},
     # O3 with reasoning levels (text-only)
     "o3-reasoning-high": {
@@ -134,11 +122,13 @@ OPENAI_MODELS = {
         "multimodal": True,
     },
     "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": True},
+    "o3-mini-high": {"model": "o3-mini", "reasoning_level": "high", "multimodal": True},
     "o4-mini": {"model": "o4-mini", "reasoning_level": "medium", "multimodal": True},
     "o4-mini-high": {"model": "o4-mini", "reasoning_level": "high", "multimodal": True},
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
     "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
+    "gpt-4.5": {"model": "gpt-4.5", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
     "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
@@ -155,6 +145,9 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
     "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
+    # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
+    "gemini-2.5-pro": {"model": "gemini-2.5-pro-latest", "multimodal": True},
+    "gemini-2.5-flash-thinking": {"model": "gemini-2.5-flash-thinking", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -194,6 +187,16 @@ CLAUDE_MODELS = {
         "model": "claude-3-7-sonnet-latest",
         "reasoning_level": "auto",
         "extended_thinking": False,
+    },
+    "claude-4-0-sonnet": {
+        "model": "claude-4-0-sonnet-latest",
+        "reasoning_level": "auto",
+        "extended_thinking": False,
+    },
+    "claude-4-0-opus": {
+        "model": "claude-4-0-opus-latest",
+        "reasoning_level": "high",
+        "extended_thinking": True,
     },
     # Claude 3.7 with reasoning levels
     "claude-3-7-reasoning": {
@@ -394,8 +397,8 @@ class ConversationManager:
                     if model_config.get("extended_thinking", False):
                         budget_tokens = model_config.get("budget_tokens", None)
                         client.set_extended_thinking(True, budget_tokens)
-                        logger.debug(
-                            f"Enabled extended thinking with budget_tokens={budget_tokens} for {model_name}"
+                        logger.info( # Changed to info for better visibility
+                            f"Enabled extended thinking with budget_tokens={budget_tokens} for Claude model {model_name}"
                         )
 
                 # Handle OpenAI models using templates
