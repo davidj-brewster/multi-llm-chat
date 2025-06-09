@@ -411,6 +411,11 @@ class ModelConfig:
     type: str
     role: str
     persona: Optional[str] = field(default=None)
+    max_tokens: int = 3192  # Default max tokens, moved from global MAX_TOKENS
+    temperature: float = 0.8
+    stop_sequences: List[str] = field(default_factory=list)
+    seed: Optional[int] = None # Allow None, specific clients might generate a random seed if None
+    timeout: Optional[int] = 90 # Default timeout in seconds
 
     def __post_init__(self):
         # Validate model type
@@ -431,6 +436,12 @@ class ModelConfig:
         # Validate persona if provided
         if self.persona and not isinstance(self.persona, str):
             raise ValueError("Persona must be a string")
+        if not (0 <= self.temperature <= 2.0): # Typical range for temperature
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        if self.max_tokens <= 0:
+            raise ValueError("Max tokens must be positive")
+        if self.timeout is not None and self.timeout <= 0:
+            raise ValueError("Timeout must be positive if specified")
 
 
 @dataclass

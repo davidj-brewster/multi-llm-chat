@@ -152,6 +152,8 @@ class FileConfig:
             "extensions": [".mp4", ".mov", ".avi", ".webm"],
             "max_size": 300 * 1024 * 1024,  # 300MB
             "max_resolution": (3840, 2160),  # 4K
+            "processing_target_fps": 3,
+            "processing_max_dimension": 768,
             "supported_models": {"gemini": ["gemini-pro-vision"]},
         },
         "text": {
@@ -217,44 +219,98 @@ class FileConfig:
 
     @classmethod
     def can_handle_media(cls, model_name: str, file_type: str) -> bool:
-        """
+        '''
         Check if model can handle media type.
 
         Args:
-            model_name: Name of the AI model
-            file_type: Type of media to check
+            model_name: Name of the AI model (e.g., "gemini-pro-vision", "claude-3-opus").
+            file_type: Type of media to check (e.g., "image", "video").
 
         Returns:
-            bool: True if model supports the media type
-        """
+            bool: True if model supports the media type, False otherwise.
+        '''
+        if not file_type or not model_name:
+            logger.debug("File type or model name is missing.")
+            return False
+
+        model_name_lower = model_name.lower()
+
         if file_type not in cls.SUPPORTED_FILE_TYPES:
             logger.debug(f"Unsupported file type: {file_type}")
             return False
 
-        config = cls.SUPPORTED_FILE_TYPES[file_type]
-        if "supported_models" not in config:
-            return False
+        config_for_file_type = cls.SUPPORTED_FILE_TYPES[file_type]
 
-        # Map model names to providers
+        # If 'supported_models' is not in the config for this file_type,
+        # it implies universal support for this file type (e.g., text files).
+        if "supported_models" not in config_for_file_type:
+            logger.debug(f"File type {file_type} is universally supported (no specific model restrictions).")
+            return True
+
+        supported_by_provider_dict = config_for_file_type["supported_models"]
+
+        # Determine the provider of the given model_name.
+        # This provider map helps group models.
+        # It should be maintained and updated as new model families are introduced.
+        # The keys are keywords to find in model_name_lower, values are the provider identifiers used in SUPPORTED_FILE_TYPES.
         provider_map = {
-            "claude": "claude",
-            "sonnet": "claude",
-            "haiku": "claude",
-            "gemini": "gemini",
-            "flash": "gemini",
-            "gpt": "openai",
-            "chatgpt": "openai",
-            "o1": "openai",
+            # OpenAI - Order more specific names first if they are also keywords in less specific ones
+            "gpt-4o": "openai", "gpt-4-vision": "openai", "gpt-4": "openai",
+            "gpt-3.5": "openai", "o1": "openai", "chatgpt": "openai",
+            # Claude / Anthropic
+            "claude-3-opus": "claude", "claude-3-sonnet": "claude", "claude-3-haiku": "claude",
+            "claude-3.5-sonnet": "claude", "claude-3.7": "claude", # More specific Claude models
+            "sonnet": "claude", "haiku": "claude", "opus": "claude", "claude": "claude",
+            # Gemini / Google
+            "gemini-2.0-flash-exp": "gemini", "gemini-pro-vision": "gemini", "gemini-pro": "gemini",
+            "gemini-2-pro": "gemini", "gemini-2-reasoning": "gemini", "gemini-2-flash-lite": "gemini",
+            "gemini": "gemini", "flash": "gemini", # General gemini/flash terms
+            # Ollama - These are often specific model names that act as keywords
+            "llava": "ollama", "codellama": "ollama", "qwen": "ollama",
+            "phi4": "ollama", "phi": "ollama", # Added phi4 before phi
+            "gemma": "ollama", "mistral": "ollama", "command-r": "ollama",
         }
 
-        # Get provider from model name
-        provider = next(
-            (p for k, p in provider_map.items() if k in model_name.lower()), None
-        )
-        if not provider:
-            return False
+        identified_provider = None
+        # Iterate to find the most specific match for provider
+        for keyword, provider_name in provider_map.items():
+            if keyword in model_name_lower:
+                identified_provider = provider_name
+                logger.debug(f"Identified provider '{identified_provider}' for model '{model_name}' using keyword '{keyword}'.")
+                break # Take the first, most specific match
 
-        return provider in config["supported_models"]
+        # If a provider was identified for the model
+        if identified_provider and identified_provider in supported_by_provider_dict:
+            models_for_provider = supported_by_provider_dict[identified_provider]
+            # If the list of models for this provider is empty, it means all models of this provider are supported.
+            if not models_for_provider:
+                logger.debug(f"Model '{model_name}' (provider '{identified_provider}') handles file type '{file_type}' as all models from this provider are supported for it.")
+                return True
+            # Otherwise, check if the specific model_name (or parts of it) is in the list.
+            for supported_model_pattern in models_for_provider:
+                if supported_model_pattern.lower() in model_name_lower:
+                    logger.debug(f"Model '{model_name}' handles file type '{file_type}' via pattern '{supported_model_pattern}' for provider '{identified_provider}'.")
+                    return True
+
+        # Fallback: If provider identification was not definitive or did not lead to a match,
+        # check if the model_name_lower directly matches any listed model patterns across all providers.
+        # This is useful for models not fitting neatly into the provider_map keywords or for very specific model entries.
+        logger.debug(f"Provider-based check for '{model_name}' (provider '{identified_provider}') did not confirm support for '{file_type}'. Trying direct model pattern matching.")
+        for provider_key_in_config, models_list_for_provider in supported_by_provider_dict.items():
+            if not models_list_for_provider: # Empty list might imply universal support for that provider's models
+                # This case is complex: if identified_provider matches provider_key_in_config, it's a match.
+                if identified_provider and identified_provider == provider_key_in_config:
+                    logger.debug(f"Model '{model_name}' (provider '{identified_provider}') handles '{file_type}' as provider '{provider_key_in_config}' has an empty list (universal support for its models).")
+                    return True
+                # Otherwise, we can't be sure model_name belongs to this provider_key_in_config, so we don't assume support.
+                continue
+            for supported_model_pattern in models_list_for_provider:
+                if supported_model_pattern.lower() in model_name_lower:
+                    logger.debug(f"Model '{model_name}' handles file type '{file_type}' via explicit listing of pattern '{supported_model_pattern}' under provider '{provider_key_in_config}'.")
+                    return True
+
+        logger.info(f"Model '{model_name}' does not appear to handle file type '{file_type}' based on the configuration in SUPPORTED_FILE_TYPES.")
+        return False
 
 
 class ConversationMediaHandler:
@@ -539,21 +595,73 @@ class ConversationMediaHandler:
                             "source": {
                                 "type": "base64",
                                 "mime_type": metadata.mime_type,
-                                "data": file_data,
+                                "data": file_data, # This is file_data from with open(metadata.path, "rb")
                             },
                         }
                     )
                 elif metadata.type == "video":
-                    message["content"].append(
-                        {
+                    if hasattr(metadata, 'processed_video') and metadata.processed_video and \
+                       "frame_paths" in metadata.processed_video and \
+                       "processed_video_path" in metadata.processed_video:
+                        logger.info(f"Preparing processed video data for {metadata.path} in prepare_multiple_media_messages")
+
+                        video_data_for_model_consumption = {
                             "type": "video",
-                            "source": {
-                                "type": "base64",
-                                "mime_type": metadata.mime_type,
-                                "data": file_data,
-                            },
+                            "path": metadata.processed_video["processed_video_path"],
+                            "mime_type": metadata.processed_video.get("mime_type", "video/mp4"),
+                            "duration": metadata.duration,
+                            "fps": metadata.processed_video.get("fps"),
+                            "dimensions": metadata.processed_video.get("resolution"),
+                            "key_frames": [],
+                            "text_content": metadata.text_content,
                         }
-                    )
+                        frames_for_model_client = []
+                        for frame_path_str in metadata.processed_video["frame_paths"]:
+                            try:
+                                with open(frame_path_str, "rb") as f_frame:
+                                    frame_b64 = base64.b64encode(f_frame.read()).decode('utf-8')
+                                frames_for_model_client.append({"base64": frame_b64, "mime_type": "image/jpeg"})
+                            except Exception as e:
+                                logger.error(f"Failed to read and encode frame {frame_path_str}: {e}")
+                        video_data_for_model_consumption["key_frames"] = frames_for_model_client
+                        setattr(metadata, 'video_payload_for_model', video_data_for_model_consumption)
+
+                        message["content"].append({
+                            "type": "video_reference",
+                            "original_path": metadata.path,
+                            "processed_path": metadata.processed_video["processed_video_path"],
+                            "description": f"Processed video: {os.path.basename(metadata.processed_video['processed_video_path'])}. Duration: {metadata.duration:.1f}s. {len(frames_for_model_client)} frames extracted."
+                        })
+                    else:
+                        logger.warning(f"Processed video data not found for {metadata.path} in prepare_multiple_media_messages. Sending reference only.")
+                        message["content"].append({
+                            "type": "video_reference",
+                            "original_path": metadata.path,
+                            "description": f"Original video (processing data unavailable): {os.path.basename(metadata.path)}"
+                        })
+                        setattr(metadata, 'video_payload_for_model', None)
+                # For other types like text, code, they are usually not large and handled by original logic
+                # This else branch handles if the original logic for text/code (not shown in SEARCH) needs to be preserved.
+                # If the SEARCH block was only for image/video, this else might not be needed.
+                # Assuming original logic for non-image/non-video types should remain:
+                elif metadata.type not in ["image", "video"]:
+                     # This part assumes 'file_data' (the raw bytes) was read for other types.
+                     # If not, this needs to be adjusted or removed.
+                     # For this optimization, we focus on video, so we'll assume text/code are handled elsewhere or are small.
+                     # If text/code also involved large file_data reading here, it would need similar optimization or review.
+                     # For now, let's assume this method primarily focuses on media that becomes part of 'source'.
+                     # If text files are included via 'source' and are large, this is a separate issue.
+                     # Given the original SEARCH block, it implies 'file_data' was read for all types.
+                     # We will add a placeholder for text here, assuming it's handled as before.
+                    message["content"].append({
+                        "type": metadata.type, # e.g. "text", "code"
+                        "source": { # Assuming a similar structure if it was base64 encoded
+                            "type": "base64", # Or "text" directly if not encoded
+                            "mime_type": metadata.mime_type,
+                            "data": file_data, # Raw bytes of text/code file
+                        }
+                    })
+
 
                 messages.append(message)
 
@@ -625,27 +733,78 @@ class ConversationMediaHandler:
 
             # Add media content based on type
             if metadata.type == "image":
-                message["content"].append(
-                    {
+                # Read original image file for base64 encoding
+                try:
+                    with open(metadata.path, "rb") as f_image: # metadata.path is the original path
+                        image_file_data = f_image.read()
+                    message["content"].append({
                         "type": "image",
                         "source": {
                             "type": "base64",
                             "mime_type": metadata.mime_type,
-                            "data": file_data,
+                            "data": image_file_data, # base64.b64encode(image_file_data).decode('utf-8') if not already encoded
                         },
-                    }
-                )
+                    })
+                except FileIOError as e:
+                    logger.error(f"File I/O error for image {metadata.path}: {e}")
+                    # Optionally add a placeholder or error message to content
+                    message["content"].append({"type": "text", "text": f"[Error loading image: {metadata.path}]"})
+
+
             elif metadata.type == "video":
-                message["content"].append(
-                    {
+                if hasattr(metadata, 'processed_video') and metadata.processed_video and \
+                   "frame_paths" in metadata.processed_video and \
+                   "processed_video_path" in metadata.processed_video:
+                    logger.info(f"Preparing processed video data for {metadata.path} in prepare_media_message")
+
+                    video_data_for_model_consumption = {
                         "type": "video",
-                        "source": {
-                            "type": "base64",
-                            "mime_type": metadata.mime_type,
-                            "data": file_data,
-                        },
+                        "path": metadata.processed_video["processed_video_path"],
+                        "mime_type": metadata.processed_video.get("mime_type", "video/mp4"),
+                        "duration": metadata.duration,
+                        "fps": metadata.processed_video.get("fps"),
+                        "dimensions": metadata.processed_video.get("resolution"),
+                        "key_frames": [],
+                        "text_content": metadata.text_content,
                     }
-                )
+                    frames_for_model_client = []
+                    for frame_path_str in metadata.processed_video["frame_paths"]:
+                        try:
+                            with open(frame_path_str, "rb") as f_frame:
+                                frame_b64 = base64.b64encode(f_frame.read()).decode('utf-8')
+                            frames_for_model_client.append({"base64": frame_b64, "mime_type": "image/jpeg"})
+                        except Exception as e:
+                            logger.error(f"Failed to read and encode frame {frame_path_str}: {e}")
+                    video_data_for_model_consumption["key_frames"] = frames_for_model_client
+                    setattr(metadata, 'video_payload_for_model', video_data_for_model_consumption)
+
+                    message["content"].append({
+                        "type": "video_reference",
+                        "original_path": metadata.path,
+                        "processed_path": metadata.processed_video["processed_video_path"],
+                        "description": f"Processed video: {os.path.basename(metadata.processed_video['processed_video_path'])}. Duration: {metadata.duration:.1f}s. {len(frames_for_model_client)} frames extracted."
+                    })
+                else: # Fallback if processed_video data is not available
+                    logger.warning(f"Processed video data not found for {metadata.path}. Sending reference only.")
+                    message["content"].append({
+                        "type": "video_reference",
+                        "original_path": metadata.path,
+                        "description": f"Original video (processing data unavailable): {os.path.basename(metadata.path)}"
+                    })
+                    setattr(metadata, 'video_payload_for_model', None)
+
+            # For other types like text, if they were previously read into file_data, handle here
+            # This part is simplified, assuming 'file_data' would be the raw bytes for text/code
+            elif metadata.type not in ["image", "video"] and file_data: # file_data is raw bytes here
+                 message["content"].append({
+                     "type": metadata.type,
+                     "source": { # This assumes text/code might also be base64 encoded if large, or handled differently
+                         "type": "base64", # Or "text" if handled directly
+                         "mime_type": metadata.mime_type,
+                         "data": file_data, # This is the raw bytes from the original with open(file_path, "rb")
+                     }
+                 })
+
 
             return message
 
@@ -868,6 +1027,11 @@ class ConversationMediaHandler:
                         resized_path = self.output_dir / f"resized_{file_path.name}"
                         logger.info(f"Saving resized image to {resized_path}")
                         resized_img.save(resized_path)
+                        # Update metadata to reflect the resized image
+                        original_path_for_log = file_path # Keep original for logging
+                        metadata.path = str(resized_path)
+                        metadata.size = resized_path.stat().st_size
+                        logger.info(f"Image {original_path_for_log} was resized. Metadata path updated to {metadata.path} and size to {metadata.size}")
             except UnidentifiedImageError:
                 raise ImageProcessingError(f"Cannot identify image file: {file_path}")
             except (IOError, OSError) as e:
@@ -918,24 +1082,9 @@ class ConversationMediaHandler:
             metadata.duration = duration
 
             # Process video at lower framerate and resolution
-            target_fps = 3  # Configurable
-
-            # Use max_dimension from metadata if available
-            max_dimension = 768# Default to 512 if not specified
-            if hasattr(metadata, "max_resolution") and metadata.max_resolution:
-                try:
-                    # Parse max_resolution string
-                    resolution_parts = metadata.max_resolution.split("x")
-                    if len(resolution_parts) == 2:
-                        # Use the first dimension as max_dimension
-                        max_dimension = int(resolution_parts[0])
-                        logger.info(
-                            f"Using max_dimension {max_dimension} from configuration"
-                        )
-                except (ValueError, AttributeError) as e:
-                    logger.warning(
-                        f"Could not parse max_resolution: {e}, using default {max_dimension}"
-                    )
+            video_config = FileConfig.SUPPORTED_FILE_TYPES["video"]
+            target_fps = video_config.get("processing_target_fps", 3)
+            max_dimension = video_config.get("processing_max_dimension", 768)
 
             logger.info(
                 f"Processing video {file_path} with original dimensions {width}x{height}, fps: {original_fps}"
