@@ -1,5 +1,6 @@
-"""AI model conversation manager with memory optimizations."""
-
+"""
+AI model conversation manager with memory optimizations.
+"""
 import json
 import os
 import datetime
@@ -51,7 +52,7 @@ os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 3192
+TOKENS_PER_TURN = 4096
 MAX_TOKENS = TOKENS_PER_TURN
 DEFAULT_PROMPT = """
 Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
@@ -108,19 +109,6 @@ logger = logging.getLogger(__name__)
 OPENAI_MODELS = {
     # Base models (text-only with reasoning support)
     "o1": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
-    "o3": {"model": "o3", "reasoning_level": "medium", "multimodal": True},
-    # O1 with reasoning levels (text-only)
-    "o1-reasoning-high": {
-        "model": "o1",
-        "reasoning_level": "high",
-        "multimodal": False,
-    },
-    "o1-reasoning-medium": {
-        "model": "o1",
-        "reasoning_level": "medium",
-        "multimodal": False,
-    },
-    "o1-reasoning-low": {"model": "o1", "reasoning_level": "low", "multimodal": True},
     "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": True},
     # O3 with reasoning levels (text-only)
     "o3-reasoning-high": {
@@ -134,11 +122,13 @@ OPENAI_MODELS = {
         "multimodal": True,
     },
     "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": True},
+    "o3-mini-high": {"model": "o3-mini", "reasoning_level": "high", "multimodal": True},
     "o4-mini": {"model": "o4-mini", "reasoning_level": "medium", "multimodal": True},
     "o4-mini-high": {"model": "o4-mini", "reasoning_level": "high", "multimodal": True},
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
     "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
+    "gpt-4.5": {"model": "gpt-4.5", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
     "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
@@ -156,8 +146,8 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
     "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
     # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
-    "gemini-2.5-pro": {"model": "gemini-1.5-pro-latest", "multimodal": True},
-    "gemini-2.5-flash": {"model": "gemini-1.5-flash-latest", "multimodal": True},
+    "gemini-2.5-pro": {"model": "gemini-2.5-pro-latest", "multimodal": True},
+    "gemini-2.5-flash-thinking": {"model": "gemini-2.5-flash-thinking", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -198,6 +188,16 @@ CLAUDE_MODELS = {
         "reasoning_level": "auto",
         "extended_thinking": False,
     },
+    "claude-4-0-sonnet": {
+        "model": "claude-4-0-sonnet-latest",
+        "reasoning_level": "auto",
+        "extended_thinking": False,
+    },
+    "claude-4-0-opus": {
+        "model": "claude-4-0-opus-latest",
+        "reasoning_level": "high",
+        "extended_thinking": True,
+    },
     # Claude 3.7 with reasoning levels
     "claude-3-7-reasoning": {
         "model": "claude-3-7-sonnet-latest",
@@ -223,38 +223,6 @@ CLAUDE_MODELS = {
         "model": "claude-3-7-sonnet",
         "reasoning_level": "none",
         "extended_thinking": False,
-    },
-    # Claude 3 Opus (added)
-    "claude-3-opus": {
-        "model": "claude-3-opus-20240229",
-        "reasoning_level": "high", # Opus is powerful
-        "extended_thinking": False,
-    },
-    # Claude 3 Sonnet (specific version, added for completeness)
-    "claude-3-sonnet": { # This might conflict with "sonnet" if not careful with naming
-        "model": "claude-3-sonnet-20240229",
-        "reasoning_level": "medium",
-        "extended_thinking": False,
-    },
-    # Claude 3 Haiku (specific version, added for completeness)
-    "claude-3-haiku": { # This might conflict with "haiku"
-        "model": "claude-3-haiku-20240307",
-        "reasoning_level": "low",
-        "extended_thinking": False,
-    },
-    # Claude 3 Opus with extended thinking (added)
-    "claude-3-opus-extended": {
-        "model": "claude-3-opus-20240229",
-        "reasoning_level": "high",
-        "extended_thinking": True,
-        "budget_tokens": 16000, # Optional: Default budget
-    },
-    # Claude 3 Sonnet with extended thinking (added)
-    "claude-3-sonnet-extended": {
-        "model": "claude-3-sonnet-20240229",
-        "reasoning_level": "medium",
-        "extended_thinking": True,
-        "budget_tokens": 8000, # Optional: Default budget
     },
     # Claude 3.7 with extended thinking
     "claude-3-7-extended": {
