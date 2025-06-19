@@ -136,7 +136,7 @@ transformers==4.51.3
 typer==0.15.2
 typing-extensions==4.12.2
 tzdata==2025.1
-urllib3==2.3.0
+urllib3==2.5.0
 wasabi==1.1.3
 watchdog==6.0.0
 weasel==0.4.1
