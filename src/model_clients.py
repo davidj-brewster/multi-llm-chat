@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 3192
+MAX_TOKENS = 4096
 TOKENS_PER_TURN = MAX_TOKENS
 
 
@@ -935,9 +935,9 @@ class GeminiClient(BaseClient):
         role: str,
         api_key: str,
         domain: str,
-        model: str = "gemini-2.0-flash-exp",
+        model: str = "gemini-2.5-flash-lite",
     ):
-        api_key = os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY")
         super().__init__(
             mode=mode, api_key=api_key, domain=domain, model=model, role=role
         )
@@ -968,7 +968,7 @@ class GeminiClient(BaseClient):
         """
         self.generation_config = types.GenerateContentConfig(
             temperature=0.7,
-            maxOutputTokens=1536,
+            maxOutputTokens=MAX_TOKENS,
             candidateCount=1,
             responseMimeType="text/plain",
             safety_settings=[],
@@ -1201,7 +1201,7 @@ class GeminiClient(BaseClient):
                             config=types.GenerateContentConfig(
                                 temperature=0.8,
                                 systemInstruction=current_instructions,
-                                max_output_tokens=8192,
+                                max_output_tokens=4096,
                                 candidateCount=1,
                                 safety_settings=[
                                     types.SafetySetting(
@@ -1252,7 +1252,7 @@ class GeminiClient(BaseClient):
                             config=types.GenerateContentConfig(
                                 temperature=0.8,
                                 systemInstruction=current_instructions,
-                                max_output_tokens=8192,
+                                max_output_tokens=4096,
                                 candidateCount=1,
                                 safety_settings=[
                                     types.SafetySetting(

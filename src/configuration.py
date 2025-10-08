@@ -66,7 +66,7 @@ class TimeoutConfig:
 # imported FileConfig and ModelConfig from .configdataclasses
 # For now, assuming it's potentially deprecated or will be handled separately if still needed.
 # If it were to be updated:
-# class DiscussionConfigOld: 
+# class DiscussionConfigOld:
 #     turns: int
 #     models: Dict[str, ModelConfig] # This will now refer to the imported ModelConfig
 #     goal: str
@@ -94,7 +94,7 @@ class TimeoutConfig:
 
 # Marking DiscussionConfigOld as potentially deprecated by commenting out for now.
 # If it's needed, it should be reviewed and updated.
-class DiscussionConfigOld: 
+class DiscussionConfigOld:
     pass
 
 def load_system_instructions() -> Dict:
@@ -147,14 +147,14 @@ def load_config(path: str) -> DiscussionConfig: # Returns DiscussionConfig from 
                 if template_name in system_instructions:
                     template = system_instructions[template_name]
                     params = model_config_dict["instructions"].get("params", {})
-                    
+
                     # instruction_text = json.dumps(template)
                     # Ensure template is a string before replacing
                     if isinstance(template, str):
                         instruction_text = template
                         for key, value in params.items():
                             instruction_text = instruction_text.replace(f"{{{key}}}", str(value))
-                        model_config_dict["persona"] = instruction_text 
+                        model_config_dict["persona"] = instruction_text
                     elif isinstance(template, (dict, list)):
                         # If template is complex, dump to JSON string, replace, then parse back.
                         # This is kept for compatibility but string templates are preferred.
@@ -200,7 +200,7 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
 
         # Vision Capabilities
         # General keywords for cloud providers known for vision
-        cloud_vision_keywords = ["claude", "gpt-4o", "gemini", "o1", "o3", "vision", "gpt-4.1"] 
+        cloud_vision_keywords = ["claude", "gpt-4o", "gemini", "o1", "o3", "vision", "gpt-4.1"]
         # Specific Ollama vision models (keywords within their names)
         ollama_vision_keywords = ["llava", "bakllava", "moondream", "gemma3", "llava-phi3"] # gemma3 added, phi4 (often llava-phi3)
 
@@ -220,9 +220,9 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         # Gemini 1.5 models support function calling.
         # Claude 3 models support function calling.
         # GPT-4+ models support function calling.
-        if "gpt-4" in mt_lower or "claude-3" in mt_lower or "gemini-1.5" in mt_lower or "gemini-2.5" in mt_lower: 
+        if "gpt-4" in mt_lower or "claude-3" in mt_lower or "gemini-1.5" in mt_lower or "gemini-2.5" in mt_lower:
             capabilities["function_calling"] = True
-        
+
         # Advanced Reasoning Capability (for models with explicit reasoning/thinking parameters or known advanced versions)
         # This primarily refers to models where client-side parameters might enable deeper reasoning.
         # Claude 3.x (Opus, Sonnet, Haiku, 3.7) are all advanced.
@@ -230,7 +230,7 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         if "claude-3" in mt_lower or \
            any(variant in mt_lower for variant in ["o1", "o3", "o4-mini"]): # Simplified, as specific reasoning variants like o1-reasoning-high are still "o1"
             capabilities["advanced_reasoning"] = True
-        
+
         # Code Understanding (Most LLMs have some level, this flag is for notable proficiency or specific features)
         # This can be highly model-specific and might require more granular checks if used to gate features.
         # For now, we'll assume general capability unless specific models are known to excel or lack it.

@@ -81,11 +81,11 @@ class AdaptiveInstructionManager:
             # Override mode if provided
             if mode:
                 self.mode = mode
-                
+
             # Special case for no-meta-prompting mode
             if self.mode == "no-meta-prompting":
                 return f"You are having a conversation about: {domain}. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens."
-                
+
             logger.debug(f"Applying adaptive instruction generation for mode: {self.mode}")
 
             # Validate inputs
@@ -94,15 +94,15 @@ class AdaptiveInstructionManager:
 
             if not isinstance(domain, str):
                 raise ValueError(f"Domain must be a string, got {type(domain)}")
-                
+
             if not domain.strip():
                 logger.error("Domain is empty or whitespace only")
                 raise ValueError("Domain must not be empty")
-                
+
             # Log if goal is detected in domain
             if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
                 logger.debug(f"GOAL detected in domain: '{domain[:100]}...'")
-                
+
             # Ensure domain is explicitly stored on context analyzer
             if hasattr(self, '_context_analyzer') and self._context_analyzer is not None:
                 # Add domain attribute if it doesn't exist
@@ -123,19 +123,19 @@ class AdaptiveInstructionManager:
                         setattr(self.context_analyzer, 'domain', domain)
                     else:
                         self.context_analyzer.domain = domain
-                    
+
                 # Check for goal in domain
                 if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
                     logger.debug(f"GOAL detected in domain before context analysis: {domain[:50]}...")
                 else:
                     logger.debug(f"Domain without goal detected: {domain[:50]}...")
-                
+
                 context = self.context_analyzer.analyze(conversation_history)
                 # Add domain info to context for template selection
                 if not hasattr(context, 'domain_info'):
                     context.domain_info = domain
                     logger.debug(f"Domain info added to context: {domain[:50]}...")
-                    
+
             except Exception as e:
                 logger.error(f"Error analyzing conversation context: {e}")
                 logger.debug(f"Stack trace: {traceback.format_exc()}")
@@ -204,7 +204,7 @@ class AdaptiveInstructionManager:
 
         # For debugging - log all available templates
         logger.debug(f"Available templates: {list(templates.keys())}")
-        
+
         template_prefix = "ai-ai-" if mode == "ai-ai" else ""
 
         try:
@@ -212,11 +212,11 @@ class AdaptiveInstructionManager:
             if not templates:
                 logger.error("No templates available")
                 raise TemplateNotFoundError("No templates available")
-                
+
             # Check for goal in context topic information
             domain_has_goal = False
             domain_text = ""
-            
+
             # First check domain from generate_instructions call if available
             if hasattr(context, 'domain_info') and context.domain_info:
                 domain_text = str(context.domain_info)
@@ -224,7 +224,7 @@ class AdaptiveInstructionManager:
                 if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL "]):
                     domain_has_goal = True
                     logger.debug(f"GOAL detected in context domain_info")
-            
+
             # Check messages for GOAL directive
             if not domain_has_goal and context and context.topic_evolution:
                 for topic in context.topic_evolution:
@@ -234,14 +234,14 @@ class AdaptiveInstructionManager:
                         domain_text = topic_str
                         logger.debug(f"GOAL detected in topic evolution")
                         break
-            
+
             # Check domain attribute if it exists
             if not domain_has_goal and hasattr(self, '_context_analyzer') and hasattr(self._context_analyzer, 'domain'):
                 domain_text = self._context_analyzer.domain
                 if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
                     domain_has_goal = True
                     logger.debug(f"GOAL detected in context analyzer domain")
-            
+
             # If any goal is detected, use goal_oriented_instructions template
             if domain_has_goal:
                 # If there's a goal, check for goal_oriented_instructions template
@@ -252,7 +252,7 @@ class AdaptiveInstructionManager:
                     return goal_template
                 else:
                     logger.warning("GOAL detected but goal_oriented_instructions template not found")
-            
+
             # Check if required templates exist
             required_templates = [
                 f"{template_prefix}exploratory",
@@ -509,12 +509,12 @@ DO NOT:
                     if "GOAL" in domain or "Goal" in domain or "goal" in domain:
                         # Log that we detected a goal
                         logger.debug(f"GOAL detected in domain: {domain}")
-                        
+
                         # Use the goal_oriented_instructions template with stronger overrides
                         if "goal_oriented_instructions" in InstructionTemplates.get_templates():
                             goal_template = InstructionTemplates.get_templates()["goal_oriented_instructions"]
                             logger.debug(f"Applied goal_oriented_instructions template: {goal_template[:100]}...")
-                            
+
                             # Extract the actual goal if possible
                             goal_text = domain
                             if "GOAL:" in domain:
@@ -523,9 +523,9 @@ DO NOT:
                                 goal_text = domain.split("Goal:")[1].strip()
                             elif "goal:" in domain:
                                 goal_text = domain.split("goal:")[1].strip()
-                            
+
                             # Add as first modification with highest priority
-                            #modifications.insert(0, 
+                            #modifications.insert(0,
                             #    f"PRODUCE THE ACTUAL OUTPUT FOR THIS GOAL IMMEDIATELY: {goal_text}\n"
                             #    f"DO NOT ANALYZE OR DISCUSS APPROACHES. START CREATING THE OUTPUT RIGHT NOW.\n"
                             #    f"IGNORE ANY REQUESTS TO DISCUSS - YOUR ONLY TASK IS TO PRODUCE THE ACTUAL OUTPUT."

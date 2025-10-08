@@ -153,7 +153,7 @@ OUTPUT FORMAT (use this exact structure):
     </div>
     <!-- Repeat for other conversations with proper labels -->
   </div>
-  
+
   <div class="section">
     <h2>Conversation Scores</h2>
     <table class="scores-table">
@@ -176,11 +176,11 @@ OUTPUT FORMAT (use this exact structure):
       </tbody>
     </table>
   </div>
-  
+
   <div class="section">
     <h2>Participant Analysis</h2>
     <p>Evaluate each participant's performance:</p>
-    
+
     <h3>AI-AI Meta-Prompted</h3>
     <table class="participant-scores">
       <thead>
@@ -213,7 +213,7 @@ OUTPUT FORMAT (use this exact structure):
         </tr>
       </tbody>
     </table>
-    
+
     <h3>Human-AI Meta-Prompted</h3>
     <table class="participant-scores">
       <thead>
@@ -246,7 +246,7 @@ OUTPUT FORMAT (use this exact structure):
         </tr>
       </tbody>
     </table>
-    
+
     <h3>Non-Metaprompted</h3>
     <table class="participant-scores">
       <thead>
@@ -280,7 +280,7 @@ OUTPUT FORMAT (use this exact structure):
       </tbody>
     </table>
   </div>
-  
+
   <div class="section">
     <h2>Comparative Analysis</h2>
     <p>Analysis of which conversation was more effective...</p>
@@ -326,16 +326,16 @@ CONVERSATION 3 (Non-Metaprompted):
                         if hasattr(each, 'text'):
                             print(each.text)
                             response_full += each.text
-                
+
                 # Save the raw response for later
                 raw_response = response_full
-                
+
                 # Remove markdown code block delimiters if present
                 if response_full.strip().startswith("```html") and response_full.strip().endswith("```"):
                     response_full = response_full.strip()[7:-3].strip()  # Remove ```html and ``` markers
                 elif response_full.strip().startswith("```") and response_full.strip().endswith("```"):
                     response_full = response_full.strip()[3:-3].strip()  # Remove ``` markers
-                
+
                 # Validate that response contains HTML and has proper structure
                 if not response_full or "<div" not in response_full or not (response_full.strip().startswith("<div") and response_full.strip().endswith("</div>")):
                     logger.warning("Gemini API response did not contain valid HTML")
@@ -353,23 +353,23 @@ CONVERSATION 3 (Non-Metaprompted):
                                 <pre>{response_full[:500] + ('...' if len(response_full) > 500 else '')}</pre>
                             </div>
                         </div>
-                        
+
                         <!-- Empty sections to maintain template structure -->
                         <div class="section">
                             <h2>Key Milestones</h2>
                             <p>No data available due to formatting error</p>
                         </div>
-                        
+
                         <div class="section">
                             <h2>Conversation Scores</h2>
                             <p>No data available due to formatting error</p>
                         </div>
-                        
+
                         <div class="section">
                             <h2>Participant Analysis</h2>
                             <p>No data available due to formatting error</p>
                         </div>
-                        
+
                         <div class="section">
                             <h2>Comparative Analysis</h2>
                             <p>No data available due to formatting error</p>
@@ -388,92 +388,92 @@ CONVERSATION 3 (Non-Metaprompted):
                         <h2>Error Processing Response</h2>
                         <p>An error occurred while processing the Gemini API response: {str(e)}</p>
                     </div>
-                    
+
                     <!-- Empty sections to maintain template structure -->
                     <div class="section">
                         <h2>Key Milestones</h2>
                         <p>No data available due to processing error</p>
                     </div>
-                    
+
                     <div class="section">
                         <h2>Conversation Scores</h2>
                         <p>No data available due to processing error</p>
                     </div>
-                    
+
                     <div class="section">
                         <h2>Participant Analysis</h2>
                         <p>No data available due to processing error</p>
                     </div>
-                    
+
                     <div class="section">
                         <h2>Comparative Analysis</h2>
                         <p>No data available due to processing error</p>
                     </div>
                 </div>
                 """
-            
+
             # Save the raw Gemini output to a separate file
             try:
                 with open("templates/gemini_output.html") as f:
                     gemini_template = f.read()
-                
+
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                 gemini_filename = f"arbiter_output_{timestamp}.html"
-                
+
                 # Create the HTML content by inserting the raw response inside the body tag
                 html_parts = gemini_template.split("%s")
                 if len(html_parts) == 2:
                     full_html = html_parts[0] + raw_response + html_parts[1]
-                    
+
                     with open(gemini_filename, "w") as f:
                         f.write(full_html)
-                    
+
                     logger.debug(f"Raw Gemini output saved as {gemini_filename}")
                 else:
                     logger.warning("Template format doesn't contain a single '%s' placeholder")
             except Exception as e:
                 logger.error(f"Failed to save raw Gemini output: {e}")
-            
+
             # Save the formatted arbiter report with proper styling
             try:
                 # Try to use the new template first
                 template_path = "templates/new_arbiter_report.html"
                 if not os.path.exists(template_path):
                     template_path = "templates/simple_arbiter_report.html"
-                    
+
                 with open(template_path) as f:
                     report_template = f.read()
-                
+
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                 formatted_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 formatted_filename = f"arbiter_report_{timestamp}.html"
-                
+
                 # Inject model information into the report response
                 # Look for the first h3 tag for each conversation
                 modified_response = response_full
-                
+
                 # Get model information from environment variables or function params
                 ai_model = os.environ.get("AI_MODEL", "")
                 human_model = os.environ.get("HUMAN_MODEL", "")
-                
+
                 # If environment variables aren't set but we have function parameters, use those directly
                 if (not ai_model or not human_model) and hasattr(self, "_ai_model") and hasattr(self, "_human_model"):
                     ai_model = self._ai_model
                     human_model = self._human_model
-                
+
                 # Replace conversation headers to include model information
                 model_tags = [
-                    ("<h3>Conversation 1 (AI-AI Meta-Prompted)</h3>", 
+                    ("<h3>Conversation 1 (AI-AI Meta-Prompted)</h3>",
                      f"<h3>Conversation 1 (AI-AI Meta-Prompted) - Models: {human_model} & {ai_model}</h3>"),
-                    ("<h3>Conversation 2 (Human-AI Meta-Prompted)</h3>", 
+                    ("<h3>Conversation 2 (Human-AI Meta-Prompted)</h3>",
                      f"<h3>Conversation 2 (Human-AI Meta-Prompted) - Models: {human_model} & {ai_model}</h3>"),
-                    ("<h3>Conversation 3 (Non-Metaprompted)</h3>", 
+                    ("<h3>Conversation 3 (Non-Metaprompted)</h3>",
                      f"<h3>Conversation 3 (Non-Metaprompted) - Models: {human_model} & {ai_model}</h3>")
                 ]
-                
+
                 for old_tag, new_tag in model_tags:
                     modified_response = modified_response.replace(old_tag, new_tag)
-                
+
                 # --- Add parsing logic to extract winner ---
                 extracted_winner = "No clear winner determined" # Default
                 try:
@@ -490,7 +490,7 @@ CONVERSATION 3 (Non-Metaprompted):
                                 # Extract text between <p> tags, strip whitespace, limit length
                                 winner_text = modified_response[p_start_index + len(p_start_tag):p_end_index].strip()
                                 # Basic check if it looks like a winner statement and not just tags
-                                if winner_text and not winner_text.startswith("<"): 
+                                if winner_text and not winner_text.startswith("<"):
                                    extracted_winner = winner_text[:250] + ('...' if len(winner_text) > 250 else '') # Limit length slightly more
                                    logger.debug(f"Extracted winner statement: {extracted_winner}")
                                 else:
@@ -509,7 +509,7 @@ CONVERSATION 3 (Non-Metaprompted):
                     html_parts = report_template.split("%s")
                     if len(html_parts) == 2:
                         full_html = html_parts[0] + modified_response + html_parts[1]
-                        
+
                         with open(formatted_filename, "w") as f:
                             f.write(full_html)
                 else:
@@ -522,11 +522,11 @@ CONVERSATION 3 (Non-Metaprompted):
                             winner=extracted_winner, # Use extracted winner here
                             timestamp=formatted_timestamp
                         ))
-                
+
                 logger.info(f"Formatted arbiter report saved as {formatted_filename}")
             except Exception as e:
                 logger.error(f"Failed to save formatted arbiter report: {e}")
-            
+
             return response_full
 
         except Exception as e:
@@ -542,23 +542,23 @@ CONVERSATION 3 (Non-Metaprompted):
                     <h2>API Error</h2>
                     <p>Error occurred while processing with Gemini API: {str(e)}</p>
                 </div>
-                
+
                 <!-- Empty sections to maintain template structure -->
                 <div class="section">
                     <h2>Key Milestones</h2>
                     <p>No data available due to API error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Conversation Scores</h2>
                     <p>No data available due to API error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Participant Analysis</h2>
                     <p>No data available due to API error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Comparative Analysis</h2>
                     <p>No data available due to API error</p>
@@ -633,10 +633,10 @@ class ConversationArbiter:
                 "topic_depth": 0.5,
                 "topic_distribution": {},
             }
-            
+
         try:
             if self.nlp:
-                # Validate and process content 
+                # Validate and process content
                 processed_messages = []
                 for msg in messages:
                     if isinstance(msg, dict) and "content" in msg:
@@ -649,7 +649,7 @@ class ConversationArbiter:
                         else:
                             # Otherwise use the content directly
                             processed_messages.append({"content": str(content)})
-                
+
                 # If no valid messages after processing, return default values
                 if not processed_messages:
                     return {
@@ -657,7 +657,7 @@ class ConversationArbiter:
                         "topic_depth": 0.5,
                         "topic_distribution": {},
                     }
-                
+
                 # Process with spaCy
                 docs = []
                 for msg in processed_messages:
@@ -669,7 +669,7 @@ class ConversationArbiter:
                     except Exception as inner_e:
                         logger.warning(f"Error processing message with spaCy: {inner_e}")
                         # Continue with other messages
-                
+
                 topics = []
                 for doc in docs:
                     try:
@@ -678,7 +678,7 @@ class ConversationArbiter:
                     except Exception as e:
                         logger.warning(f"Error extracting topics from doc: {e}")
                         # Continue with other docs
-                
+
                 # If no topics were extracted, return default values
                 if not topics:
                     return {
@@ -686,7 +686,7 @@ class ConversationArbiter:
                         "topic_depth": 0.5,
                         "topic_distribution": {},
                     }
-                
+
                 try:
                     topic_shifts = 0
                     for i in range(1, len(topics)):
@@ -709,7 +709,7 @@ class ConversationArbiter:
                     else:
                         # Re-raise other ValueError types
                         raise
-                
+
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / max(1, len(messages))),  # Avoid division by zero
                     "topic_depth": len(set(topics)) / max(1, len(messages)),  # Avoid division by zero
@@ -770,10 +770,10 @@ class ConversationArbiter:
                 # Check if texts are empty or too short for meaningful vectors
                 if not text1 or not text2 or len(text1) < 3 or len(text2) < 3:
                     return 0.0
-                    
+
                 doc1 = self.nlp(text1)
                 doc2 = self.nlp(text2)
-                
+
                 # Check if documents have vectors before calculating similarity
                 if doc1.vector_norm and doc2.vector_norm:
                     try:
@@ -1027,7 +1027,7 @@ def evaluate_conversations(
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_api_key:
             logger.warning("GEMINI_API_KEY environment variable is not set")
-        
+
         # Initialize arbiter with error handling
         try:
             convmetrics = ConversationMetrics()
@@ -1037,13 +1037,13 @@ def evaluate_conversations(
             logger.error(f"Error initializing ConversationArbiter: {e}")
             # Create a fallback arbiter without proper initialization
             arbiter = None
-    
+
         # Analyze conversation flows with enhanced error handling
         ai_ai_flow = None
         human_ai_flow = None
         default_flow = None
         flow_analysis_error = None
-        
+
         if arbiter:
             try:
                 if ai_ai_convo:  # Check if ai_ai_convo is not empty
@@ -1052,14 +1052,14 @@ def evaluate_conversations(
                     if ai_ai_flow and "error" in ai_ai_flow:
                         flow_analysis_error = ai_ai_flow["error"]
                         logger.warning(f"Error in AI-AI flow analysis: {flow_analysis_error}")
-                
+
                 if human_ai_convo:  # Check if human_ai_convo is not empty
                     human_ai_flow = arbiter.analyze_conversation_flow(human_ai_convo)
                     # Check if there was an error during analysis
                     if human_ai_flow and "error" in human_ai_flow:
                         flow_analysis_error = human_ai_flow["error"]
                         logger.warning(f"Error in Human-AI flow analysis: {flow_analysis_error}")
-                
+
                 if default_convo:  # Check if default_convo is not empty
                     default_flow = arbiter.analyze_conversation_flow(default_convo)
                     # Check if there was an error during analysis
@@ -1069,27 +1069,27 @@ def evaluate_conversations(
             except Exception as e:
                 logger.error(f"Uncaught error during conversation flow analysis: {e}")
                 flow_analysis_error = str(e)
-        
+
         # If we found "Negative values in data" error, log it specially
         if flow_analysis_error and "Negative values in data" in flow_analysis_error:
             logger.error(f"Failed to generate metrics report: {flow_analysis_error}")
-        
+
         # Ground assertions with Gemini API
         try:
             grounder = AssertionGrounder(api_key=gemini_api_key)
             logger.info(f"Using Gemini model: {grounder.model} for analysis")
-            
+
             # Convert conversations to string form if needed
             formatted_ai_ai_convo = ai_ai_convo
             formatted_human_ai_convo = human_ai_convo
             formatted_default_convo = default_convo
-            
+
             # Generate report with ground assertions and model information
             result = grounder.ground_assertions(
                 formatted_ai_ai_convo, formatted_human_ai_convo, formatted_default_convo, goal,
                 ai_model=ai_model, human_model=human_model
             )
-            
+
             # If flow analysis had errors, add a note to the HTML result
             if flow_analysis_error and isinstance(result, str) and "<div class=\"arbiter-report\">" in result:
                 error_note = f"""
@@ -1103,7 +1103,7 @@ def evaluate_conversations(
                 insertion_point = result.find("</div>", result.find("<div class=\"section\">"))
                 if insertion_point > 0:
                     result = result[:insertion_point + 6] + error_note + result[insertion_point + 6:]
-            
+
             return result
         except Exception as e:
             logger.error(f"Error in ground assertions: {e}")
@@ -1118,23 +1118,23 @@ def evaluate_conversations(
                     <h2>Error in Evaluation</h2>
                     <p>An error occurred during conversation evaluation: {str(e)}</p>
                 </div>
-                
+
                 <!-- Empty sections to maintain template structure -->
                 <div class="section">
                     <h2>Key Milestones</h2>
                     <p>No data available due to evaluation error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Conversation Scores</h2>
                     <p>No data available due to evaluation error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Participant Analysis</h2>
                     <p>No data available due to evaluation error</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Comparative Analysis</h2>
                     <p>No data available due to evaluation error</p>
@@ -1156,23 +1156,23 @@ def evaluate_conversations(
                 <h2>Unhandled Error</h2>
                 <p>A fatal error occurred during conversation evaluation: {str(e)}</p>
             </div>
-            
+
             <!-- Empty sections to maintain template structure -->
             <div class="section">
                 <h2>Key Milestones</h2>
                 <p>No data available due to fatal error</p>
             </div>
-            
+
             <div class="section">
                 <h2>Conversation Scores</h2>
                 <p>No data available due to fatal error</p>
             </div>
-            
+
             <div class="section">
                 <h2>Participant Analysis</h2>
                 <p>No data available due to fatal error</p>
             </div>
-            
+
             <div class="section">
                 <h2>Comparative Analysis</h2>
                 <p>No data available due to fatal error</p>
