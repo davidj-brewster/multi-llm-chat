@@ -43,9 +43,58 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-HUMAN_MODEL = "ollama-gemma3:12b-it-q4_K_M"  #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "gpt-4.1-nano" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+HUMAN_MODEL = "gemini-2.5-flash-lite" #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+AI_MODEL = "gemini-2.5-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=4
+
+
+
+import json
+import os
+import datetime
+import base64
+import sys
+import time
+import random
+import logging
+import re
+import traceback
+from typing import List, Dict, Optional, TypeVar, Any, Union
+from dataclasses import dataclass
+import io
+import asyncio
+
+# Local imports
+#from configuration import load_config, detect_model_capabilities
+from constants import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
+from configdataclasses import FileConfig, DiscussionConfig
+from arbiter_v4 import evaluate_conversations, VisualizationGenerator
+from file_handler import ConversationMediaHandler
+from model_clients import (
+    BaseClient,
+    OpenAIClient,
+    ClaudeClient,
+    GeminiClient,
+    MLXClient,
+    OllamaClient,
+    PicoClient,
+)
+# move these into model_clients or separate everything..?
+from lmstudio_client import LMStudioClient
+from claude_reasoning_config import ClaudeReasoningConfig
+from shared_resources import MemoryManager
+from metrics_analyzer import analyze_conversations
+
+T = TypeVar("T")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+
+
+# Models to use in default mode
+# these must match the model names below not necessary the exact actual model name
+#HUMAN_MODEL = "ollama-gemma3:12b-it-q4_K_M"  #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+#AI_MODEL = "ollama-gpt-oss-20b" #"ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+#DEFAULT_ROUNDS=4
 
 # Set environment variables for these model names so arbiter can use them
 os.environ["AI_MODEL"] = AI_MODEL
@@ -128,7 +177,7 @@ OPENAI_MODELS = {
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
     "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
-    "gpt-4.5": {"model": "gpt-4.5", "reasoning_level": None, "multimodal": True},
+    "gpt-5": {"model": "gpt-5", "reasoning_level": "medium" , "multimodal": True},
     "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
     "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
@@ -147,7 +196,8 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
     # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
     "gemini-2.5-pro": {"model": "gemini-2.5-pro-latest", "multimodal": True},
-    "gemini-2.5-flash-thinking": {"model": "gemini-2.5-flash-thinking", "multimodal": True},
+    "gemini-2.5-flash-lite": {"model": "gemini-2.5-flash-lite", "multimodal": True},
+    "gemini-2.5-flash": {"model": "gemini-2.5-flash", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -1793,7 +1843,7 @@ async def main():
             logger.critical("ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
             return
     
-    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt", "openai", "o1", "o3", "o4"]):
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt-4", "gpt-5", "openai", "o1", "o3", "o4"]):
         if not openai_api_key:
             logger.critical("OPENAI_API_KEY environment variable is not set but required for OpenAI models")
             return

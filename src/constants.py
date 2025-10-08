@@ -13,8 +13,9 @@ SUPPORTED_MODELS = {
         "gemini-2.5-pro-exp", "gemini-2.5-pro-preview-03-25",
         "gemini-2.5-flash-preview-04-17", "gemini-2-pro", "gemini-2-reasoning",
         "gemini-2.0-flash-exp", "gemini",
-        "gemini-1.5-pro-latest",
-        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-light",
     ],
     "openai": [
         "gpt-4-vision", "gpt-4o", "gpt-4.1", "gpt*", "gpt-4.1-mini",
