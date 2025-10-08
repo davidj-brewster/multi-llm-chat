@@ -23,11 +23,10 @@ import importlib.util
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #sys.path.insert(0, project_root)
 src_path = os.path.join(project_root, "src")
-#sys.path.insert(0, src_path)
+sys.path.append(src_path)
 
 # Import ai-battle.py using importlib since it has a hyphen in the name
 ai_battle_path = os.path.join(src_path, "ai_battle.py")
-src_path = ai_battle_path
 spec = importlib.util.spec_from_file_location("ai_battle", ai_battle_path)
 ai_battle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_battle)
@@ -37,25 +36,31 @@ spec.loader.exec_module(ai_battle)
 # Dynamically import the ConversationManager and other necessary components
 # This pattern is used because 'ai-battle.py' has a hyphen.
 try:
+
+    configuration_spec = importlib.util.spec_from_file_location("configuration", os.path.join(src_path, "configuration.py"))
+    configuration = importlib.util.module_from_spec(configuration_spec)
+    configuration_spec.loader.exec_module(configuration)
+
     ai_battle_spec = importlib.util.spec_from_file_location("ai_battle", os.path.join(src_path, "ai_battle.py"))
     ai_battle = importlib.util.module_from_spec(ai_battle_spec)
     ai_battle_spec.loader.exec_module(ai_battle)
-    ConversationManager = ai_battle.ConversationManager
 
     demo_generator_spec = importlib.util.spec_from_file_location("demo_generator", os.path.join(src_path, "demo_generator.py"))
     demo_generator_module = importlib.util.module_from_spec(demo_generator_spec)
     demo_generator_spec.loader.exec_module(demo_generator_module)
-    DemoGenerator = demo_generator_module.DemoGenerator
 
     sandbox_manager_spec = importlib.util.spec_from_file_location("sandbox_manager", os.path.join(src_path, "sandbox_manager.py"))
     sandbox_manager_module = importlib.util.module_from_spec(sandbox_manager_spec)
     sandbox_manager_spec.loader.exec_module(sandbox_manager_module)
-    SandboxManager = sandbox_manager_module.SandboxManager
 
     model_clients_spec = importlib.util.spec_from_file_location("model_clients", os.path.join(src_path, "model_clients.py"))
     model_clients_module = importlib.util.module_from_spec(model_clients_spec)
     model_clients_spec.loader.exec_module(model_clients_module)
+
+    DemoGenerator = demo_generator_module.DemoGenerator
+    ConversationManager = ai_battle.ConversationManager
     GeminiClient = model_clients_module.GeminiClient
+    SandboxManager = sandbox_manager_module.SandboxManager
 
 except ImportError as e:
     print(f"Error importing modules: {e}")
