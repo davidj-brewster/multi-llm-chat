@@ -9,7 +9,7 @@ try:
     import ffmpeg
 except ImportError as e:
     ffmpeg = None
-    raise(e)
+    raise
 
 from model_clients import GeminiClient
 from sandbox_manager import SandboxManager
