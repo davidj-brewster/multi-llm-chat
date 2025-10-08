@@ -27,7 +27,7 @@ class SpacyModelSingleton:
                     cls._instance = spacy.load("en_core_web_md")
                     logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
                 except OSError:
-                    # Final fallback to md model which is smaller
+                    # Final fallback to sm (small) model
                     try:
                         cls._instance = spacy.load("en_core_web_sm")
                         logger.info("SpaCy model 'en_core_web_sm' loaded successfully (fallback 2)")
