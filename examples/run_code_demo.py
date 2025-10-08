@@ -37,7 +37,7 @@ spec.loader.exec_module(ai_battle)
 # Dynamically import the ConversationManager and other necessary components
 # This pattern is used because 'ai-battle.py' has a hyphen.
 try:
-    ai_battle_spec = importlib.util.spec_from_file_location("ai_battle", os.path.join(src_path, "ai-battle.py"))
+    ai_battle_spec = importlib.util.spec_from_file_location("ai_battle", os.path.join(src_path, "ai_battle.py"))
     ai_battle = importlib.util.module_from_spec(ai_battle_spec)
     ai_battle_spec.loader.exec_module(ai_battle)
     ConversationManager = ai_battle.ConversationManager
