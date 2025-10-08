@@ -51,36 +51,6 @@ DEFAULT_ROUNDS=4
 
 # Local imports
 #from configuration import load_config, detect_model_capabilities
-from constants import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
-from configdataclasses import FileConfig, DiscussionConfig
-from arbiter_v4 import evaluate_conversations, VisualizationGenerator
-from file_handler import ConversationMediaHandler
-from model_clients import (
-    BaseClient,
-    OpenAIClient,
-    ClaudeClient,
-    GeminiClient,
-    MLXClient,
-    OllamaClient,
-    PicoClient,
-)
-# move these into model_clients or separate everything..?
-from lmstudio_client import LMStudioClient
-from claude_reasoning_config import ClaudeReasoningConfig
-from shared_resources import MemoryManager
-from metrics_analyzer import analyze_conversations
-
-T = TypeVar("T")
-openai_api_key = os.getenv("OPENAI_API_KEY")
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-
-
-# Models to use in default mode
-# these must match the model names below not necessary the exact actual model name
-#HUMAN_MODEL = "ollama-gemma3:12b-it-q4_K_M"  #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-#AI_MODEL = "ollama-gpt-oss-20b" #"ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
-#DEFAULT_ROUNDS=4
-
 # Set environment variables for these model names so arbiter can use them
 os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
