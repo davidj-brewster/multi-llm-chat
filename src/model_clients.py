@@ -3,7 +3,7 @@
 import os
 import logging
 import random
-from typing import List, Dict, Optional, Any, TypeVar
+from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
 from google import genai
 from google.genai import types
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 3192
+MAX_TOKENS = 4096
 TOKENS_PER_TURN = MAX_TOKENS
 
 
@@ -64,22 +64,22 @@ class ModelConfig:
 
         Custom configuration:
         >>> config = ModelConfig(
-        ...     temperature=0.3,
-        ...     max_tokens=MAX_TOKENS,
-        ...     stop_sequences=["END", "STOP"],
-        ...     seed=42
-        ... )
+                temperature=0.3,
+                max_tokens=MAX_TOKENS,
+                stop_sequences=["END", "STOP"],
+                seed=42
+            )
         >>> config.temperature
         0.3
         >>> config.stop_sequences
         ['END', 'STOP']
 
         Using with a client:
-        >>> client = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+        >>> client = GeminiClient(mode="ai-ai", role="assistant", api_key="   ", domain="science")
         >>> response = client.generate_response(
-        ...     prompt="Explain quantum entanglement",
-        ...     model_config=ModelConfig(temperature=0.2, max_tokens=MAX_TOKENS)
-        ... )
+                prompt="Explain quantum entanglement",
+                model_config=ModelConfig(temperature=0.2, max_tokens=MAX_TOKENS)
+            )
     """
 
     temperature: float = 0.8
@@ -120,12 +120,12 @@ class BaseClient:
 
     Examples:
         Basic initialization:
-        >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+        >>> client = BaseClient(mode="ai-ai", api_key="sk-   ", domain="science")
         >>> client.validate_connection()
         True
 
         Custom instruction handling:
-        >>> client = BaseClient(mode="human-ai", api_key="sk-...", domain="medicine")
+        >>> client = BaseClient(mode="human-ai", api_key="sk-   ", domain="medicine")
         >>> client.instructions = "You are a helpful AI assistant."
         >>> client._get_mode_aware_instructions(role="assistant")
         'You are a medical assistant specializing in diagnostics.'
@@ -138,11 +138,11 @@ class BaseClient:
 
         File content preparation:
         >>> image_data = {
-        ...     "type": "image",
-        ...     "base64": "base64_encoded_data",
-        ...     "mime_type": "image/jpeg",
-        ...     "dimensions": (800, 600)
-        ... }
+                "type": "image",
+                "base64": "base64_encoded_data",
+                "mime_type": "image/jpeg",
+                "dimensions": (800, 600)
+            }
         >>> prepared = client._prepare_file_content(image_data)
         >>> prepared["type"]
         'image'
@@ -182,12 +182,12 @@ class BaseClient:
 
         Example:
             >>> client = BaseClient(
-            ...     mode="ai-ai",
-            ...     api_key="sk-...",
-            ...     domain="Artificial Intelligence",
-            ...     model="gpt-4",
-            ...     role="assistant"
-            ... )
+                    mode="ai-ai",
+                    api_key="sk-   ",
+                    domain="Artificial Intelligence",
+                    model="gpt-4",
+                    role="assistant"
+                )
         """
         self.api_key = api_key.strip() if api_key else ""
         self.domain = domain
@@ -223,11 +223,11 @@ class BaseClient:
         Examples:
             Processing an image:
             >>> file_data = {
-            ...     "type": "image",
-            ...     "base64": "base64_encoded_data",
-            ...     "mime_type": "image/jpeg",
-            ...     "dimensions": (800, 600)
-            ... }
+                    "type": "image",
+                    "base64": "base64_encoded_data",
+                    "mime_type": "image/jpeg",
+                    "dimensions": (800, 600)
+                }
             >>> result = client._prepare_file_content(file_data)
             >>> result["type"]
             'image'
@@ -236,10 +236,10 @@ class BaseClient:
 
             Processing a text file:
             >>> file_data = {
-            ...     "type": "text",
-            ...     "text_content": "This is a sample text file.",
-            ...     "path": "sample.txt"
-            ... }
+                    "type": "text",
+                    "text_content": "This is a sample text file.",
+                    "path": "sample.txt"
+                }
             >>> result = client._prepare_file_content(file_data)
             >>> result["type"]
             'text'
@@ -307,19 +307,19 @@ class BaseClient:
         Examples:
             Processing multiple images:
             >>> file_data_list = [
-            ...     {
-            ...         "type": "image",
-            ...         "base64": "base64_encoded_data_1",
-            ...         "mime_type": "image/jpeg",
-            ...         "dimensions": (800, 600)
-            ...     },
-            ...     {
-            ...         "type": "image",
-            ...         "base64": "base64_encoded_data_2",
-            ...         "mime_type": "image/png",
-            ...         "dimensions": (1024, 768)
-            ...     }
-            ... ]
+                    {
+                        "type": "image",
+                        "base64": "base64_encoded_data_1",
+                        "mime_type": "image/jpeg",
+                        "dimensions": (800, 600)
+                    },
+                    {
+                        "type": "image",
+                        "base64": "base64_encoded_data_2",
+                        "mime_type": "image/png",
+                        "dimensions": (1024, 768)
+                    }
+                ]
             >>> results = client._prepare_multiple_file_content(file_data_list)
             >>> len(results)
             2
@@ -362,12 +362,12 @@ class BaseClient:
         Examples:
             Creating a reference to an image file:
             >>> file_data = {
-            ...     "type": "image",
-            ...     "path": "/path/to/image.jpg",
-            ...     "base64": "large_base64_encoded_data",
-            ...     "mime_type": "image/jpeg",
-            ...     "dimensions": (800, 600)
-            ... }
+                    "type": "image",
+                    "path": "/path/to/image.jpg",
+                    "base64": "large_base64_encoded_data",
+                    "mime_type": "image/jpeg",
+                    "dimensions": (800, 600)
+                }
             >>> reference = client._create_file_reference(file_data)
             >>> reference["type"]
             'image'
@@ -404,7 +404,7 @@ class BaseClient:
             >>> str(client)
             'BaseClient(mode=ai-ai, domain=science, model=gpt-4)'
 
-            >>> gemini = GeminiClient(mode="human-ai", role="assistant", api_key="...", domain="medicine", model="gemini-pro")
+            >>> gemini = GeminiClient(mode="human-ai", role="assistant", api_key="   ", domain="medicine", model="gemini-pro")
             >>> str(gemini)
             'GeminiClient(mode=human-ai, domain=medicine, model=gemini-pro)'
         """
@@ -439,10 +439,10 @@ class BaseClient:
         Examples:
             Basic conversation analysis:
             >>> history = [
-            ...     {"role": "user", "content": "What is machine learning?"},
-            ...     {"role": "assistant", "content": "Machine learning is a subset of AI..."},
-            ...     {"role": "user", "content": "Can you give me an example?"}
-            ... ]
+                    {"role": "user", "content": "What is machine learning?"},
+                    {"role": "assistant", "content": "Machine learning is a subset of AI   "},
+                    {"role": "user", "content": "Can you give me an example?"}
+                ]
             >>> analysis = client._analyze_conversation(history)
             >>> "summary" in analysis
             True
@@ -451,9 +451,9 @@ class BaseClient:
 
             Analysis with assessment:
             >>> history_with_assessment = [
-            ...     {"role": "assistant", "content": "Machine learning is..."},
-            ...     {"role": "user", "content": {"assessment": "helpful", "feedback": "Good explanation"}}
-            ... ]
+                    {"role": "assistant", "content": "Machine learning is   "},
+                    {"role": "user", "content": {"assessment": "helpful", "feedback": "Good explanation"}}
+                ]
             >>> analysis = client._analyze_conversation(history_with_assessment)
             >>> analysis["ai_assessment"]
             'helpful'
@@ -542,9 +542,9 @@ class BaseClient:
 
             Adaptive instructions with history:
             >>> history = [
-            ...     {"role": "user", "content": "Let's discuss quantum physics"},
-            ...     {"role": "assistant", "content": "Quantum physics is fascinating..."}
-            ... ]
+                    {"role": "user", "content": "Let's discuss quantum physics"},
+                    {"role": "assistant", "content": "Quantum physics is fascinating   "}
+                ]
             >>> client._update_instructions(history, role="human", mode="ai-ai")  # Returns adaptive instructions
         """
         if (mode == "human-ai" and role == "assistant") or mode == "default":
@@ -643,7 +643,7 @@ DON't COMPLIMENT THE AI. CONSIDER AN ADVERSARIAL, SOMETIMES COLLABORATIVE APPROA
 As a Human expert, you are extremely interested in exploring {self.domain}. Your response should engage via sophisticated and effective ways to elicit new knowledge and reasoned interpretations about {self.domain}. You should maintain a conversational style, responding naturally and asking follow-up questions on adjacent topics, challenging the answers, and using various prompting techniques to elicit useful information that would not immediately be obvious from surface level questions.
 You should challenge possible hallucinations or misinterpretations with well reasoned counter-positions, and you should challenge your own thinking as well, in a human style, and ask for explanations for things that you don't understand or agree with (or pretend not to).
 Even when challenging assertions, bring in related sub-topics and reasoning and your own interpretation or possible solutions to the discussion so that it doesn't get stuck micro-analysing one tiny detail..
-Review YOUR previous inputs to see if you are reusing the same phrases and approaches in your prompts (e.g., "Let me challenge... I would think this would be most important"... and dynamically adapt to this situation)
+Review YOUR previous inputs to see if you are reusing the same phrases and approaches in your prompts (e.g., "Let me challenge    I would think this would be most important"    and dynamically adapt to this situation)
 
 Remember:
 - Maintain natural human curiosity and authenticity, and scepticism - assume their may be gap exists in your counterpart's knowledge or interpetation of facts or ideas
@@ -794,16 +794,16 @@ Generate a natural but sophisticated response that:
 
         Examples:
             Basic validation:
-            >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+            >>> client = BaseClient(mode="ai-ai", api_key="sk-   ", domain="science")
             >>> client.validate_connection()
             True
 
             Handling validation failure:
             >>> client_with_invalid_key = BaseClient(mode="ai-ai", api_key="invalid", domain="science")
             >>> try:
-            ...     is_valid = client_with_invalid_key.validate_connection()
-            ... except Exception as e:
-            ...     is_valid = False
+                    is_valid = client_with_invalid_key.validate_connection()
+                except Exception as e:
+                    is_valid = False
             >>> is_valid
             False
         """
@@ -830,12 +830,12 @@ Generate a natural but sophisticated response that:
             bool: True if the test is successful, False otherwise.
 
         Examples:
-            >>> client = BaseClient(mode="ai-ai", api_key="sk-...", domain="science")
+            >>> client = BaseClient(mode="ai-ai", api_key="sk-   ", domain="science")
             >>> client.test_connection()
             True
 
             # In a subclass implementation:
-            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="   ", domain="science")
             >>> gemini.test_connection()  # Makes a minimal request to the Gemini API
             True
         """
@@ -853,6 +853,26 @@ Generate a natural but sophisticated response that:
         """
         if hasattr(self, "adaptive_manager") and self.adaptive_manager:
             del self.adaptive_manager # Use correct attribute name
+
+    def generate_speech(self, text: str, voice_name: str = "default", model: Optional[str] = None) -> bytes:
+        """
+        Generates speech from text. This method is intended to be overridden
+        by subclasses that support Text-to-Speech (TTS).
+
+        Args:
+            text (str): The text to be converted to speech.
+            voice_name (str, optional): The voice to use for the speech.
+            model (str, optional): The specific TTS model to use.
+
+        Returns:
+            bytes: The raw audio data.
+
+        Raises:
+            NotImplementedError: If the client does not support speech generation.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support speech generation."
+        )
 
 
 class GeminiClient(BaseClient):
@@ -883,30 +903,30 @@ class GeminiClient(BaseClient):
     Examples:
         Basic text generation:
         >>> gemini = GeminiClient(
-        ...     mode="ai-ai",
-        ...     role="assistant",
-        ...     api_key="your_api_key",  # Will use GOOGLE_API_KEY env var if not provided
-        ...     domain="science",
-        ...     model="gemini-2.0-flash-exp"
-        ... )
+                mode="ai-ai",
+                role="assistant",
+                api_key="your_api_key",  # Will use GOOGLE_API_KEY env var if not provided
+                domain="science",
+                model="gemini-2.0-flash-exp"
+            )
         >>> response = gemini.generate_response(
-        ...     prompt="Explain the theory of relativity",
-        ...     system_instruction="You are a physics professor."
-        ... )
+                prompt="Explain the theory of relativity",
+                system_instruction="You are a physics professor."
+            )
         >>> print(response[:50])
-        'The theory of relativity, developed by Albert Einstein...'
+        'The theory of relativity, developed by Albert Einstein   '
 
         Image analysis:
         >>> image_data = {
-        ...     "type": "image",
-        ...     "base64": "base64_encoded_image_data",
-        ...     "mime_type": "image/jpeg",
-        ...     "dimensions": (800, 600)
-        ... }
+                "type": "image",
+                "base64": "base64_encoded_image_data",
+                "mime_type": "image/jpeg",
+                "dimensions": (800, 600)
+            }
         >>> response = gemini.generate_response(
-        ...     prompt="Describe what you see in this image",
-        ...     file_data=image_data
-        ... )
+                prompt="Describe what you see in this image",
+                file_data=image_data
+            )
     """
 
     def __init__(
@@ -915,9 +935,10 @@ class GeminiClient(BaseClient):
         role: str,
         api_key: str,
         domain: str,
-        model: str = "gemini-2.0-flash-exp",
+        model: str = "gemini-2.5-flash-lite",
     ):
-        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            api_key = os.getenv("GEMINI_API_KEY")
         super().__init__(
             mode=mode, api_key=api_key, domain=domain, model=model, role=role
         )
@@ -948,7 +969,7 @@ class GeminiClient(BaseClient):
         """
         self.generation_config = types.GenerateContentConfig(
             temperature=0.7,
-            maxOutputTokens=1536,
+            maxOutputTokens=MAX_TOKENS,
             candidateCount=1,
             responseMimeType="text/plain",
             safety_settings=[],
@@ -1007,12 +1028,12 @@ class GeminiClient(BaseClient):
             Exception: For other API errors or connection issues.
 
         Examples:
-            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="...", domain="science")
+            >>> gemini = GeminiClient(mode="ai-ai", role="assistant", api_key="   ", domain="science")
             >>> response = gemini.generate_response(
-            ...     prompt="What is quantum entanglement?",
-            ...     system_instruction="You are a quantum physics professor.",
-            ...     model_config=ModelConfig(temperature=0.3, max_tokens=MAX_TOKENS)
-            ... )
+                    prompt="What is quantum entanglement?",
+                    system_instruction="You are a quantum physics professor.",
+                    model_config=ModelConfig(temperature=0.3, max_tokens=MAX_TOKENS)
+                )
         """
         if model_config is None:
             model_config = ModelConfig()
@@ -1181,7 +1202,7 @@ class GeminiClient(BaseClient):
                             config=types.GenerateContentConfig(
                                 temperature=0.8,
                                 systemInstruction=current_instructions,
-                                max_output_tokens=8192,
+                                max_output_tokens=4096,
                                 candidateCount=1,
                                 safety_settings=[
                                     types.SafetySetting(
@@ -1232,7 +1253,7 @@ class GeminiClient(BaseClient):
                             config=types.GenerateContentConfig(
                                 temperature=0.8,
                                 systemInstruction=current_instructions,
-                                max_output_tokens=8192,
+                                max_output_tokens=4096,
                                 candidateCount=1,
                                 safety_settings=[
                                     types.SafetySetting(
@@ -1350,6 +1371,46 @@ class GeminiClient(BaseClient):
             return str(response.text) if (response and response is not None) else ""
         except Exception as e:
             logger.error(f"GeminiClient generate_response error: {e}")
+            raise
+
+    def generate_speech(self, text: str, voice_name: str = "Kore", model: str = "gemini-2.5-flash-preview-tts") -> bytes:
+        """
+        Generates speech from text using the Gemini TTS API.
+
+        Args:
+            text (str): The text to be converted to speech.
+            voice_name (str, optional): The name of the prebuilt voice to use. Defaults to "Kore".
+            model (str, optional): The specific TTS model to use. Defaults to "gemini-2.5-flash-preview-tts".
+
+        Returns:
+            bytes: The raw audio data in WAV format.
+        """
+        try:
+            preview = text[:30] + ("..." if len(text) > 30 else "")
+            logger.info(f"Generating speech with model {model} for text: '{preview}' with voice: {voice_name}")
+            response = self.client.models.generate_content(
+                model=model,
+                contents=[{"parts": [{"text": text}]}],
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=voice_name,
+                            )
+                        )
+                    ),
+                ),
+            )
+            if response.candidates and response.candidates[0].content.parts:
+                audio_data = response.candidates[0].content.parts[0].inline_data.data
+                logger.info(f"Successfully generated {len(audio_data)} bytes of audio data.")
+                return audio_data
+            else:
+                logger.error("No audio data received from Gemini TTS API.")
+                return b""
+        except Exception as e:
+            logger.error(f"GeminiClient generate_speech error: {e}")
             raise
 
 
@@ -2147,7 +2208,7 @@ class PicoClient(BaseClient):
         mode: str,
         domain: str,
         role: str = None,
-        model: str = "DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx",
+        model: str = None, 
     ):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:10434"
@@ -2401,7 +2462,7 @@ class MLXClient(BaseClient):
 class OllamaClientLangchain(BaseClient):
     """Client for local Ollama model interactions using LangChain."""
 
-    def __init__(self, mode: str, domain: str, role: str = None, model: str = "phi4:latest"):
+    def __init__(self, mode: str, domain: str, role: str = None, model: str = None):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = "http://localhost:11434" # Store for potential use, though ChatOllama handles it
         try:
@@ -2547,7 +2608,7 @@ class OllamaClientLangchain(BaseClient):
             response = self.lc_client.invoke(lc_messages, **request_options)
 
             logger.debug(f"--- Ollama (LangChain) Response ---")
-            logger.debug(f"Content: {response.content[:200]}...") # Log snippet
+            logger.debug(f"Content: {response.content[:200]}   ") # Log snippet
 
             return response.content
         except Exception as e:
@@ -2560,7 +2621,7 @@ class OllamaClient(BaseClient):
 
     # Initialize the client
     def __init__(
-        self, mode: str, domain: str, role: str = None, model: str = "phi4:latest"
+        self, mode: str, domain: str, role: str = None, model: str = None
     ):
         super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
         self.base_url = (
@@ -2689,14 +2750,15 @@ class OllamaClient(BaseClient):
                 model=self.model,
                 messages=messages,
                 stream=False,
+                think=False,
                 options={ # Default options, can be overridden by model_config
-                    "num_ctx": 16384,
-                    "num_predict": model_config.max_tokens if model_config and model_config.max_tokens else 2048,
-                    "temperature": model_config.temperature if model_config and model_config.temperature is not None else 0.7,
+                    "num_ctx": 12288 if 'gpt' in {self.model} else 16384,
+                    "num_predict": model_config.max_tokens if model_config and model_config.max_tokens else 1536 if 'gpt' in {self.model} else 2048,
+                    "temperature": model_config.temperature if model_config and model_config.temperature is not None else 1 if 'gpt' in {self.model} else 0.4,
                     "seed": model_config.seed if model_config and model_config.seed is not None else random.randint(0, 1000000),
                     "stop": model_config.stop_sequences if model_config and model_config.stop_sequences else None,
-                    "num_batch": 512, # Common default
-                    "top_k": 40,      # Common default
+                    "num_batch": 512 if 'gpt' in {self.model} else 1024, # Common default
+                    "top_k": 30 if 'gpt' in {self.model} else 25,      # Common default
                     "use_mmap": True  # Common default
                 },
             )

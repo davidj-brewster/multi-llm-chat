@@ -23,14 +23,17 @@ class SpacyModelSingleton:
                 cls._instance = spacy.load("en_core_web_lg")
                 logger.info("SpaCy model 'en_core_web_lg' loaded successfully")
             except OSError:
-                #try:
-                #    cls._instance = spacy.load("en_core_web_trf")
-                #    logger.info("SpaCy model 'en_core_web_trf' loaded successfully")
-                #except OSError:
-                # Final fallback to md model which is smaller
-                cls._instance = spacy.load("en_core_web_md")
-                logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
-                cls._instance = None
+                try:
+                    cls._instance = spacy.load("en_core_web_md")
+                    logger.info("SpaCy model 'en_core_web_md' loaded successfully (fallback)")
+                except OSError:
+                    # Final fallback to sm (small) model
+                    try:
+                        cls._instance = spacy.load("en_core_web_sm")
+                        logger.info("SpaCy model 'en_core_web_sm' loaded successfully (fallback 2)")
+                    except OSError:
+                        logger.warning("All spaCy English models failed to load.")
+                        cls._instance = None
             except ImportError:
                 logger.warning("spaCy is not installed. Please install it to use this feature.")
                 cls._instance = None

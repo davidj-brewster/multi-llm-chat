@@ -1,6 +1,8 @@
 """
 AI model conversation manager with memory optimizations.
 """
+import asyncio
+import io
 import json
 import os
 import datetime
@@ -13,8 +15,6 @@ import re
 import traceback
 from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
-import io
-import asyncio
 
 # Local imports
 from configuration import load_config, detect_model_capabilities
@@ -43,10 +43,14 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-HUMAN_MODEL = "ollama-gemma3:12b-it-q4_K_M"  #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "gpt-4.1-nano" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+HUMAN_MODEL = "gemini-2.5-flash-lite" #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+AI_MODEL = "gemini-2.5-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=4
 
+
+
+# Local imports
+#from configuration import load_config, detect_model_capabilities
 # Set environment variables for these model names so arbiter can use them
 os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
@@ -128,7 +132,7 @@ OPENAI_MODELS = {
     # Multimodal models without reasoning parameter
     "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
     "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
-    "gpt-4.5": {"model": "gpt-4.5", "reasoning_level": None, "multimodal": True},
+    "gpt-5": {"model": "gpt-5", "reasoning_level": "medium" , "multimodal": True},
     "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
     "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
     "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
@@ -147,7 +151,8 @@ GEMINI_MODELS = {
     "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
     # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
     "gemini-2.5-pro": {"model": "gemini-2.5-pro-latest", "multimodal": True},
-    "gemini-2.5-flash-thinking": {"model": "gemini-2.5-flash-thinking", "multimodal": True},
+    "gemini-2.5-flash-lite": {"model": "gemini-2.5-flash-lite", "multimodal": True},
+    "gemini-2.5-flash": {"model": "gemini-2.5-flash", "multimodal": True},
 }
 
 CLAUDE_MODELS = {
@@ -245,7 +250,7 @@ class ModelConfig:
     """Configuration for AI model parameters"""
 
     temperature: float = 0.7
-    max_tokens: int = MAX_TOKENS 
+    max_tokens: int = MAX_TOKENS
     stop_sequences: List[str] = None
     seed: Optional[int] = random.randint(0, 1000)
     human_delay: float = 4.0
@@ -298,11 +303,11 @@ class ConversationManager:
     # Cached model lists for dynamic lookup
     _ollama_models = {}
     _lmstudio_models = {}
-    
+
     def _get_available_ollama_models(self) -> Dict[str, str]:
         """
         Fetch available models from local Ollama instance.
-        
+
         Returns:
             Dict[str, str]: Dictionary mapping friendly names to actual model names
         """
@@ -311,7 +316,7 @@ class ConversationManager:
                 # Create a temporary Ollama client to fetch models
                 temp_client = OllamaClient(mode=self.mode, domain=self.domain, model="")
                 model_list = temp_client.client.list()
-                
+
                 # Map models to friendly names
                 for model_info in model_list.get('models', []):
                     model_name = model_info.get('name')
@@ -320,19 +325,19 @@ class ConversationManager:
                         base_name = model_name.split(':')[0].split('/')[-1].lower()
                         friendly_name = f"ollama-{base_name}"
                         self._ollama_models[friendly_name] = model_name
-                
+
                 logger.info(f"Found {len(self._ollama_models)} available Ollama models")
             except Exception as e:
                 logger.warning(f"Failed to fetch Ollama models: {e}")
                 # Default models for fallback
                 self._ollama_models = None
-        
+
         return self._ollama_models
-    
+
     def _get_available_lmstudio_models(self) -> Dict[str, str]:
         """
         Fetch available models from local LMStudio instance.
-        
+
         Returns:
             Dict[str, str]: Dictionary mapping friendly names to actual model names
         """
@@ -340,7 +345,7 @@ class ConversationManager:
             try:
                 # Create a temporary LMStudio client to fetch models
                 temp_client = LMStudioClient(mode=self.mode, domain=self.domain)
-                
+
                 # Map models to friendly names
                 for model_name in temp_client.available_models:
                     if model_name:
@@ -349,15 +354,15 @@ class ConversationManager:
                         base_name = parts[-1].lower() if len(parts) > 1 else model_name.lower()
                         friendly_name = f"lmstudio-{base_name}"
                         self._lmstudio_models[friendly_name] = model_name
-                
+
                 logger.info(f"Found {len(self._lmstudio_models)} available LMStudio models")
             except Exception as e:
                 logger.warning(f"Failed to fetch LMStudio models: {e}")
                 # Default models for fallback
                 self._lmstudio_models = None
-        
+
         return self._lmstudio_models
-        
+
     def _get_client(self, model_name: str) -> Optional[BaseClient]:
         """
         Get an existing client instance or create a new one for the specified model.
@@ -423,7 +428,7 @@ class ConversationManager:
                 elif model_name.startswith("ollama-"):
                     # Get available Ollama models
                     ollama_models = self._get_available_ollama_models()
-                    
+
                     if ollama_models and model_name in ollama_models:
                         # Use the mapped model name
                         actual_model = ollama_models[model_name]
@@ -440,12 +445,12 @@ class ConversationManager:
                         model_suffix = model_name[len("ollama-"):]
                         if ":" not in model_suffix:
                             model_suffix = f"{model_suffix}:latest"
-                        
+
                         if ollama_models is None:
                             logger.warning(f"Unable to fetch Ollama models, using direct model name: {model_suffix}")
                         else:
                             logger.warning(f"Ollama model {model_name} not found in available models, trying direct: {model_suffix}")
-                            
+
                         client = OllamaClient(
                             mode=self.mode,
                             domain=self.domain,
@@ -456,7 +461,7 @@ class ConversationManager:
                 elif model_name.startswith("lmstudio-"):
                     # Get available LMStudio models
                     lmstudio_models = self._get_available_lmstudio_models()
-                    
+
                     # Only attempt matching if we have models to match against
                     if lmstudio_models:
                         # Try matching by prefix (allows partial matches)
@@ -469,7 +474,7 @@ class ConversationManager:
                             ):
                                 matched_name = lms_name
                                 break
-                        
+
                         if matched_name:
                             actual_model = lmstudio_models[matched_name]
                             client = LMStudioClient(
@@ -479,19 +484,19 @@ class ConversationManager:
                             )
                             logger.info(f"Using LMStudio model: {model_name} -> {actual_model}")
                             return client
-                    
+
                     # If we get here, either lmstudio_models is None or no matching model was found
                     if lmstudio_models is None:
                         logger.warning(f"Unable to fetch LMStudio models, creating default client")
                     else:
                         logger.warning(f"LMStudio model {model_name} not found in available models, using first available")
-                    
+
                     # Create client with no specific model - LMStudioClient will use first available
                     client = LMStudioClient(
                         mode=self.mode,
                         domain=self.domain
                     )
-                
+
                 # Handle Gemini models using templates
                 elif model_name in GEMINI_MODELS:
                     model_config = GEMINI_MODELS[model_name]
@@ -534,13 +539,13 @@ class ConversationManager:
                 # Check if this is a critical error that should terminate the program
                 is_critical_error = False
                 error_msg = str(e).lower()
-                
+
                 # Missing API key errors are critical and should terminate the program
                 if "api key" in error_msg and ("missing" in error_msg or "no api key" in error_msg or "not provided" in error_msg):
                     is_critical_error = True
                 elif "no api key provided" in error_msg:
                     is_critical_error = True
-                
+
                 if is_critical_error:
                     logger.critical(f"CRITICAL ERROR: Failed to create client for {model_name}: {e}")
                     logger.critical(f"Program will terminate as required API key is missing")
@@ -595,14 +600,14 @@ class ConversationManager:
         if not required_models:
             logger.info("No models require validation")
             return True
-            
+
         # Prime the model lists cache, but handle exceptions gracefully
         if any(model.startswith("ollama-") for model in required_models):
             try:
                 self._get_available_ollama_models()
             except Exception as e:
                 logger.warning(f"Failed to prime Ollama models cache: {e}")
-            
+
         if any(model.startswith("lmstudio-") for model in required_models):
             try:
                 self._get_available_lmstudio_models()
@@ -611,18 +616,18 @@ class ConversationManager:
 
         validations = []
         return True
-        
+
     def get_available_models(self) -> Dict[str, List[str]]:
         """
         Get all available models from local and remote sources.
-        
+
         Returns:
             Dict[str, List[str]]: Dictionary of model categories and available models
         """
         # Get models from Ollama and LMStudio
         ollama_models = self._get_available_ollama_models()
         lmstudio_models = self._get_available_lmstudio_models()
-        
+
         result = {
             "ollama": list(ollama_models.keys()) if ollama_models else ["ollama-not-available"],
             "lmstudio": list(lmstudio_models.keys()) if lmstudio_models else ["lmstudio-not-available"],
@@ -706,7 +711,7 @@ class ConversationManager:
             "Quota exceeded",
             "Service unavailable"
         ]
-            
+
         try:
             if prompt_level == "no-meta-prompting":
                 response = client.generate_response(
@@ -741,7 +746,7 @@ class ConversationManager:
                 else:
                     # In ai-ai mode or standard human-ai mode, don't swap roles
                     reversed_history = self.conversation_history.copy()
-                
+
                 # In human-aiai mode with assistant role, use regular history
                 if mode == "human-aiai" and role == "assistant":
                     logger.warning(
@@ -795,10 +800,10 @@ class ConversationManager:
         except Exception as e:
             error_str = str(e)
             logger.error(f"Error generating response: {error_str} (role: {mapped_role})")
-            
+
             # Check if this is a fatal connection error
             is_fatal = any(fatal_error in error_str for fatal_error in fatal_connection_errors)
-            
+
             if is_fatal:
                 # Create an error report file with details
                 try:
@@ -820,24 +825,24 @@ class ConversationManager:
 </head>
 <body>
     <h1>AI Battle - Fatal Error Report</h1>
-    
+
     <div class="error-box">
         <h2>Fatal Error Occurred</h2>
         <p><strong>Error:</strong> {error_str}</p>
         <p><strong>Time:</strong> {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
         <p><strong>Model:</strong> {model_type} (Role: {mapped_role})</p>
     </div>
-    
+
     <div class="session-info">
         <h2>Session Information</h2>
         <p><strong>Mode:</strong> {mode}</p>
         <p><strong>Domain/Topic:</strong> {self.domain}</p>
         <p><strong>Conversation Progress:</strong> {len(self.conversation_history)} messages</p>
     </div>
-    
+
     <h2>Error Details</h2>
     <pre>{traceback.format_exc()}</pre>
-    
+
     <div class="recovery-info">
         <h2>Recovery Options</h2>
         <p>This error appears to be a connection issue with the model API. Possible solutions:</p>
@@ -850,16 +855,16 @@ class ConversationManager:
     </div>
 </body>
 </html>"""
-                    
+
                     with open(error_filename, "w") as f:
                         f.write(error_html)
-                    
+
                     logger.error(f"Fatal error report saved as {error_filename}")
-                    
+
                     # Add error information to conversation history
                     error_message = f"ERROR: A fatal connection error occurred with {model_type}: {error_str}"
                     self.conversation_history.append({"role": "system", "content": error_message})
-                    
+
                     # Raise a more informative exception
                     raise RuntimeError(f"Fatal connection error with {model_type}: {error_str}. See error report: {error_filename}") from e
                 except Exception as report_e:
@@ -1296,7 +1301,7 @@ class ConversationManager:
             # Determine if we need to check vision capabilities
             has_visual_media = False
             is_file_list = isinstance(file_data, list)
-            
+
             if is_file_list:
                 # For list of files, check if any are visual media
                 has_visual_media = any(
@@ -1306,15 +1311,15 @@ class ConversationManager:
             elif isinstance(file_data, dict) and file_data.get("type") in ["image", "video"]:
                 # Single file case
                 has_visual_media = True
-                
+
             # Only check capabilities if we have visual media
             if has_visual_media:
                 human_capabilities = detect_model_capabilities(human_model)
                 ai_capabilities = detect_model_capabilities(ai_model)
-                
+
                 if not human_capabilities.get("vision", False) or not ai_capabilities.get("vision", False):
                     logger.warning("One or both models do not support vision capabilities")
-                    
+
                     # If AI model doesn't support vision, convert images to text description
                     if not ai_capabilities.get("vision", False):
                         if is_file_list:
@@ -1373,7 +1378,7 @@ class ConversationManager:
                             role="user",
                             history=self.conversation_history,
                             domain=self.domain,
-                            ) 
+                            )
                             if mode == "ai-ai"  # In ai-ai both get human instructions
                             else ai_system_instruction  # In human-ai modes, AI gets AI instructions
                         )
@@ -1547,7 +1552,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
             logger.debug("Using pre-generated arbiter report from Gemini")
             # The report is already saved by the ground_assertions method in arbiter_v4.py
             return
-            
+
         # Only proceed if we have a report dict with metrics to visualize
         try:
             with open("templates/arbiter_report.html") as f:
@@ -1555,16 +1560,16 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
 
             # Generate dummy data for the report if needed
             dummy_metrics = {
-                "ai_ai": {"depth_score": 0.7, "topic_coherence": 0.8, "assertion_density": 0.6, 
+                "ai_ai": {"depth_score": 0.7, "topic_coherence": 0.8, "assertion_density": 0.6,
                           "question_answer_ratio": 0.5, "avg_complexity": 0.75},
-                "human_ai": {"depth_score": 0.6, "topic_coherence": 0.7, "assertion_density": 0.5, 
+                "human_ai": {"depth_score": 0.6, "topic_coherence": 0.7, "assertion_density": 0.5,
                              "question_answer_ratio": 0.6, "avg_complexity": 0.7}
             }
-            
+
             dummy_flow = {
-                "ai_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}], 
+                "ai_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}],
                           "edges": []},
-                "human_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}], 
+                "human_ai": {"nodes": [{"id": 0, "role": "user", "preview": "Sample", "metrics": {}}],
                              "edges": []}
             }
 
@@ -1597,7 +1602,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
         except Exception as e:
             logger.warning(f"Failed to generate visualization report: {e}")
             # Not a critical error since we already have the main report
-            
+
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
@@ -1617,11 +1622,11 @@ async def save_metrics_report(
                     ai_ai_conversation, human_ai_conversation
                 )
                 logger.debug("Metrics report generated successfully")
-                
+
                 # Save the metrics report to a file
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                 metrics_filename = f"metrics_report_{timestamp}.html"
-                
+
                 # Create a basic HTML representation
                 html_content = f"""
                 <html>
@@ -1666,26 +1671,26 @@ async def save_metrics_report(
                 </body>
                 </html>
                 """
-                
+
                 with open(metrics_filename, "w") as f:
                     f.write(html_content)
-                
+
                 logger.info(f"Metrics report saved successfully as {metrics_filename}")
-                
+
             except ValueError as e:
                 if "Negative values in data" in str(e):
                     logger.error(f"Failed to generate metrics report due to distance calculation error: {e}")
                     # Create a simplified metrics report that doesn't depend on the problematic clustering
                     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
                     metrics_filename = f"metrics_report_basic_{timestamp}.html"
-                    
+
                     # Calculate basic metrics that don't depend on complex clustering
                     ai_ai_msg_count = len(ai_ai_conversation)
                     human_ai_msg_count = len(human_ai_conversation)
-                    
+
                     ai_ai_avg_length = sum(len(msg.get('content', '')) for msg in ai_ai_conversation) / max(1, ai_ai_msg_count)
                     human_ai_avg_length = sum(len(msg.get('content', '')) for msg in human_ai_conversation) / max(1, human_ai_msg_count)
-                    
+
                     html_content = f"""
                     <html>
                     <head>
@@ -1728,10 +1733,10 @@ async def save_metrics_report(
                     </body>
                     </html>
                     """
-                    
+
                     with open(metrics_filename, "w") as f:
                         f.write(html_content)
-                    
+
                     logger.debug(f"Basic metrics report saved as {metrics_filename}")
                 else:
                     # For other value errors, rethrow
@@ -1744,7 +1749,7 @@ async def save_metrics_report(
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             error_filename = f"metrics_error_{timestamp}.html"
-            
+
             html_content = f"""
             <html>
             <head>
@@ -1765,10 +1770,10 @@ async def save_metrics_report(
             </body>
             </html>
             """
-            
+
             with open(error_filename, "w") as f:
                 f.write(html_content)
-            
+
             logger.debug(f"Error report saved as {error_filename}")
         except Exception as inner_e:
             logger.error(f"Failed to save error report: {inner_e}")
@@ -1784,20 +1789,20 @@ async def main():
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
     mode = "ai-ai"
-    ai_model = AI_MODEL  
-    human_model = HUMAN_MODEL  
+    ai_model = AI_MODEL
+    human_model = HUMAN_MODEL
 
     # Validate required API keys before proceeding
     if any(model in ai_model.lower() or model in human_model.lower() for model in ["claude", "sonnet", "haiku"]):
         if not anthropic_api_key:
             logger.critical("ANTHROPIC_API_KEY environment variable is not set but required for Claude models")
             return
-    
-    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt", "openai", "o1", "o3", "o4"]):
+
+    if any(model in ai_model.lower() or model in human_model.lower() for model in ["gpt-4", "gpt-5", "openai", "o1", "o3", "o4"]):
         if not openai_api_key:
             logger.critical("OPENAI_API_KEY environment variable is not set but required for OpenAI models")
             return
-    
+
     if not gemini_api_key:
         logger.critical("GOOGLE_API_KEY environment variable is not set but required for Gemini models including the Arbiter")
         return
@@ -1838,7 +1843,7 @@ async def main():
             goal_text = goal_parts.split("(")[1].split(")")[0].strip()
         else:
             goal_text = goal_parts.split("\n")[0].strip()
-    
+
     # Dynamic system instructions that focus on output creation for both human and AI roles
     human_system_instruction = ""
     if goal_text:
@@ -1850,7 +1855,7 @@ async def main():
         )
     else:
         human_system_instruction = f"You are a HUMAN working on: {initial_prompt}. Focus on producing output towards {initial_prompt}, with concrete output."
-    
+
     # AI system instruction with similar focus on direct production
     ai_system_instruction = ""
     if goal_text:
@@ -1858,7 +1863,7 @@ async def main():
 Create or continue the requested {initial_prompt} output directly using MAX one paragraph of "thinking" tags in total. """
     else:
         ai_system_instruction =  f"You are an AI assistant working on {goal_text}. Focus on directly CREATING rather than discussing {initial_prompt} with concrete output."
-     
+
     # Override AI instruction in AI-AI mode to ensure immediate output production
     if mode == "ai-ai" or mode == "aiai":
         # For AI-AI mode, both roles need to focus on output rather than discussion
@@ -1875,7 +1880,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         max_retries = 2
         retry_count = 0
         conversation = None
-        
+
         while retry_count <= max_retries:
             try:
                 conversation = manager.run_conversation(
@@ -1892,7 +1897,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             except RuntimeError as e:
                 error_str = str(e)
                 logger.warning(f"Connection error occurred: {error_str}")
-                
+
                 # Check if we should retry
                 if "Fatal connection error" in error_str and retry_count < max_retries:
                     retry_count += 1
@@ -1909,7 +1914,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                         {"role": "system", "content": f"ERROR: {error_str} - Conversation could not be completed."}
                     ]
                     break
-        
+
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conversation:
             conversation = [
@@ -1934,7 +1939,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         mode = "human-aiai"
         retry_count = 0
         conversation_as_human_ai = None
-        
+
         while retry_count <= max_retries:
             try:
                 conversation_as_human_ai = manager.run_conversation(
@@ -1951,7 +1956,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             except RuntimeError as e:
                 error_str = str(e)
                 logger.warning(f"Connection error occurred in human-AI conversation: {error_str}")
-                
+
                 # Check if we should retry
                 if "Fatal connection error" in error_str and retry_count < max_retries:
                     retry_count += 1
@@ -1968,7 +1973,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                         {"role": "system", "content": f"ERROR: {error_str} - Human-AI conversation could not be completed."}
                     ]
                     break
-        
+
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conversation_as_human_ai:
             conversation_as_human_ai = [
@@ -1992,7 +1997,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         mode = "no-meta-prompting"
         retry_count = 0
         conv_default = None
-        
+
         while retry_count <= max_retries:
             try:
                 conv_default = manager.run_conversation(
@@ -2009,7 +2014,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             except RuntimeError as e:
                 error_str = str(e)
                 logger.warning(f"Connection error occurred in default conversation: {error_str}")
-                
+
                 # Check if we should retry
                 if "Fatal connection error" in error_str and retry_count < max_retries:
                     retry_count += 1
@@ -2026,7 +2031,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                         {"role": "system", "content": f"ERROR: {error_str} - Default conversation could not be completed."}
                     ]
                     break
-        
+
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conv_default:
             conv_default = [
@@ -2067,7 +2072,6 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         # Ensure cleanup
         manager.cleanup_unused_clients()
         MemoryManager.cleanup_all()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from logging import getLogger
 import logging
 
-# Import consolidated constants from configuration.py
-from configuration import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
+# Import consolidated constants from constants.py
+from constants import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
 
 logger = getLogger(__name__)
 logger.setLevel(logging.INFO)

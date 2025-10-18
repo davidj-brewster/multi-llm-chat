@@ -35,66 +35,9 @@ class SystemInstructionsError(ConfigurationError):
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# --- Consolidated Constants Start ---
-SUPPORTED_MODELS = {
-    "claude": [
-        "claude", "sonnet", "haiku", "claude*", "claude-3-5-haiku",
-        "claude-3-7", "claude-3-7-latest", "claude-3-7-sonnet-latest", "claude-3-7-sonnet",
-        "claude-3-7-reasoning", "claude-3-7-reasoning-medium", "claude-3-7-reasoning-low",
-        "claude-3-7-reasoning-none",
-        "claude-3-opus-20240229", # Added
-        "claude-3-sonnet-20240229", # Added
-        "claude-3-haiku-20240307", # Added (latest Haiku)
-    ],
-    "gemini": [
-        "gemini*", "gemini-2-flash-lite", "gemini-2.5-flash-exp", "gemini-2.5-pro",
-        "gemini-2.5-pro-exp", "gemini-2.5-pro-preview-03-25",
-        "gemini-2.5-flash-preview-04-17", "gemini-2-pro", "gemini-2-reasoning",
-        "gemini-2.0-flash-exp", "gemini",
-        "gemini-1.5-pro-latest", # Added for Gemini 2.5 Pro
-        "gemini-1.5-flash-latest", # Added for Gemini 2.5 Flash
-    ],
-    "openai": [
-        "gpt-4-vision", "gpt-4o", "gpt-4.1", "gpt*", "gpt-4.1-mini",
-        "gpt-4.1-nano", "chatgpt-latest", "o1", "o3", 
-        "o1-reasoning-high", "o1-reasoning-medium", "o1-reasoning-low",
-        "o3-reasoning-high", "o3-reasoning-medium", "o3-reasoning-low",
-        "o4-mini", 
-        "o4-mini-high", 
-    ],
-    "gpt-4.1": ["gpt-4.1"],
-    "gpt-4.1-mini": ["gpt-4.1-mini"],
-    "gpt-4.1-nano": ["gpt-4.1-nano"],
-    "o4-mini": ["o4-mini"], 
-    "o4-mini-high": ["o4-mini-high"], 
-    "o3": ["o3"], 
-    "ollama": ["*"],
-    "mlx": ["*"],
-}
-
-SUPPORTED_FILE_TYPES = {
-    "image": {
-        "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
-        "max_size": 200 * 1024 * 1024,
-        "max_resolution": (8192, 8192),
-    },
-    "video": {
-        "extensions": [".mp4", ".mov", ".avi", ".webm"],
-        "max_size": 3000 * 1024 * 1024,
-        "max_resolution": (3840, 2160),
-    },
-    "text": { 
-        "extensions": sorted(list(set([
-            ".txt", ".md", ".py", ".js", ".html", ".css", ".json", ".yaml", ".yml",
-            ".java", ".cpp", ".c", ".h", ".cs", ".php", ".rb", ".go", ".rs", ".ts", ".swift"
-        ]))),
-        "max_size": 300 * 1024 * 1024,
-    },
-}
-# --- Consolidated Constants End ---
-
+from constants import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
 # Import FileConfig and ModelConfig from configdataclasses.py
-from .configdataclasses import FileConfig, ModelConfig
+from configdataclasses import FileConfig, ModelConfig
 
 @dataclass
 class TimeoutConfig:
@@ -123,7 +66,7 @@ class TimeoutConfig:
 # imported FileConfig and ModelConfig from .configdataclasses
 # For now, assuming it's potentially deprecated or will be handled separately if still needed.
 # If it were to be updated:
-# class DiscussionConfigOld: 
+# class DiscussionConfigOld:
 #     turns: int
 #     models: Dict[str, ModelConfig] # This will now refer to the imported ModelConfig
 #     goal: str
@@ -151,7 +94,7 @@ class TimeoutConfig:
 
 # Marking DiscussionConfigOld as potentially deprecated by commenting out for now.
 # If it's needed, it should be reviewed and updated.
-class DiscussionConfigOld: 
+class DiscussionConfigOld:
     pass
 
 def load_system_instructions() -> Dict:
@@ -204,14 +147,14 @@ def load_config(path: str) -> DiscussionConfig: # Returns DiscussionConfig from 
                 if template_name in system_instructions:
                     template = system_instructions[template_name]
                     params = model_config_dict["instructions"].get("params", {})
-                    
+
                     # instruction_text = json.dumps(template)
                     # Ensure template is a string before replacing
                     if isinstance(template, str):
                         instruction_text = template
                         for key, value in params.items():
                             instruction_text = instruction_text.replace(f"{{{key}}}", str(value))
-                        model_config_dict["persona"] = instruction_text 
+                        model_config_dict["persona"] = instruction_text
                     elif isinstance(template, (dict, list)):
                         # If template is complex, dump to JSON string, replace, then parse back.
                         # This is kept for compatibility but string templates are preferred.
@@ -257,7 +200,7 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
 
         # Vision Capabilities
         # General keywords for cloud providers known for vision
-        cloud_vision_keywords = ["claude", "gpt-4o", "gemini", "o1", "o3", "vision", "gpt-4.1"] 
+        cloud_vision_keywords = ["claude", "gpt-4o", "gemini", "o1", "o3", "vision", "gpt-4.1"]
         # Specific Ollama vision models (keywords within their names)
         ollama_vision_keywords = ["llava", "bakllava", "moondream", "gemma3", "llava-phi3"] # gemma3 added, phi4 (often llava-phi3)
 
@@ -277,9 +220,9 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         # Gemini 1.5 models support function calling.
         # Claude 3 models support function calling.
         # GPT-4+ models support function calling.
-        if "gpt-4" in mt_lower or "claude-3" in mt_lower or "gemini-1.5" in mt_lower or "gemini-2.5" in mt_lower: 
+        if "gpt-4" in mt_lower or "claude-3" in mt_lower or "gemini-1.5" in mt_lower or "gemini-2.5" in mt_lower:
             capabilities["function_calling"] = True
-        
+
         # Advanced Reasoning Capability (for models with explicit reasoning/thinking parameters or known advanced versions)
         # This primarily refers to models where client-side parameters might enable deeper reasoning.
         # Claude 3.x (Opus, Sonnet, Haiku, 3.7) are all advanced.
@@ -287,7 +230,7 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         if "claude-3" in mt_lower or \
            any(variant in mt_lower for variant in ["o1", "o3", "o4-mini"]): # Simplified, as specific reasoning variants like o1-reasoning-high are still "o1"
             capabilities["advanced_reasoning"] = True
-        
+
         # Code Understanding (Most LLMs have some level, this flag is for notable proficiency or specific features)
         # This can be highly model-specific and might require more granular checks if used to gate features.
         # For now, we'll assume general capability unless specific models are known to excel or lack it.
