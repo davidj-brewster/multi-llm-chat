@@ -1386,7 +1386,8 @@ class GeminiClient(BaseClient):
             bytes: The raw audio data in WAV format.
         """
         try:
-            logger.info(f"Generating speech with model {model} for text: '{text[:30]}   ' with voice: {voice_name}")
+            preview = text[:30] + ("..." if len(text) > 30 else "")
+            logger.info(f"Generating speech with model {model} for text: '{preview}' with voice: {voice_name}")
             response = self.client.models.generate_content(
                 model=model,
                 contents=[{"parts": [{"text": text}]}],
