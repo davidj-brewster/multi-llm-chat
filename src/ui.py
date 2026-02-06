@@ -205,19 +205,15 @@ def export_conversation(conversation_history, raw_logs, battle_id):
 def get_available_models():
     """Extract available models from ai-battle.py"""
     try:
-        # First approach: Try to import directly
-        try:
-            # Add parent directory to path if needed
-            sys.path.append(os.path.dirname(__file__))
+        # Add parent directory to path if needed
+        sys.path.append(os.path.dirname(__file__))
 
-            # First try direct import
-            try:
-                # Create a temporary manager to get models
-                temp_manager = ConversationManager(domain="Model Detection")
-                return temp_manager.get_available_models()
-            except ImportError as e:
-                # Try to parse the file directly if module import fails
-                raise(e)
+        # Create a temporary manager to get models
+        temp_manager = ConversationManager(domain="Model Detection")
+        return temp_manager.get_available_models()
+    except ImportError as e:
+        # Try to parse the file directly if module import fails
+        raise(e)
 
 def detect_disagreement(conversation_history):
     """Simple heuristic to detect disagreement between models"""
