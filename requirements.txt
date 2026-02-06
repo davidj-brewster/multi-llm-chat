@@ -544,7 +544,7 @@ scipy==1.15.2
     # via
     #   multi-llm-chat
     #   scikit-learn
-sentencepiece==0.2.0
+sentencepiece==0.2.1
     # via
     #   mlx-lm
     #   multi-llm-chat
