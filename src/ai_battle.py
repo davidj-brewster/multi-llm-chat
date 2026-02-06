@@ -28,9 +28,8 @@ from model_clients import (
     GeminiClient,
     MLXClient,
     OllamaClient,
-    PicoClient,
 )
-# move these into model_clients or separate everything..?
+
 from lmstudio_client import LMStudioClient
 from claude_reasoning_config import ClaudeReasoningConfig
 from shared_resources import MemoryManager
@@ -292,6 +291,8 @@ class ConversationManager:
         # Initialize empty client tracking
         self._initialized_clients = set()
         self.model_map = {}
+        self._ollama_models = {}
+        self._lmstudio_models = {}
 
     @property
     def media_handler(self):
@@ -299,10 +300,6 @@ class ConversationManager:
         if self._media_handler is None:
             self._media_handler = ConversationMediaHandler(output_dir="processed_files")
         return self._media_handler
-
-    # Cached model lists for dynamic lookup
-    _ollama_models = {}
-    _lmstudio_models = {}
 
     def _get_available_ollama_models(self) -> Dict[str, str]:
         """
@@ -328,9 +325,10 @@ class ConversationManager:
 
                 logger.info(f"Found {len(self._ollama_models)} available Ollama models")
             except Exception as e:
-                logger.warning(f"Failed to fetch Ollama models: {e}")
+                logger.error(f"Failed to fetch Ollama models: {e}")
                 # Default models for fallback
                 self._ollama_models = None
+                raise e
 
         return self._ollama_models
 
@@ -369,7 +367,7 @@ class ConversationManager:
 
         This method manages client instances, creating them on demand and caching them
         for reuse. It supports various model types including Claude, GPT, Gemini, MLX,
-        Ollama, and Pico models.
+        Ollama
 
         Args:
             model_name: Name of the model to get or create a client for
@@ -513,18 +511,6 @@ class ConversationManager:
                         domain=self.domain,
                         model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
                     )
-                elif model_name == "pico-r1-14":
-                    client = PicoClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="DeepSeek-R1-Distill-Qwen-14B-abliterated-v2-Q4-mlx",
-                    )
-                elif model_name == "pico-r1-llama8b":
-                    client = PicoClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="DeepSeek-R1-Distill-Llama-8B-8bit-mlx",
-                    )
                 else:
                     logger.error(f"Unknown model: {model_name}")
                     return None
@@ -634,7 +620,6 @@ class ConversationManager:
             "claude": list(CLAUDE_MODELS.keys()),
             "openai": list(OPENAI_MODELS.keys()),
             "gemini": list(GEMINI_MODELS.keys()),
-            "local": ["mlx-llama-3.1-abb", "pico-r1-14", "pico-r1-llama8b"]
         }
         return result
 
@@ -651,7 +636,7 @@ class ConversationManager:
         with self.rate_limit_lock:
             current_time = time.time()
             if current_time - self.last_request_time < self.min_delay:
-                io.sleep(self.min_delay)
+                time.sleep(self.min_delay)
             self.last_request_time = time.time()
 
     def run_conversation_turn(
@@ -821,7 +806,7 @@ class ConversationManager:
         pre {{ background-color: #f8fafc; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }}
         .session-info {{ background-color: #f0f9ff; padding: 1rem; margin: 1rem 0; border-left: 4px solid #0ea5e9; }}
         .recovery-info {{ background-color: #ecfdf5; padding: 1rem; margin: 1rem 0; border-left: 4px solid #059669; }}
-    </style>
+    <style>
 </head>
 <body>
     <h1>AI Battle - Fatal Error Report</h1>
@@ -1877,7 +1862,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         # Run default conversation
         mode = "ai-ai"
         # Run AI-AI conversation with retry mechanism
-        max_retries = 2
+        max_retries = 1
         retry_count = 0
         conversation = None
 

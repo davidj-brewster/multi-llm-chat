@@ -11,10 +11,6 @@ from openai import OpenAI
 from anthropic import Anthropic
 from ollama import ChatResponse
 from ollama import Client
-from langchain_ollama import ChatOllama
-from langchain.prompts import HumanMessagePromptTemplate as HumanMessage, AIMessagePromptTemplate as AIMessage
-from langchain.prompts import SystemMessagePromptTemplate as SystemMessage, PromptTemplate, StringPromptTemplate
-#from langchain.prompts import MessagesPlaceholder
 import requests
 from adaptive_instructions import AdaptiveInstructionManager
 from shared_resources import MemoryManager
@@ -589,7 +585,7 @@ class BaseClient:
                 return self.generate_human_prompt()
         if self.mode and self.mode == "ai-ai":
             return self.generate_human_prompt()
-        else:  # if self.mode == "human-aiai":
+        else:  # if self.mode == "human-ai":
             if role == "user" or role == "human":
                 return self.generate_human_prompt()
             else:
@@ -761,8 +757,20 @@ Generate a natural but sophisticated response that:
 
         Decides whether to use the raw prompt or generate a human-simulation prompt.
         """
-        current_mode = mode or self.mode
-        is_goal_task = any(marker in self.domain.upper() for marker in ["GOAL:", "GOAL ", "WRITE A"])
+        if self.mode:
+            current_mode = self.mode
+        else:
+            if mode:
+                current_mode = mode
+            else:
+                logger.critical(f"_determine_user_prompt_content: mode is not configured in this step. Terminating. Debug follows {prompt} {history}")
+                raise ValueError(f"_determine_user_prompt_content: No conversation mode configured")
+           
+        if not current_mode:
+            logger.critical(f"_determine_user_prompt_content: current_mode unconfigured somehow")
+            raise ValueError(f"_determine_user_prompt_content: current_mode unconfigured")
+
+        is_goal_task = any(marker in self.domain.upper() for marker in ["GOAL", "TASK", "WRITE A", "MAKE A", "WRITE A", "DESIGN", "BUILD"])
 
         if is_goal_task:
             # For goal tasks, only the 'human' role gets the simulation prompt
@@ -1441,7 +1449,7 @@ class ClaudeClient(BaseClient):
             api_key = anthropic_api_key or api_key
             if not api_key:
                 logger.critical("Missing required Anthropic API key for Claude models.")
-                raise ValueError("No Anthropic API key provided. Please set the ANTHROPIC_API_KEY environment variable.")
+                raise ValueError("No Anthropic API key provided. Please set the ANTHROPIC_API_KEY.")
 
             # --- Map user-friendly names to specific API model IDs ---
             model_map = {
@@ -2200,129 +2208,6 @@ class OpenAIClient(BaseClient):
             raise
 
 
-class PicoClient(BaseClient):
-    """Client for local Ollama model interactions"""
-
-    def __init__(
-        self,
-        mode: str,
-        domain: str,
-        role: str = None,
-        model: str = None, 
-    ):
-        super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
-        self.base_url = "http://localhost:10434"
-        self.client = Client(host="http://localhost:10434")
-
-    def test_connection(self) -> None:
-        """Test Ollama connection"""
-        logger.debug("Ollama connection test not yet implemented")
-        logger.debug(MemoryManager.get_memory_usage())
-
-    def generate_response(
-        self,
-        prompt: str,
-        system_instruction: str = None,
-        history: List[Dict[str, str]] = None,
-        model_config: Optional[ModelConfig] = None,
-        file_data: Dict[str, Any] = None,
-        mode: str = None,
-        role: str = None,
-    ) -> str:
-        """Generate a response from your local Ollama model."""
-        if role:
-            self.role = role
-        if mode:
-            self.mode = mode
-
-        history = history if history is not None else [] # Ensure history is a list
-
-        # Determine instructions and final prompt content using BaseClient helpers
-        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
-        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
-
-        # Build context-aware prompt
-        context_prompt = (
-            self.generate_human_prompt(history)
-            if role == "human" or self.mode == "ai-ai"
-            else f"{prompt}"
-        )
-
-        # Prepare messages for PicoClient (Note: It uses a 'developer' role for system instructions)
-        messages = history[-10:] if history else [] # Limit history size
-        history.append({"role": "developer", "content": current_instructions})
-        messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
-
-        # Check if this is a vision-capable model and we have image data
-        is_vision_model = any(
-            vm in self.model.lower()
-            for vm in ["gemma3", "llava", "bakllava", "moondream", "llava-phi3"]
-        )
-
-        # Handle file data for PicoClient (Ollama-compatible)
-        if is_vision_model and file_data:
-            image_base64_list = []
-            if isinstance(file_data, list): # Handle list of files
-                for file_item in file_data:
-                    if isinstance(file_item, dict) and "type" in file_item:
-                        if file_item["type"] == "image" and "base64" in file_item:
-                            image_base64_list.append(file_item["base64"])
-                        elif file_item["type"] == "video" and "key_frames" in file_item and file_item["key_frames"]:
-                            for frame in file_item["key_frames"]:
-                                if "base64" in frame:
-                                    image_base64_list.append(frame["base64"])
-            elif isinstance(file_data, dict) and "type" in file_data: # Handle single file_data dict
-                if file_data["type"] == "image" and "base64" in file_data:
-                    image_base64_list.append(file_data["base64"])
-                elif file_data["type"] == "video" and "key_frames" in file_data and file_data["key_frames"]:
-                    for frame in file_data["key_frames"]:
-                        if "base64" in frame:
-                            image_base64_list.append(frame["base64"])
-
-            if image_base64_list:
-                # Ensure the last message is a user message and add images to it
-                if messages and messages[-1]["role"] == "user":
-                    messages[-1]["images"] = image_base64_list
-                    # Ensure content (text prompt) is also part of this message
-                    # final_prompt_content is already in messages[-1]["content"]
-                else:
-                    # This case should ideally not happen if messages are structured correctly
-                    messages.append({
-                        "role": "user",
-                        "content": final_prompt_content, # final_prompt_content was already added
-                        "images": image_base64_list
-                    })
-                logger.info(f"Added {len(image_base64_list)} images to PicoClient request")
-
-        try:
-            # --- Debug Logging ---
-            logger.debug(f"--- Pico Request ---")
-            logger.debug(f"Model: {self.model}")
-            # Note: System instruction is added as 'developer' role in messages
-            logger.debug(f"Messages: {messages}")
-            response = self.client.chat(
-                model=self.model,
-                messages=messages, # Use the prepared messages list
-                options={
-                    "num_ctx": 16384,
-                    "num_predict": 512,
-                    "temperature": 0.7,
-                    "num_batch": 512,
-                    "n_batch": 512,
-                    "n_ubatch": 512,
-                    "top_p": 0.9,
-                },
-            )
-            return response['message']['content'] # Access content from dict
-        except Exception as e:
-            logger.error(f"Ollama generate_response error: {e}")
-            raise e
-
-    def __del__(self):
-        """Cleanup when client is destroyed."""
-        if hasattr(self, "_adaptive_manager") and self._adaptive_manager:
-            del self._adaptive_manager
-
 
 class MLXClient(BaseClient):
     """Client for local MLX model interactions"""
@@ -2372,8 +2257,8 @@ class MLXClient(BaseClient):
         messages = []
 
         history = history if history is not None else [] # Ensure history is a list
-        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
-        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
+        current_instructions = self._determine_system_instructions(system_instruction, history, role, self.mode)
+        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, self.mode)
 
         if current_instructions:
             messages.append({"role": "system", "content": current_instructions}) # Add system instruction first
@@ -2459,163 +2344,6 @@ class MLXClient(BaseClient):
 
 
 
-class OllamaClientLangchain(BaseClient):
-    """Client for local Ollama model interactions using LangChain."""
-
-    def __init__(self, mode: str, domain: str, role: str = None, model: str = None):
-        super().__init__(mode=mode, api_key="", domain=domain, model=model, role=role)
-        self.base_url = "http://localhost:11434" # Store for potential use, though ChatOllama handles it
-        try:
-            self.lc_client = ChatOllama(
-                model=self.model,
-                temperature=0.7, # Default temperature
-                # base_url=self.base_url # ChatOllama defaults to localhost:11434
-                # Add other default options if needed, e.g., num_ctx, seed
-            )
-            logger.debug(f"Initialized LangChain Ollama client for model: {self.model}")
-        except Exception as e:
-            logger.error(f"Failed to initialize LangChain ChatOllama: {e}", exc_info=True)
-            self.lc_client = None # Ensure client is None if init fails
-            raise # Re-raise the exception to signal failure
-
-    def test_connection(self) -> bool:
-        """Test Ollama connection via LangChain client."""
-        if not self.lc_client:
-            logger.error("LangChain Ollama client not initialized.")
-            return False
-        try:
-            # Use a simple invoke call to test
-            self.lc_client.invoke("Hi")
-            logger.info("Ollama (LangChain) connection test successful")
-            return True
-        except Exception as e:
-            logger.error(f"Ollama (LangChain) connection test failed: {e}", exc_info=True)
-            return False
-
-    def generate_response(
-        self,
-        prompt: str,
-        system_instruction: str = None,
-        history: List[Dict[str, str]] = None,
-        file_data: Any = None, # Can be Dict or List[Dict]
-        model_config: Optional[ModelConfig] = None,
-        mode: str = None,
-        role: str = None,
-    ) -> str:
-        """Generate a response from your local Ollama model using LangChain."""
-        if not self.lc_client:
-            logger.error("LangChain Ollama client not initialized. Cannot generate response.")
-            return "Error: Ollama client not initialized."
-
-        if role: self.role = role
-        if mode: self.mode = mode
-        history = history if history is not None else []
-
-        # Use base class helpers to determine instructions and final prompt
-        current_instructions = self._determine_system_instructions(system_instruction, history, role, mode)
-        final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
-
-        # Prepare LangChain messages
-        lc_messages = []
-        if current_instructions:
-            # Create a PromptTemplate from the instructions string
-            system_prompt_template = PromptTemplate(template=current_instructions)
-            # Pass the PromptTemplate to the SystemMessagePromptTemplate
-            lc_messages.append(SystemMessage(prompt=system_prompt_template))
-
-        for msg in history:
-            msg_role = msg.get("role")
-            msg_content = msg.get("content", "")
-            if msg_role in ["user", "human"]:
-                lc_messages.append(HumanMessage(prompt=PromptTemplate(template=msg_content, input_variables=[])))
-            elif msg_role == "assistant":
-                lc_messages.append(AIMessage(prompt=PromptTemplate(template=msg_content, input_variables=[])))
-            # Ignore system messages in history as it's handled above
-
-        # Prepare final user message content (text + optional images)
-        user_message_content_parts = [] # Use a list for multimodal content
-        user_message_content_parts.append({"type": "text", "text": final_prompt_content})
-
-        images_base64 = []
-        if file_data:
-            # Normalize file_data to always be a list
-            processed_files = file_data if isinstance(file_data, list) else [file_data]
-            for item in processed_files:
-                if isinstance(item, dict):
-                    if item.get("type") == "image" and "base64" in item:
-                        images_base64.append(item["base64"])
-                    elif item.get("type") == "video" and "key_frames" in item:
-                        # Treat video frames as images
-                        images_base64.extend([f["base64"] for f in item.get("key_frames", []) if "base64" in f])
-                    # Note: LangChain ChatOllama might not support raw video chunks directly
-
-        for img_b64 in images_base64:
-            # LangChain expects image URLs in this format for Ollama
-            user_message_content_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"} # Assuming JPEG
-            })
-
-        # Add the final HumanMessage with potentially multimodal content
-        lc_messages.append(HumanMessage(content=user_message_content_parts))
-        # Update the client configuration for multimodal content
-        if images_base64:
-            # Configure client for vision model if we have images
-            if not any(vm in self.model.lower() for vm in ["llava", "bakllava", "vision"]):
-                logger.warning(f"Model {self.model} may not support vision. Attempting request anyway.")
-            
-            # For LangChain's ChatOllama, image content should already be properly formatted
-            # in user_message_content_parts above with image_url entries
-            self.lc_client.model_kwargs.update({
-            "num_ctx": 16384,  # Increase context for images
-            "temperature": 0.7,
-            "top_k": 40,
-            "top_p": 0.9,
-            "repeat_penalty": 1.1
-            })
-
-        # Check if we have video frames to process
-        if any(isinstance(item, dict) and item.get("type") == "video" for item in (file_data if isinstance(file_data, list) else [file_data] if file_data else [])):
-            logger.info("Processing video frames for analysis")
-            # Video frames are already handled in the images_base64 list above
-            # Add video-specific context to the prompt if needed
-            if user_message_content_parts[0]["text"]:
-                user_message_content_parts[0]["text"] += "\n\nPlease analyze the sequence of video frames."
-
-        # Prepare request options from model_config
-        request_options = {}
-        config_to_use = model_config if model_config else ModelConfig() # Use default if None
-
-        if config_to_use.temperature is not None:
-            request_options["temperature"] = config_to_use.temperature
-        if config_to_use.max_tokens is not None:
-            # LangChain's ChatOllama uses num_predict for max tokens
-            request_options["num_predict"] = config_to_use.max_tokens
-        if config_to_use.stop_sequences:
-            request_options["stop"] = config_to_use.stop_sequences
-        if hasattr(config_to_use, 'seed') and config_to_use.seed is not None:
-             request_options["seed"] = config_to_use.seed
-        # Add other Ollama options if needed and supported by ChatOllama
-        # e.g., top_k, top_p, num_ctx - check ChatOllama documentation
-
-        try:
-            logger.debug(f"--- Ollama (LangChain) Request ---")
-            logger.debug(f"Model: {self.model}")
-            # Log messages carefully, avoiding excessive length if needed
-            # logger.debug(f"Messages: {[m.to_json() for m in lc_messages]}")
-            logger.debug(f"Options: {request_options}")
-
-            response = self.lc_client.invoke(lc_messages, **request_options)
-
-            logger.debug(f"--- Ollama (LangChain) Response ---")
-            logger.debug(f"Content: {response.content[:200]}   ") # Log snippet
-
-            return response.content
-        except Exception as e:
-            logger.error(f"Ollama (LangChain) generate_response error: {e}", exc_info=True)
-            return f"Error generating response via LangChain: {e}"
-
-
 class OllamaClient(BaseClient):
     """Client for local Ollama model interactions"""
 
@@ -2689,11 +2417,9 @@ class OllamaClient(BaseClient):
             vm in self.model.lower()
             for vm in [
                 "gemma3",
-                "llava",
                 "vision",
                 "llava-phi3",
                 "mistral-medium",
-                "llama2-vision",
             ]
         )
 

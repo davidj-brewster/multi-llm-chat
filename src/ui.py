@@ -12,6 +12,8 @@ from io import BytesIO
 import json
 import uuid
 from datetime import datetime
+import importlib.util
+from ai_battle import OPENAI_MODELS, CLAUDE_MODELS, GEMINI_MODELS, ANTHROPIC_MODELS, ConversationManager
 
 # Helper function to convert PIL image to base64
 def image_to_base64(img):
@@ -205,105 +207,17 @@ def get_available_models():
     try:
         # First approach: Try to import directly
         try:
-            import sys
-            import os
-            import importlib.util
-
             # Add parent directory to path if needed
             sys.path.append(os.path.dirname(__file__))
 
             # First try direct import
             try:
-                from ai_battle import OPENAI_MODELS, CLAUDE_MODELS, GEMINI_MODELS, ANTHROPIC_MODELS, ConversationManager
-
                 # Create a temporary manager to get models
                 temp_manager = ConversationManager(domain="Model Detection")
                 return temp_manager.get_available_models()
-            except ImportError:
+            except ImportError as e:
                 # Try to parse the file directly if module import fails
-                ai_battle_path = os.path.join(os.path.dirname(__file__), "ai-battle.py")
-                if os.path.exists(ai_battle_path):
-                    # Extract model lists from file content
-                    with open(ai_battle_path, 'r') as f:
-                        content = f.read()
-
-                    # Use regex to find model definitions
-                    import re
-
-                    # Dictionary to store models
-                    models = {
-                        "openai": [],
-                        "claude": [],
-                        "anthropic": [],
-                        "gemini": [],
-                        "ollama": [],
-                        "lmstudio": [],
-                        "local": []
-                    }
-
-                    # Extract OpenAI models
-                    openai_match = re.search(r'OPENAI_MODELS\s*=\s*\[(.*?)\]', content, re.DOTALL)
-                    if openai_match:
-                        openai_str = openai_match.group(1)
-                        openai_models = re.findall(r'"([^"]+)"', openai_str)
-                        models["openai"] = openai_models
-
-                    # Extract Claude models
-                    claude_match = re.search(r'CLAUDE_MODELS\s*=\s*\[(.*?)\]', content, re.DOTALL)
-                    if claude_match:
-                        claude_str = claude_match.group(1)
-                        claude_models = re.findall(r'"([^"]+)"', claude_str)
-                        models["claude"] = claude_models
-
-                    # Extract Anthropic models
-                    anthropic_match = re.search(r'ANTHROPIC_MODELS\s*=\s*\[(.*?)\]', content, re.DOTALL)
-                    if anthropic_match:
-                        anthropic_str = anthropic_match.group(1)
-                        anthropic_models = re.findall(r'"([^"]+)"', anthropic_str)
-                        models["anthropic"] = anthropic_models
-
-                    # Extract Gemini models
-                    gemini_match = re.search(r'GEMINI_MODELS\s*=\s*\[(.*?)\]', content, re.DOTALL)
-                    if gemini_match:
-                        gemini_str = gemini_match.group(1)
-                        gemini_models = re.findall(r'"([^"]+)"', gemini_str)
-                        models["gemini"] = gemini_models
-
-                    # Extract Ollama models
-                    ollama_match = re.search(r'OLLAMA_MODELS\s*=\s*\[(.*?)\]', content, re.DOTALL)
-                    if ollama_match:
-                        ollama_str = ollama_match.group(1)
-                        ollama_models = re.findall(r'"([^"]+)"', ollama_str)
-                        models["ollama"] = ollama_models
-
-                    return models
-                else:
-                    raise FileNotFoundError(f"Could not find ai-battle.py at {ai_battle_path}")
-        except Exception as inner_e:
-            st.warning(f"Inner error loading models: {inner_e}")
-            # Fallback to hardcoded models list
-            models = {
-                "openai": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4-1106-preview", "gpt-4-vision-preview"],
-                "claude": ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"],
-                "anthropic": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus"],
-                "gemini": ["gemini-2.5-flash-preview", "gemini-2.5-pro-exp", "gemini-2.0-pro", "gemini-1.5-pro"],
-                "ollama": ["ollama-llama3", "ollama-mixtral", "ollama-mistral"],
-                "lmstudio": ["lmstudio-model"],
-                "local": ["mlx-llama-3.1-abb"]
-            }
-            return models
-    except Exception as e:
-        st.warning(f"Error loading model list: {e}")
-        # Fallback to basic model list
-        return {
-            "openai": ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4-1106-preview", "gpt-4-vision-preview"],
-            "claude": ["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"],
-            "anthropic": ["claude-3-sonnet", "claude-3-haiku", "claude-3-opus"],
-            "gemini": ["gemini-2.5-flash-preview", "gemini-2.5-pro-exp", "gemini-2.0-pro", "gemini-1.5-pro"],
-            "ollama": ["ollama-llama3", "ollama-mixtral", "ollama-mistral"],
-            "lmstudio": ["lmstudio-model"],
-            "local": ["mlx-llama-3.1-abb"]
-        }
+                raise(e)
 
 def detect_disagreement(conversation_history):
     """Simple heuristic to detect disagreement between models"""
