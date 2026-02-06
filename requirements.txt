@@ -92,7 +92,7 @@ nvidia-nvtx-cu12==12.6.77 ; platform_machine == 'x86_64' and platform_system == 
 ollama==0.6.0
 openai==2.2.0
 opencv-python==4.12.0.88
-orjson==3.11.3 ; platform_python_implementation != 'PyPy'
+orjson==3.11.5 ; platform_python_implementation != 'PyPy'
 packaging==24.2
 pandas==2.2.3
 pathspec==0.12.1
@@ -103,7 +103,7 @@ plotly==6.0.1
 pluggy==1.5.0
 preshed==3.0.9
 propcache==0.2.1
-protobuf==5.29.5
+protobuf==5.29.6
 psutil==7.0.0
 pyarrow==19.0.0
 pyasn1==0.6.2
@@ -131,7 +131,7 @@ rsa==4.9
 safetensors==0.5.2
 scikit-learn==1.7.2
 scipy==1.15.2
-sentencepiece==0.2.0
+sentencepiece==0.2.1
 setuptools==80.9.0
 shellingham==1.5.4
 six==1.17.0
@@ -156,7 +156,7 @@ tokenizers==0.21.0
 toml==0.10.2
 tomli==2.2.1
 tomlkit==0.13.2
-torch==2.7.1
+torch==2.8.0
 tornado==6.5.2
 tqdm==4.67.1
 transformers==4.53.0
