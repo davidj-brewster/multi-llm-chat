@@ -5,9 +5,9 @@ description = "AI Battle orchestration - adversarial multi LLM conversations wit
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "aiohappyeyeballs==2.4.4",
-    "aiohttp>=3.11.11",
-    "aiosignal==1.3.2",
+    "aiohappyeyeballs==2.6.1",
+    "aiohttp==3.13.3",
+    "aiosignal==1.4.0",
     "altair==5.5.0",
     "annotated-types==0.7.0",
     "anthropic==0.69.0",
@@ -107,7 +107,7 @@ dependencies = [
     "thinc==8.3.4",
     "tokenizers==0.21.0",
     "toml==0.10.2",
-    "torch==2.7.1",
+    "torch==2.9.0",
     "tqdm==4.67.1",
     "transformers==4.53.0",
     "typing-extensions==4.12.2",
