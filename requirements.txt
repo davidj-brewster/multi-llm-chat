@@ -271,7 +271,7 @@ mlx==0.30.6
     #   multi-llm-chat
 mlx-lm==0.29.1
     # via multi-llm-chat
-mlx-metal==0.30.6
+mlx-metal==0.30.6  ; platform_system == 'Darwin'
     # via
     #   mlx
     #   multi-llm-chat
