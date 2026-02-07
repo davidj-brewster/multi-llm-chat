@@ -202,7 +202,7 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         # General keywords for cloud providers known for vision
         cloud_vision_keywords = ["claude", "gpt-4o", "gemini", "o1", "o3", "vision", "gpt-4.1"]
         # Specific Ollama vision models (keywords within their names)
-        ollama_vision_keywords = ["llava", "bakllava", "moondream", "gemma3", "llava-phi3"] # gemma3 added, phi4 (often llava-phi3)
+        ollama_vision_keywords = ["llava", "bakllava", "moondream", "gemma3", "llava-phi3", "vision", "mistral-medium"]
 
         if any(p in mt_lower for p in cloud_vision_keywords):
             capabilities["vision"] = True
@@ -223,12 +223,12 @@ def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Di
         if "gpt-4" in mt_lower or "claude-3" in mt_lower or "gemini-1.5" in mt_lower or "gemini-2.5" in mt_lower:
             capabilities["function_calling"] = True
 
-        # Advanced Reasoning Capability (for models with explicit reasoning/thinking parameters or known advanced versions)
-        # This primarily refers to models where client-side parameters might enable deeper reasoning.
-        # Claude 3.x (Opus, Sonnet, Haiku, 3.7) are all advanced.
-        # OpenAI o1, o3, o4-mini also have specific reasoning modes.
+        # Advanced Reasoning Capability (for models with explicit reasoning/thinking parameters)
+        # Claude 3.x, OpenAI o1/o3/o4-mini, and Ollama thinking-capable models
+        ollama_thinking_keywords = ["qwen3", "deepseek-r1", "gpt-oss", "phi4-reasoning", "granite-reasoning"]
         if "claude-3" in mt_lower or \
-           any(variant in mt_lower for variant in ["o1", "o3", "o4-mini"]): # Simplified, as specific reasoning variants like o1-reasoning-high are still "o1"
+           any(variant in mt_lower for variant in ["o1", "o3", "o4-mini"]) or \
+           ("ollama" in mt_lower and any(kw in mt_lower for kw in ollama_thinking_keywords)):
             capabilities["advanced_reasoning"] = True
 
         # Code Understanding (Most LLMs have some level, this flag is for notable proficiency or specific features)

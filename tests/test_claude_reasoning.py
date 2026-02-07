@@ -21,7 +21,9 @@ from pathlib import Path
 
 # Add parent directory to path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_dir = f"{parent_dir}/src"
 sys.path.append(parent_dir)
+sys.path.append(src_dir)
 
 # Import necessary modules
 from model_clients import ClaudeClient, ModelConfig

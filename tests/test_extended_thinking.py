@@ -22,13 +22,17 @@ from pathlib import Path
 
 # Add parent directory to path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+tests_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = "${parent_dir}/src"
 sys.path.append(parent_dir)
+sys.path.append(script_dir)
+sys.path.append(tests_dir)
 
 # Import modules
 import importlib.util
 
 spec = importlib.util.spec_from_file_location(
-    "ai_battle", os.path.join(parent_dir, "ai-battle.py")
+    "ai_battle", os.path.join(parent_dir, "src/ai_battle.py")
 )
 ai_battle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_battle)

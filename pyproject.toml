@@ -152,6 +152,7 @@ dependencies = [
     "ffmpeg-python==0.2.0",
     "ffmpeg>=1.4",
     "mlx-metal>=0.29.4",
+    "pycompile>=0.2.3",
 ]
 
 [tool.uv.workspace]

@@ -25,7 +25,7 @@ sys.path.append(str(Path(__file__).parent))
 from model_clients import ClaudeClient, OpenAIClient
 
 # Import ConversationManager from ai-battle.py
-ai_battle_path = Path(__file__).parent / "ai-battle.py"
+ai_battle_path = Path(__file__).parent.parent / "src/ai_battle.py"
 spec = spec_from_file_location("ai_battle", ai_battle_path)
 ai_battle = module_from_spec(spec)
 spec.loader.exec_module(ai_battle)

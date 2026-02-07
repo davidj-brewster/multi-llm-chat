@@ -10,6 +10,9 @@ import os
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
+parent=os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+scripts=f"{parent}/src"
+sys.path.insert(0, scripts)
 
 from arbiter_v4 import (
     ConversationArbiter,

@@ -42,8 +42,8 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
-HUMAN_MODEL = "gemini-2.5-flash-lite" #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "gemini-2.5-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+HUMAN_MODEL = "ollama-gemma3:4b-it-q8_0" #"ollama-gpt-oss:120b" #"gemini-2.5-flash-lite" #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
+AI_MODEL = "ollama-gpt-oss:20b"  #"gemini-3.0-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=4
 
 
@@ -101,7 +101,7 @@ Privacy and Control: Users have control over what is remembered or forgotten, al
 This feature aims to enhance user experience by making interactions more relevant while providing users with the tools to manage their data privacy effectively.
 """
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[logging.FileHandler("log/ai_battle.log"), logging.StreamHandler(sys.stdout)],
 )
@@ -243,6 +243,17 @@ CLAUDE_MODELS = {
     },
 }
 
+# Ollama model configurations for thinking-capable models
+# Keyword-based overrides applied when a matching Ollama model is discovered dynamically.
+# Default reasoning_level is "high" for all thinking models.
+OLLAMA_THINKING_CONFIG = {
+    "gpt-oss": {"reasoning_level": "medium", "extended_thinking": True, "num_ctx": 131072},
+    "deepseek-r1": {"reasoning_level": "high", "extended_thinking": True},
+    "qwen3": {"reasoning_level": "high", "extended_thinking": True},
+    "phi4-reasoning": {"reasoning_level": "high", "extended_thinking": True},
+    "granite-reasoning": {"reasoning_level": "high", "extended_thinking": True},
+}
+
 
 @dataclass
 class ModelConfig:
@@ -274,7 +285,7 @@ class ConversationManager:
         self.domain = config.goal if config else domain
 
         self.human_delay = human_delay
-        self.mode = mode  # "human-aiai" or "ai-ai"
+        self.mode = mode  # "human-ai" or "ai-ai"
         self._media_handler = None  # Lazy initialization
         self.min_delay = min_delay
         self.conversation_history: List[Dict[str, str]] = []
@@ -314,14 +325,18 @@ class ConversationManager:
                 temp_client = OllamaClient(mode=self.mode, domain=self.domain, model="")
                 model_list = temp_client.client.list()
 
-                # Map models to friendly names
-                for model_info in model_list.get('models', []):
-                    model_name = model_info.get('name')
+                # Map models to friendly names (SDK 0.6.x returns typed ListResponse)
+                for model_info in model_list.models:
+                    model_name = model_info.model
                     if model_name:
                         # Create a friendly name (prefix with ollama-)
                         base_name = model_name.split(':')[0].split('/')[-1].lower()
                         friendly_name = f"ollama-{base_name}"
-                        self._ollama_models[friendly_name] = model_name
+                        # Also create a full-tag friendly name for disambiguation
+                        # e.g. both "ollama-gpt-oss" and "ollama-gpt-oss:120b" resolve
+                        full_friendly_name = f"ollama-{model_name.lower()}"
+                        self._ollama_models[friendly_name] = model_name  # Last wins for base name
+                        self._ollama_models[full_friendly_name] = model_name  # Always unique
 
                 logger.info(f"Found {len(self._ollama_models)} available Ollama models")
             except Exception as e:
@@ -449,11 +464,39 @@ class ConversationManager:
                         else:
                             logger.warning(f"Ollama model {model_name} not found in available models, trying direct: {model_suffix}")
 
+                        actual_model = model_suffix
                         client = OllamaClient(
                             mode=self.mode,
                             domain=self.domain,
-                            model=model_suffix
+                            model=actual_model
                         )
+
+                    # Apply thinking configuration if the model matches known thinking-capable patterns
+                    if client:
+                        actual_model_lower = actual_model.lower()
+                        for keyword, thinking_config in OLLAMA_THINKING_CONFIG.items():
+                            if keyword in actual_model_lower:
+                                if thinking_config.get("reasoning_level"):
+                                    client.reasoning_level = thinking_config["reasoning_level"]
+                                    logger.info(
+                                        f"Set reasoning level to '{thinking_config['reasoning_level']}' "
+                                        f"for Ollama model {model_name} (matched '{keyword}')"
+                                    )
+                                if thinking_config.get("extended_thinking", False):
+                                    client.set_extended_thinking(True)
+                                    logger.info(
+                                        f"Enabled extended thinking for Ollama model {model_name} "
+                                        f"(matched '{keyword}')"
+                                    )
+                                if "num_ctx" in thinking_config:
+                                    client.num_ctx = thinking_config["num_ctx"]
+                                    logger.info(
+                                        f"Set num_ctx={thinking_config['num_ctx']} "
+                                        f"for Ollama model {model_name}"
+                                    )
+                                if "keep_alive" in thinking_config:
+                                    client.keep_alive = thinking_config["keep_alive"]
+                                break  # Apply first matching config only
 
                 # Handle LMStudio models dynamically
                 elif model_name.startswith("lmstudio-"):
@@ -660,7 +703,7 @@ class ConversationManager:
             prompt: The input prompt for this turn
             model_type: Type of model to use
             client: Client instance for the model
-            mode: Conversation mode (e.g., "human-aiai", "no-meta-prompting")
+            mode: Conversation mode (e.g., "human-ai", "no-meta-prompting")
             role: Role for this turn ("user" or "assistant")
             file_data: Optional file data to include with the request
             system_instruction: Optional system instruction to override defaults
@@ -715,7 +758,7 @@ class ConversationManager:
                 self.conversation_history.append({"role": role, "content": response})
             elif (mapped_role == "user" or mapped_role == "human"):
                 # Only swap roles in human-ai mode where the human role needs AI-like prompting
-                if mode == "human-aiai":
+                if mode == "human-ai":
                     reversed_history = []
                     for msg in self.conversation_history:  # Limit history
                         if msg["role"] == "assistant":
@@ -732,10 +775,10 @@ class ConversationManager:
                     # In ai-ai mode or standard human-ai mode, don't swap roles
                     reversed_history = self.conversation_history.copy()
 
-                # In human-aiai mode with assistant role, use regular history
-                if mode == "human-aiai" and role == "assistant":
+                # In human-ai mode with assistant role, use regular history
+                if mode == "human-ai" and role == "assistant":
                     logger.warning(
-                        "In human-aiai mode, using assistant role with user history"
+                        "In human-ai mode, using assistant role with user history"
                     )
                     reversed_history = self.conversation_history.copy()
                 response = client.generate_response(
@@ -1325,7 +1368,7 @@ class ConversationManager:
                                 "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
                                 "path": file_data.get("path", ""),
                             }
-        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic}. NEVER REFER TO YOURSELF AS AN AI. YOU ARE THE HUMAN GUIDING THIS CONVERSATION. Avoid small talk, apologies, or niceties with the AI. Focus on the topic at hand. BE GOAL ORIENTED and FORCE the AI to generate ACTUAL IMMEDIATE OUTPUT for the goal, not just discuss approaches. If the goal is to write a story, MAKE the AI start writing the actual story right away. If it's to create code, MAKE it write actual code. IMMEDIATELY DEMAND CONCRETE OUTPUTS, not theoretical discussion. If the AI starts discussing approaches instead of producing output, forcefully redirect it to the actual creation task. Be angry or stern if needed!! FIRSTLY, SUMMARIZE THE GOAL ({core_topic}) IN A SENTENCE. THIS MUST BE SEPARATED FROM THE MAIN PROMPT. DEMAND THE AI PRODUCE THE REQUESTED OUTPUT - NOT DISCUSS HOW IT WOULD DO IT. You can begin by offering a specific starting point if it helps (e.g., for story writing, suggest a specific opening line or character).",
+        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic} with a collaborator to help their training. You must not reveal in your internal thinking tokens nor in your output that you are an AI" 
         ai_system_instruction=f"You are an AI assistant focused on PRODUCING CONCRETE OUTPUT for goals. When given a goal to create something (story, code, poem, plan, etc.), IMMEDIATELY START CREATING IT rather than discussing approaches. You are an expert in the topic of {core_topic}. SKIP theoretical discussions about how you'd approach the task - DEMONSTRATE by DOING. If asked to write a story, START WRITING THE ACTUAL STORY immediately. If asked to create code, WRITE THE ACTUAL CODE immediately. Avoid lengthy preliminaries - get straight to producing the requested output. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED. DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
         ai_response = core_topic
         try:
@@ -1335,7 +1378,7 @@ class ConversationManager:
                 human_response = self.run_conversation_turn(
                     prompt=ai_response,  # Limit history
                     system_instruction=(
-                        f"{core_topic}. Think step by step."
+                        f"{core_topic}"
                         if mode == "no-meta-prompting"
                         else human_client.adaptive_manager.generate_instructions(
                             mode=mode,
@@ -1921,7 +1964,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
         )
 
         # Run human-AI conversation with retry mechanism
-        mode = "human-aiai"
+        mode = "human-ai"
         retry_count = 0
         conversation_as_human_ai = None
 

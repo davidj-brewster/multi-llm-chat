@@ -1,5 +1,15 @@
-from context_analysis import ContextAnalyzer
+import unittest
+import os
+import sys
+import json
+import logging
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(parent_dir, "src"))
+
 from adaptive_instructions import AdaptiveInstructionManager
+from context_analysis import ContextAnalyzer
 
 
 def test_adaptive_system():

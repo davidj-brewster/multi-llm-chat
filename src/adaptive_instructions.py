@@ -57,8 +57,11 @@ class TemplateNotFoundError(TemplateSelectionError):
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context"""
 
-    def __init__(self, mode: str):
-        self.mode = mode
+    def __init__(self, mode: str="ai-ai"):
+        if mode:
+            self.mode = mode
+        else:
+            self.mode = "ai-ai"
         self._context_analyzer = None  # Lazy initialization
 
     @property
