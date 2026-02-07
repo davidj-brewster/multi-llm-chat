@@ -43,7 +43,7 @@ anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 # Models to use in default mode
 # these must match the model names below not necessary the exact actual model name
 HUMAN_MODEL = "ollama-gemma3:4b-it-q8_0" #"ollama-gpt-oss:120b" #"gemini-2.5-flash-lite" #"gemini-2.5-flash-preview" #"ollama-phi4:14b-fp16" #"gemini-2.0-flash-thinking-exp"# "ollama-gemma3:4b-it-q8_0"
-AI_MODEL = "ollama-gpt-oss:20b"  #"gemini-3.0-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
+AI_MODEL = "ollama-granite4:tiny-h" #"ollama-gpt-oss:20b"  #"gemini-3.0-flash" # "ollama-gemma3:27b-it-q8_0"  #"gemini-2.0-flash-thinking-exp"
 DEFAULT_ROUNDS=4
 
 
@@ -289,6 +289,7 @@ class ConversationManager:
         self._media_handler = None  # Lazy initialization
         self.min_delay = min_delay
         self.conversation_history: List[Dict[str, str]] = []
+        self.signal_history: List[Dict[str, Any]] = []  # Per-turn NLP signal snapshots
         self.is_paused = False
         self.initial_prompt = domain
         self.rate_limit_lock = asyncio.Lock()
@@ -421,7 +422,7 @@ class ConversationManager:
 
                 # Handle OpenAI models using templates
                 elif model_name in OPENAI_MODELS:
-                    model_config = OPENAI_MODELS[model_name]
+                    model_config = OPENAI_MODELS[model_name] 
                     client = OpenAIClient(
                         api_key=self.openai_api_key,
                         role=None,
@@ -1420,6 +1421,29 @@ class ConversationManager:
                 logger.debug(
                     f"\n\n\nMODEL RESPONSE: ({ai_model.upper()}): {ai_response}\n\n\n"
                 )
+
+                # Collect NLP signals from both participants' adaptive managers
+                for label, client in [("human", human_client), ("ai", ai_client)]:
+                    ctx = getattr(client.adaptive_manager, 'last_context', None)
+                    iset = getattr(client.adaptive_manager, 'last_instruction_set', None)
+                    if ctx:
+                        self.signal_history.append({
+                            "turn": round_index,
+                            "role": label,
+                            "model": human_model if label == "human" else ai_model,
+                            "flesch": ctx.flesch_reading_ease,
+                            "fog": ctx.gunning_fog_index,
+                            "vocabulary_richness": ctx.vocabulary_richness,
+                            "sentence_variety": ctx.sentence_variety,
+                            "repetition": ctx.repetition_score,
+                            "agreement": ctx.agreement_saturation,
+                            "formulaic": ctx.formulaic_score,
+                            "coherence": ctx.semantic_coherence,
+                            "phase": ctx.conversation_phase,
+                            "template": getattr(iset, 'template', '')[:80] if iset else '',
+                            "interventions": getattr(iset, 'interventions', '') if iset else '',
+                        })
+
             return self.conversation_history
 
         finally:
@@ -1445,8 +1469,9 @@ class ConversationManager:
             # Initialize appropriate client
             client = manager._get_client(model_config.type)
             if client:
-                # Store client in model map with configured role
+                # Store client in model map with configured role and persona
                 client.role = model_config.role
+                client.persona = model_config.persona
                 manager.model_map[model_id] = client
                 manager._initialized_clients.add(model_id)
 
@@ -1460,6 +1485,7 @@ async def save_conversation(
     ai_model: str,
     file_data: Dict[str, Any] = None,
     mode: str = None,
+    signal_history: List[Dict[str, Any]] = None,
 ) -> None:
     """Save an AI conversation to an HTML file with proper encoding.
 
@@ -1470,6 +1496,7 @@ async def save_conversation(
     ai_model (str): Name of the AI model
     file_data (Dict[str, Any], optional): Any associated file content (images, video, text)
     mode (str, optional): Conversation mode ('human-ai' or 'ai-ai')
+    signal_history (List[Dict[str, Any]], optional): Per-turn NLP signal snapshots
 
     Raises:
     Exception: If saving fails or template is missing
@@ -1553,10 +1580,118 @@ async def save_conversation(
                         if image_data.startswith("data:"):
                             conversation_html += f'<div class="message-image"><img src="{image_data}" alt="Image in message" style="max-width: 100%; max-height: 300px;"/></div>\n'
 
+        # Append NLP signal dashboard if signal history available
+        if signal_history:
+            conversation_html += _render_signal_dashboard(signal_history)
+
         with open(filename, "w") as f:
             f.write(template % {"conversation": conversation_html})
     except Exception as e:
         logger.error(f"Failed to save conversation: {e}")
+
+
+def _render_signal_dashboard(signal_history: List[Dict[str, Any]]) -> str:
+    """Render an inline HTML dashboard of NLP signals collected during conversation."""
+
+    def _color(value: float, low: float, high: float, invert: bool = False) -> str:
+        """Return green/yellow/red based on value thresholds."""
+        if invert:
+            if value <= low: return "#4caf50"
+            elif value <= high: return "#ff9800"
+            else: return "#f44336"
+        else:
+            if value >= high: return "#4caf50"
+            elif value >= low: return "#ff9800"
+            else: return "#f44336"
+
+    html = """
+<div class="signal-dashboard" style="margin-top:40px; padding:20px; background:#1a1a2e; border-radius:8px; font-family:monospace; color:#e0e0e0;">
+<h2 style="color:#00d4ff; border-bottom:2px solid #00d4ff; padding-bottom:8px;">NLP Signal Dashboard</h2>
+"""
+
+    # Signal timeline table
+    html += """
+<h3 style="color:#aaa;">Signal Timeline</h3>
+<div style="overflow-x:auto;">
+<table style="border-collapse:collapse; width:100%; font-size:12px;">
+<tr style="background:#16213e;">
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Turn</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Role</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Flesch</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Fog</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Vocab</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Variety</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Repet.</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Agree.</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Form.</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Coher.</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Phase</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Interventions</th>
+</tr>
+"""
+
+    for entry in signal_history:
+        interventions_text = entry.get("interventions", "").replace("\n", "<br>")[:200]
+        html += f"""<tr style="background:#0f3460;">
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{entry.get('turn', '?')}</td>
+  <td style="padding:4px; border:1px solid #333;">{entry.get('role', '?')} ({entry.get('model', '')[:20]})</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('flesch', 50), 40, 60)}; color:#000; text-align:center;">{entry.get('flesch', 0):.1f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('fog', 12), 10, 14, invert=True)}; color:#000; text-align:center;">{entry.get('fog', 0):.1f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('vocabulary_richness', 0.5), 0.35, 0.6)}; color:#000; text-align:center;">{entry.get('vocabulary_richness', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('sentence_variety', 0.5), 0.15, 0.4)}; color:#000; text-align:center;">{entry.get('sentence_variety', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('repetition', 0), 0.3, 0.6, invert=True)}; color:#000; text-align:center;">{entry.get('repetition', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('agreement', 0), 0.4, 0.7, invert=True)}; color:#000; text-align:center;">{entry.get('agreement', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('formulaic', 0), 0.3, 0.6, invert=True)}; color:#000; text-align:center;">{entry.get('formulaic', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; background:{_color(entry.get('coherence', 1), 0.3, 0.6)}; color:#000; text-align:center;">{entry.get('coherence', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{entry.get('phase', 0):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; font-size:10px; color:#ff9800;">{interventions_text if interventions_text else '<span style="color:#4caf50;">none</span>'}</td>
+</tr>
+"""
+
+    html += "</table></div>"
+
+    # Per-participant summary
+    participants = {}
+    for entry in signal_history:
+        role = entry.get("role", "unknown")
+        if role not in participants:
+            participants[role] = {"flesch": [], "fog": [], "vocab": [], "variety": [], "rep": [], "form": [], "model": entry.get("model", "")}
+        participants[role]["flesch"].append(entry.get("flesch", 50))
+        participants[role]["fog"].append(entry.get("fog", 12))
+        participants[role]["vocab"].append(entry.get("vocabulary_richness", 0.5))
+        participants[role]["variety"].append(entry.get("sentence_variety", 0.5))
+        participants[role]["rep"].append(entry.get("repetition", 0))
+        participants[role]["form"].append(entry.get("formulaic", 0))
+
+    if participants:
+        html += """<h3 style="color:#aaa; margin-top:20px;">Per-Participant NLP Profile</h3>
+<table style="border-collapse:collapse; width:60%; font-size:13px;">
+<tr style="background:#16213e;">
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Participant</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Flesch</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Fog</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Vocab</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Variety</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Repet.</th>
+  <th style="padding:6px; border:1px solid #333; color:#00d4ff;">Avg Formulaic</th>
+</tr>
+"""
+        for role, data in participants.items():
+            avg = lambda vals: sum(vals) / len(vals) if vals else 0
+            html += f"""<tr style="background:#0f3460;">
+  <td style="padding:4px; border:1px solid #333;">{role} ({data['model'][:25]})</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['flesch']):.1f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['fog']):.1f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['vocab']):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['variety']):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['rep']):.2f}</td>
+  <td style="padding:4px; border:1px solid #333; text-align:center;">{avg(data['form']):.2f}</td>
+</tr>
+"""
+        html += "</table>"
+
+    html += "</div>"
+    return html
 
 
 def _sanitize_filename_part(prompt: str) -> str:
@@ -1961,6 +2096,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             human_model=human_model,
             ai_model=ai_model,
             mode="ai-ai",
+            signal_history=manager.signal_history,
         )
 
         # Run human-AI conversation with retry mechanism
@@ -2020,6 +2156,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             human_model=human_model,
             ai_model=ai_model,
             mode="human-ai",
+            signal_history=manager.signal_history,
         )
 
         mode = "no-meta-prompting"
@@ -2078,6 +2215,7 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
             human_model=human_model,
             ai_model=ai_model,
             mode="human-ai",
+            signal_history=manager.signal_history,
         )
 
         # Run analysis with model information

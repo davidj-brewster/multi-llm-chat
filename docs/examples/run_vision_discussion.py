@@ -577,6 +577,7 @@ These files belong to the user and you have consent to analyze them.
             ai_model=ai_model_config.type,
             file_data=file_data,
             mode="ai-ai",
+            signal_history=getattr(manager, 'signal_history', None),
         )
         logger.debug(
             f"Conversation saved to HTML file with {len(conversation)} messages"

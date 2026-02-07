@@ -1,676 +1,709 @@
-import numpy as np
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
-from sklearn.metrics.pairwise import cosine_similarity
-import logging
+"""
+Context Analysis Engine for Multi-LLM Conversations.
+
+Analyzes conversation history to produce actionable signals for the adaptive
+instruction system. Measures human-ness, detects conversational pathologies,
+and provides per-participant breakdowns.
+
+Uses spaCy (when available) + scikit-learn for NLP analysis.
+All signals have functional fallbacks when spaCy is absent.
+"""
+
+import math
 import re
-import traceback
+import logging
+from dataclasses import dataclass, field
+from typing import Dict, List
 
-from shared_resources import SpacyModelSingleton, VectorizerSingleton, MemoryManager
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
-
-class ContextAnalysisError(Exception):
-    """Base exception for context analysis errors."""
-
-    pass
-
-
-class SemanticAnalysisError(ContextAnalysisError):
-    """Raised when there's an error analyzing semantic coherence."""
-
-    pass
-
-
-class TopicAnalysisError(ContextAnalysisError):
-    """Raised when there's an error analyzing topic drift."""
-
-    pass
-
-
-class PatternAnalysisError(ContextAnalysisError):
-    """Raised when there's an error analyzing response patterns."""
-
-    pass
-
-
-class EngagementAnalysisError(ContextAnalysisError):
-    """Raised when there's an error calculating engagement metrics."""
-
-    pass
-
-
-class CognitiveLoadAnalysisError(ContextAnalysisError):
-    """Raised when there's an error estimating cognitive load."""
-
-    pass
-
-
-class KnowledgeDepthAnalysisError(ContextAnalysisError):
-    """Raised when there's an error assessing knowledge depth."""
-
-    pass
-
-
-class ReasoningPatternAnalysisError(ContextAnalysisError):
-    """Raised when there's an error analyzing reasoning patterns."""
-
-    pass
-
-
-class UncertaintyAnalysisError(ContextAnalysisError):
-    """Raised when there's an error detecting uncertainty markers."""
-
-    pass
-
+from shared_resources import SpacyModelSingleton, VectorizerSingleton
 
 logger = logging.getLogger(__name__)
 
 
+class ContextAnalysisError(Exception):
+    """Raised when context analysis fails."""
+    pass
+
+
 @dataclass
 class ContextVector:
-    """Multi-dimensional context analysis of conversation state"""
+    """Multi-dimensional context analysis of conversation state.
 
-    semantic_coherence: float = 0.0  # How well responses relate to previous context
-    topic_evolution: Dict[str, float] = field(
-        default_factory=dict
-    )  # Topic drift/focus tracking
-    response_patterns: Dict[str, float] = field(
-        default_factory=dict
-    )  # Patterns in response styles
-    engagement_metrics: Dict[str, float] = field(
-        default_factory=dict
-    )  # Interaction quality metrics
-    cognitive_load: float = 0.0  # Complexity of current discussion
-    knowledge_depth: float = 0.0  # Depth of domain understanding shown
-    reasoning_patterns: Dict[str, float] = field(
-        default_factory=dict
-    )  # Types of reasoning used
-    uncertainty_markers: Dict[str, float] = field(
-        default_factory=dict
-    )  # Confidence indicators
-    domain_info: str = ""  # Store the domain/goal information for template selection
+    Signals are grouped into:
+    - Conversation state (phase, coherence)
+    - Readability & naturalness (Flesch, Fog, vocabulary, sentence variety)
+    - Pathology detection (repetition, agreement saturation, formulaic)
+    - Topic analysis (evolution, coherence)
+    - Per-participant breakdown
+    - Interaction dynamics (engagement, response patterns, epistemic stance, reasoning)
+    """
+
+    # Conversation state
+    conversation_phase: float = 0.0
+    semantic_coherence: float = 1.0
+
+    # Readability & naturalness
+    flesch_reading_ease: float = 50.0
+    gunning_fog_index: float = 12.0
+    vocabulary_richness: float = 0.5
+    sentence_variety: float = 0.5
+
+    # Pathology signals
+    repetition_score: float = 0.0
+    agreement_saturation: float = 0.0
+    formulaic_score: float = 0.0
+
+    # Topic analysis
+    topic_coherence: float = 0.0
+    topic_evolution: Dict[str, float] = field(default_factory=dict)
+
+    # Per-participant breakdown
+    participant_signals: Dict[str, Dict[str, float]] = field(default_factory=dict)
+
+    # Interaction dynamics
+    engagement_metrics: Dict[str, float] = field(default_factory=dict)
+    response_patterns: Dict[str, float] = field(default_factory=dict)
+    epistemic_stance: Dict[str, float] = field(default_factory=dict)
+    reasoning_patterns: Dict[str, float] = field(default_factory=dict)
+
+    domain_info: str = ""
+
+    # Backward-compat properties
+    @property
+    def cognitive_load(self) -> float:
+        """Map Gunning Fog to 0-1 scale: Fog 8=0.0, Fog 20=1.0."""
+        return min(1.0, max(0.0, (self.gunning_fog_index - 8) / 12))
+
+    @property
+    def knowledge_depth(self) -> float:
+        """Derived from vocabulary richness + topic coherence."""
+        return min(1.0, (self.vocabulary_richness + self.topic_coherence) / 2)
+
+    @property
+    def uncertainty_markers(self) -> Dict[str, float]:
+        return self.epistemic_stance
 
 
 class ContextAnalyzer:
-    """Analyzes conversation context across multiple dimensions"""
+    """Analyzes conversation context using NLP to produce actionable signals.
 
-    def __init__(self, mode: str = "l"):
-        self.vectorizer = VectorizerSingleton.get_instance()
-        self.nlp = SpacyModelSingleton.get_instance()
+    Uses spaCy (when available) for sentence segmentation, POS tagging, lemmatization,
+    noun chunk extraction, and NER. Falls back to regex-based analysis when spaCy is absent.
+    Uses scikit-learn TF-IDF for topic and similarity analysis (always available).
+    """
+
+    def __init__(self, mode: str = "ai-ai"):
         self.mode = mode
-
-        # Log memory usage after initialization
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.warning("spaCy not available, falling back to basic analysis")
-            logger.debug(MemoryManager.get_memory_usage())
-        self.reasoning_patterns = {
-            "deductive": r"therefore|thus|hence|consequently|as a result|it follows that|by definition",
-            "inductive": r"generally|typically|usually|tends to|often|in most cases|frequently|commonly|regularly",
-            "abductive": r"best explanation|most likely|probably because",
-            "analogical": r"similar to|like|analogous|comparable",
-            "causal": r"because|since|due to|results in",
-        }
-
-        self.ai_ai_patterns = {
-            "formal_logic": r"axiom|theorem|proof|implies|given that|let|assume",
-            "systematic": r"systematically|methodically|formally|structurally",
-            "technical": r"implementation|specification|framework|architecture",
-            "precision": r"precisely|specifically|explicitly|definitively",
-            "integration": r"integrate|combine|synthesize|unify|merge",
-        }
+        self.nlp = SpacyModelSingleton.get_instance()
+        self.vectorizer = VectorizerSingleton.get_instance()
+        if self.nlp:
+            logger.debug("ContextAnalyzer initialized with spaCy NLP pipeline")
+        else:
+            logger.debug("ContextAnalyzer initialized without spaCy (using fallbacks)")
 
     def analyze(self, conversation_history: List[Dict[str, str]]) -> ContextVector:
-        """Analyze conversation context across multiple dimensions"""
+        """Analyze conversation history and return a ContextVector.
 
+        Args:
+            conversation_history: List of messages with 'role' and 'content' keys.
+
+        Returns:
+            ContextVector with all computed signals.
+        """
+        if not conversation_history:
+            return ContextVector()
+
+        contents = [str(msg.get("content", "")) for msg in conversation_history]
+
+        return ContextVector(
+            conversation_phase=self._safe(self._compute_conversation_phase, conversation_history, default=0.0),
+            semantic_coherence=self._safe(self._compute_semantic_coherence, contents, default=1.0),
+            flesch_reading_ease=self._safe(self._compute_flesch, contents, default=50.0),
+            gunning_fog_index=self._safe(self._compute_gunning_fog, contents, default=12.0),
+            vocabulary_richness=self._safe(self._compute_vocabulary_richness, contents, default=0.5),
+            sentence_variety=self._safe(self._compute_sentence_variety, contents, default=0.5),
+            repetition_score=self._safe(self._compute_repetition, conversation_history, default=0.0),
+            agreement_saturation=self._safe(self._compute_agreement_saturation, conversation_history, default=0.0),
+            formulaic_score=self._safe(self._compute_formulaic_score, conversation_history, default=0.0),
+            topic_coherence=self._safe(self._compute_topic_coherence, contents, default=0.0),
+            topic_evolution=self._safe(self._compute_topic_evolution, contents, default={}),
+            participant_signals=self._safe(self._compute_participant_signals, conversation_history, default={}),
+            engagement_metrics=self._safe(self._compute_engagement, conversation_history, default={}),
+            response_patterns=self._safe(self._compute_response_patterns, conversation_history, default={}),
+            epistemic_stance=self._safe(self._compute_epistemic_stance, contents, default={}),
+            reasoning_patterns=self._safe(self._compute_reasoning_patterns, contents, default={}),
+        )
+
+    def _safe(self, fn, *args, default=None):
+        """Call fn with args, returning default on any exception."""
         try:
-            # Validate input
-            if not isinstance(conversation_history, list):
-                raise ValueError(
-                    f"Expected list for conversation_history, got {type(conversation_history)}"
-                )
-
-            # Extract content from messages
-            try:
-                contents = [msg["content"] for msg in conversation_history]
-            except (KeyError, TypeError) as e:
-                logger.error(f"Invalid message format in conversation history: {e}")
-                # Create a fallback with empty strings for invalid messages
-                contents = []
-                for msg in conversation_history:
-                    try:
-                        contents.append(msg.get("content", ""))
-                    except (AttributeError, TypeError):
-                        contents.append("")
-
-            # Create context vector with error handling for each component
-            return ContextVector(
-                semantic_coherence=self._analyze_semantic_coherence(contents),
-                topic_evolution=self._analyze_topic_drift(contents),
-                response_patterns=self._analyze_response_patterns(conversation_history),
-                engagement_metrics=self._calculate_engagement_metrics(
-                    conversation_history
-                ),
-                cognitive_load=self._estimate_cognitive_load(contents),
-                knowledge_depth=self._assess_knowledge_depth(contents),
-                reasoning_patterns=self._analyze_reasoning_patterns(contents),
-                uncertainty_markers=self._detect_uncertainty(contents),
-            )
-        except ValueError as e:
-            logger.error(f"Invalid input for context analysis: {e}")
-            # Return a default context vector with zeros
-            return ContextVector()
+            return fn(*args)
         except Exception as e:
-            logger.error(f"Unexpected error in context analysis: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            # Return a default context vector with zeros
-            return ContextVector()
+            logger.warning(f"{fn.__name__} failed: {e}")
+            return default
 
-    def _analyze_semantic_coherence(self, contents: List[str]) -> float:
-        """Measure how well responses relate to previous context"""
+    # ─── Text Utilities ───────────────────────────────────────────────
+
+    def _get_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using spaCy or regex fallback."""
+        if self.nlp:
+            doc = self.nlp(text[:10000])  # cap for performance
+            return [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+        return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+
+    def _get_words(self, text: str) -> List[str]:
+        """Extract words from text, optionally lemmatized with spaCy."""
+        if self.nlp:
+            doc = self.nlp(text[:10000])
+            return [token.lemma_.lower() for token in doc if not token.is_punct and not token.is_space]
+        return [w.lower() for w in re.findall(r'\b[a-zA-Z]+\b', text)]
+
+    def _count_syllables(self, word: str) -> int:
+        """Estimate syllable count via vowel cluster counting."""
+        word = word.lower().rstrip('e')
+        if not word:
+            return 1
+        count = len(re.findall(r'[aeiouy]+', word))
+        return max(1, count)
+
+    def _get_messages_by_role(self, history: List[Dict]) -> Dict[str, List[str]]:
+        """Group message contents by role."""
+        by_role: Dict[str, List[str]] = {}
+        for msg in history:
+            role = msg.get("role", "unknown")
+            content = str(msg.get("content", ""))
+            if content.strip():
+                by_role.setdefault(role, []).append(content)
+        return by_role
+
+    # ─── Conversation State ───────────────────────────────────────────
+
+    def _compute_conversation_phase(self, history: List[Dict]) -> float:
+        """Conversation maturity: 0.0=opening, 1.0=mature.
+
+        Uses logistic curve over turn count and total word count.
+        Anchored at 6 turns / 500 words = 0.5 (mid-conversation).
+        """
+        n_turns = len(history)
+        total_words = sum(len(str(m.get("content", "")).split()) for m in history)
+
+        turn_phase = 1.0 / (1.0 + math.exp(-0.5 * (n_turns - 6)))
+        word_phase = 1.0 / (1.0 + math.exp(-0.005 * (total_words - 500)))
+
+        return max(turn_phase, word_phase)
+
+    def _compute_semantic_coherence(self, contents: List[str]) -> float:
+        """Consecutive-message TF-IDF cosine similarity.
+
+        Returns mean cosine similarity between adjacent messages.
+        No /2 division -- raw cosine values, properly scaled 0-1.
+        """
         if len(contents) < 3:
             return 1.0
 
-        # Create TF-IDF matrix
-        try:
+        recent = [c for c in contents[-6:] if c.strip()]
+        if len(recent) < 2:
+            return 1.0
+
+        tfidf_matrix = self.vectorizer.fit_transform(recent)
+        similarities = []
+        for i in range(len(recent) - 1):
+            sim = cosine_similarity(tfidf_matrix[i:i + 1], tfidf_matrix[i + 1:i + 2])[0][0]
+            similarities.append(float(sim))
+
+        return float(np.mean(similarities)) if similarities else 1.0
+
+    # ─── Readability & Naturalness ────────────────────────────────────
+
+    def _compute_flesch(self, contents: List[str]) -> float:
+        """Flesch Reading Ease for recent messages.
+
+        Scale: 0-30=very difficult, 60-70=standard conversation, 90-100=very easy.
+        """
+        recent = [c for c in contents[-3:] if c.strip()]
+        if not recent:
+            return 50.0
+
+        combined = " ".join(recent)
+        sentences = self._get_sentences(combined)
+        words = [w for w in re.findall(r'\b[a-zA-Z]+\b', combined)]
+
+        if not sentences or not words:
+            return 50.0
+
+        n_sentences = max(len(sentences), 1)
+        n_words = len(words)
+        n_syllables = sum(self._count_syllables(w) for w in words)
+
+        score = 206.835 - 1.015 * (n_words / n_sentences) - 84.6 * (n_syllables / max(n_words, 1))
+        return float(np.clip(score, 0.0, 100.0))
+
+    def _compute_gunning_fog(self, contents: List[str]) -> float:
+        """Gunning Fog Index for recent messages.
+
+        Scale: grade level (8=8th grade, 12=college, 17+=academic).
+        Complex words = 3+ syllables excluding common suffixes.
+        """
+        recent = [c for c in contents[-3:] if c.strip()]
+        if not recent:
+            return 12.0
+
+        combined = " ".join(recent)
+        sentences = self._get_sentences(combined)
+        words = [w for w in re.findall(r'\b[a-zA-Z]+\b', combined)]
+
+        if not sentences or not words:
+            return 12.0
+
+        n_sentences = max(len(sentences), 1)
+        n_words = len(words)
+
+        # Complex words: 3+ syllables, excluding common suffixes
+        suffix_pattern = re.compile(r'(ing|ed|es|ly|ment|ness|tion|sion)$', re.I)
+        complex_count = 0
+        for w in words:
+            base = suffix_pattern.sub('', w)
+            if self._count_syllables(w) >= 3 and self._count_syllables(base) >= 3:
+                complex_count += 1
+
+        fog = 0.4 * ((n_words / n_sentences) + 100 * (complex_count / max(n_words, 1)))
+        return float(np.clip(fog, 0.0, 25.0))
+
+    def _compute_vocabulary_richness(self, contents: List[str]) -> float:
+        """Moving-Average Type-Token Ratio (MATTR) windowed for short text.
+
+        spaCy: uses lemmatized forms. Fallback: surface forms.
+        Scale: 0.3=repetitive, 0.8+=rich vocabulary.
+        """
+        recent = [c for c in contents[-3:] if c.strip()]
+        if not recent:
+            return 0.5
+
+        combined = " ".join(recent)
+        words = self._get_words(combined)
+
+        if len(words) < 5:
+            return 0.5
+
+        # MATTR with window of 50 words
+        window = min(50, len(words))
+        if len(words) <= window:
+            return len(set(words)) / len(words)
+
+        ratios = []
+        for i in range(len(words) - window + 1):
+            chunk = words[i:i + window]
+            ratios.append(len(set(chunk)) / window)
+
+        return float(np.mean(ratios))
+
+    def _compute_sentence_variety(self, contents: List[str]) -> float:
+        """Coefficient of variation of sentence lengths.
+
+        High variety (>0.5) = human-like mixed sentence lengths.
+        Low variety (<0.15) = robotic uniform lengths.
+        """
+        recent = [c for c in contents[-3:] if c.strip()]
+        if not recent:
+            return 0.5
+
+        combined = " ".join(recent)
+        sentences = self._get_sentences(combined)
+
+        if len(sentences) < 3:
+            return 0.5
+
+        lengths = [len(s.split()) for s in sentences]
+        mean_len = np.mean(lengths)
+
+        if mean_len == 0:
+            return 0.0
+
+        return float(np.std(lengths) / mean_len)
+
+    # ─── Topic Analysis ───────────────────────────────────────────────
+
+    def _compute_topic_evolution(self, contents: List[str]) -> Dict[str, float]:
+        """Extract topics from conversation using noun chunks (spaCy) or TF-IDF top terms.
+
+        Returns dict of topic -> normalized frequency.
+        """
+        recent = [c for c in contents[-8:] if c.strip()]
+        if not recent:
+            return {}
+
+        combined = " ".join(recent)
+        topics: Dict[str, int] = {}
+
+        if self.nlp:
+            doc = self.nlp(combined[:10000])
+            for chunk in doc.noun_chunks:
+                key = chunk.root.lemma_.lower()
+                if len(key) > 2:
+                    topics[key] = topics.get(key, 0) + 1
+            for ent in doc.ents:
+                key = ent.text.lower()
+                topics[key] = topics.get(key, 0) + 1
+        else:
+            # Fallback: TF-IDF top terms
             try:
-                # Ensure contents are strings
-                valid_contents = [str(content) for content in contents[-5:]]
+                tfidf = self.vectorizer.fit_transform(recent)
+                feature_names = self.vectorizer.get_feature_names_out()
+                scores = np.asarray(tfidf.sum(axis=0)).flatten()
+                top_indices = scores.argsort()[-20:][::-1]
+                for idx in top_indices:
+                    if scores[idx] > 0:
+                        topics[feature_names[idx]] = int(scores[idx] * 100)
+            except Exception:
+                for word in re.findall(r'\b[a-zA-Z]{4,}\b', combined.lower()):
+                    topics[word] = topics.get(word, 0) + 1
 
-                # Check if we have enough content to analyze
-                if not valid_contents or all(
-                    not content.strip() for content in valid_contents
-                ):
-                    logger.warning("No valid content for semantic coherence analysis")
-                    return 0.0
+        if not topics:
+            return {}
 
-                tfidf_matrix = self.vectorizer.fit_transform(
-                    valid_contents
-                )  # Only analyze recent messages
+        total = sum(topics.values())
+        return {k: v / total for k, v in sorted(topics.items(), key=lambda x: -x[1])[:15]}
 
-                # Calculate average cosine similarity between consecutive responses
-                similarities = []
-                for i in range(len(valid_contents) - 1):
-                    similarity = cosine_similarity(
-                        tfidf_matrix[i : i + 1], tfidf_matrix[i + 1 : i + 2]
-                    )[0][0]
-                    similarities.append(similarity)
-                return np.mean(similarities) / 2 if similarities else 0.0
-            except (ValueError, TypeError) as e:
-                logger.error(f"Error in TF-IDF processing: {e}")
-                raise SemanticAnalysisError(f"Error in TF-IDF processing: {e}")
-        except Exception as e:
-            logger.error(f"Error calculating semantic coherence: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            raise SemanticAnalysisError(f"Error calculating semantic coherence: {e}")
+    def _compute_topic_coherence(self, contents: List[str]) -> float:
+        """How focused the conversation is on consistent topics.
 
-    def _analyze_topic_drift(self, contents: List[str]) -> Dict[str, float]:
-        """Track evolution of topics over conversation"""
-        topics = {}
+        Uses average pairwise TF-IDF cosine similarity across messages.
+        """
+        recent = [c for c in contents[-8:] if c.strip()]
+        if len(recent) < 2:
+            return 0.5
+
+        tfidf_matrix = self.vectorizer.fit_transform(recent)
+        sim_matrix = cosine_similarity(tfidf_matrix)
+
+        n = sim_matrix.shape[0]
+        if n < 2:
+            return 0.5
+
+        total_sim = (sim_matrix.sum() - n) / (n * (n - 1))
+        return float(np.clip(total_sim, 0.0, 1.0))
+
+    # ─── Pathology Signals ────────────────────────────────────────────
+
+    def _compute_repetition(self, history: List[Dict]) -> float:
+        """Per-participant self-similarity detecting looping/rehashing.
+
+        Returns max across participants (worst case).
+        """
+        by_role = self._get_messages_by_role(history)
+        scores = []
+
+        for role, messages in by_role.items():
+            if len(messages) < 2:
+                continue
+            recent = messages[-4:]
+            score = self._participant_repetition(recent)
+            scores.append(score)
+
+        return max(scores) if scores else 0.0
+
+    def _participant_repetition(self, messages: List[str]) -> float:
+        """Compute repetition score for a single participant's messages."""
+        if len(messages) < 2:
+            return 0.0
+
+        # TF-IDF cosine self-similarity between consecutive own messages
         try:
             if self.nlp:
-                # Use spaCy for topic extraction (limited to recent messages)
-                try:
-                    for content in contents:
-                        doc = self.nlp(str(content))
-                        for chunk in doc.noun_chunks:
-                            topic = chunk.root.text.lower()
-                            topics[topic] = topics.get(topic, 0) + 1
-                except (AttributeError, TypeError) as e:
-                    logger.error(f"Error in spaCy processing: {e}")
-                    raise TopicAnalysisError(f"Error in spaCy processing: {e}")
+                processed = []
+                for msg in messages:
+                    doc = self.nlp(msg[:5000])
+                    processed.append(" ".join(t.lemma_.lower() for t in doc if not t.is_punct and not t.is_space))
             else:
-                # Fallback: Use simple word frequency for nouns
-                try:
-                    for content in contents:
-                        # Split into words and filter for likely nouns (words longer than 3 chars)
-                        words = [w.lower() for w in str(content).split() if len(w) > 3]
-                        for word in words:
-                            if not any(c.isdigit() for c in word):  # Skip numbers
-                                topics[word] = topics.get(word, 0) + 1
-                except (AttributeError, TypeError) as e:
-                    logger.error(f"Error in basic text processing: {e}")
-                    raise TopicAnalysisError(f"Error in basic text processing: {e}")
+                processed = messages
 
-            # Normalize counts to frequencies
-            try:
-                total = sum(topics.values()) or 1  # Avoid division by zero
-                return {k: v / total for k, v in topics.items()}
-            except (TypeError, ZeroDivisionError) as e:
-                logger.error(f"Error normalizing topic frequencies: {e}")
-                raise TopicAnalysisError(f"Error normalizing topic frequencies: {e}")
-        except Exception as e:
-            logger.error(f"Error analyzing topic drift: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            raise TopicAnalysisError(f"Error analyzing topic drift: {e}")
+            tfidf = self.vectorizer.fit_transform(processed)
+            similarities = []
+            for i in range(len(processed) - 1):
+                sim = cosine_similarity(tfidf[i:i + 1], tfidf[i + 1:i + 2])[0][0]
+                similarities.append(float(sim))
+            cosine_score = float(np.mean(similarities)) if similarities else 0.0
+        except Exception:
+            cosine_score = 0.0
 
-    def _analyze_response_patterns(
-        self, history: List[Dict[str, str]]
-    ) -> Dict[str, float]:
-        """Analyze patterns in response styles"""
-        patterns = {
-            "question_frequency": 0.0,
-            "elaboration_frequency": 0.0,
-            "challenge_frequency": 0.0,
-            "agreement_frequency": 0.0,
+        ngram_score = self._ngram_overlap(messages)
+
+        return 0.6 * cosine_score + 0.4 * ngram_score
+
+    def _ngram_overlap(self, messages: List[str], n: int = 3) -> float:
+        """Character n-gram overlap between last message and earlier ones."""
+        if len(messages) < 2:
+            return 0.0
+
+        def get_ngrams(text: str) -> set:
+            text = text.lower()
+            return {text[i:i + n] for i in range(len(text) - n + 1)} if len(text) >= n else set()
+
+        last_ngrams = get_ngrams(messages[-1])
+        if not last_ngrams:
+            return 0.0
+
+        earlier = " ".join(messages[:-1])
+        earlier_ngrams = get_ngrams(earlier)
+        if not earlier_ngrams:
+            return 0.0
+
+        overlap = len(last_ngrams & earlier_ngrams)
+        return overlap / len(last_ngrams)
+
+    def _compute_agreement_saturation(self, history: List[Dict]) -> float:
+        """Detect premature consensus/deadlock between participants.
+
+        Combines cross-participant similarity, declining length, and absence of contrastive markers.
+        """
+        by_role = self._get_messages_by_role(history)
+        roles = [r for r in by_role if len(by_role[r]) >= 2]
+
+        if len(roles) < 2:
+            return 0.0
+
+        role_a, role_b = roles[0], roles[1]
+        recent_a = " ".join(by_role[role_a][-2:])
+        recent_b = " ".join(by_role[role_b][-2:])
+
+        try:
+            tfidf = self.vectorizer.fit_transform([recent_a, recent_b])
+            cross_sim = float(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0])
+        except Exception:
+            cross_sim = 0.0
+
+        # Length trend: are messages getting shorter?
+        all_lengths = [len(str(m.get("content", "")).split()) for m in history if str(m.get("content", "")).strip()]
+        if len(all_lengths) >= 4:
+            recent_avg = np.mean(all_lengths[-3:])
+            overall_avg = np.mean(all_lengths)
+            length_decline = max(0.0, (overall_avg - recent_avg) / max(overall_avg, 1))
+        else:
+            length_decline = 0.0
+
+        # Contrastive marker ratio
+        contrastive = {"but", "however", "although", "yet", "though", "whereas", "nevertheless", "disagree", "conversely"}
+        recent_text = " ".join(str(m.get("content", "")).lower() for m in history[-4:])
+        words = recent_text.split()
+        contrastive_count = sum(1 for w in words if w in contrastive)
+        contrastive_ratio = contrastive_count / max(len(words), 1)
+        agreement_from_contrast = 1.0 - min(1.0, contrastive_ratio * 30)
+
+        return float(np.clip(
+            0.4 * cross_sim + 0.3 * length_decline + 0.3 * agreement_from_contrast,
+            0.0, 1.0
+        ))
+
+    def _compute_formulaic_score(self, history: List[Dict]) -> float:
+        """Per-participant roboticness detection. Returns max across participants."""
+        by_role = self._get_messages_by_role(history)
+        scores = []
+
+        for role, messages in by_role.items():
+            if len(messages) < 2:
+                continue
+            recent = messages[-3:]
+            score = self._participant_formulaic(recent)
+            scores.append(score)
+
+        return max(scores) if scores else 0.0
+
+    def _participant_formulaic(self, messages: List[str]) -> float:
+        """Compute formulaic score for a single participant's messages."""
+        if not messages:
+            return 0.0
+
+        combined = "\n".join(messages)
+        lines = combined.split("\n")
+
+        # List ratio
+        list_pattern = re.compile(r'^\s*[-*\u2022]\s|^\s*\d+[.)]\s')
+        list_lines = sum(1 for line in lines if list_pattern.match(line))
+        list_ratio = list_lines / max(len(lines), 1)
+
+        # Sentence-start diversity
+        sentences = self._get_sentences(combined)
+        if len(sentences) >= 3:
+            starts = [" ".join(s.split()[:2]).lower() for s in sentences if s.split()]
+            start_diversity = len(set(starts)) / len(starts) if starts else 1.0
+        else:
+            start_diversity = 1.0
+
+        # Structure fingerprint similarity across messages
+        if len(messages) >= 2:
+            fingerprints = []
+            for msg in messages:
+                msg_lines = msg.split("\n")
+                n_paragraphs = len([l for l in msg_lines if l.strip() and not list_pattern.match(l)])
+                n_lists = sum(1 for l in msg_lines if list_pattern.match(l))
+                n_headings = sum(1 for l in msg_lines if l.strip().startswith("#") or l.strip().endswith(":"))
+                fingerprints.append([n_paragraphs, n_lists, n_headings])
+
+            fp_array = np.array(fingerprints, dtype=float)
+            norms = np.linalg.norm(fp_array, axis=1, keepdims=True)
+            norms = np.where(norms == 0, 1, norms)
+            fp_normalized = fp_array / norms
+            sims = []
+            for i in range(len(fp_normalized) - 1):
+                sim = float(np.dot(fp_normalized[i], fp_normalized[i + 1]))
+                sims.append(sim)
+            structure_sim = float(np.mean(sims)) if sims else 0.0
+        else:
+            structure_sim = 0.0
+
+        return float(np.clip(
+            0.3 * list_ratio + 0.4 * (1.0 - start_diversity) + 0.3 * structure_sim,
+            0.0, 1.0
+        ))
+
+    # ─── Per-Participant Signals ──────────────────────────────────────
+
+    def _compute_participant_signals(self, history: List[Dict]) -> Dict[str, Dict[str, float]]:
+        """Compute per-participant pathology and readability scores."""
+        by_role = self._get_messages_by_role(history)
+        signals = {}
+
+        for role, messages in by_role.items():
+            if not messages:
+                continue
+
+            recent = messages[-3:]
+
+            signals[role] = {
+                "repetition": self._participant_repetition(recent) if len(recent) >= 2 else 0.0,
+                "formulaic": self._participant_formulaic(recent) if len(recent) >= 2 else 0.0,
+                "flesch": self._safe(self._compute_flesch, recent, default=50.0),
+                "fog": self._safe(self._compute_gunning_fog, recent, default=12.0),
+                "vocabulary_richness": self._safe(self._compute_vocabulary_richness, recent, default=0.5),
+                "sentence_variety": self._safe(self._compute_sentence_variety, recent, default=0.5),
+            }
+
+        return signals
+
+    # ─── Interaction Dynamics ─────────────────────────────────────────
+
+    def _compute_engagement(self, history: List[Dict]) -> Dict[str, float]:
+        """Engagement metrics based on structural properties."""
+        if not history:
+            return {"avg_response_length": 0.0, "turn_taking_balance": 1.0, "length_trend": 0.0}
+
+        lengths = [len(str(m.get("content", "")).split()) for m in history]
+        roles = [m.get("role", "") for m in history]
+
+        user_turns = sum(1 for r in roles if r in ("user", "human"))
+        assistant_turns = sum(1 for r in roles if r == "assistant")
+        total = user_turns + assistant_turns
+        if total > 1 and max(user_turns, assistant_turns) > 0:
+            balance = min(user_turns, assistant_turns) / max(user_turns, assistant_turns)
+        else:
+            balance = 1.0
+
+        if len(lengths) >= 3:
+            recent_avg = float(np.mean(lengths[-3:]))
+            overall_avg = float(np.mean(lengths))
+            length_trend = (recent_avg - overall_avg) / max(overall_avg, 1)
+        else:
+            length_trend = 0.0
+
+        return {
+            "avg_response_length": float(np.mean(lengths)),
+            "turn_taking_balance": float(balance),
+            "length_trend": float(np.clip(length_trend, -1.0, 1.0)),
         }
 
+    def _compute_response_patterns(self, history: List[Dict]) -> Dict[str, float]:
+        """Structural response patterns."""
         if not history:
-            return patterns
+            return {"question_ratio": 0.0, "avg_sentences_per_msg": 0.0, "list_usage": 0.0}
 
-        try:
-            try:
-                for msg in history:
-                    try:
-                        content = str(msg.get("content", "")).lower()
-                        # Question patterns
-                        patterns["question_frequency"] += content.count("?")
-                        # Elaboration patterns
-                        elaboration_words = [
-                            "furthermore",
-                            "moreover",
-                            "additionally",
-                            "in addition",
-                        ]
-                        patterns["elaboration_frequency"] += sum(
-                            content.count(word) for word in elaboration_words
-                        )
-                        # Challenge patterns
-                        challenge_words = [
-                            "however",
-                            "but",
-                            "although",
-                            "disagree",
-                            "incorrect",
-                        ]
-                        patterns["challenge_frequency"] += sum(
-                            content.count(word) for word in challenge_words
-                        )
-                        # Agreement patterns
-                        agreement_words = [
-                            "agree",
-                            "yes",
-                            "indeed",
-                            "exactly",
-                            "correct",
-                        ]
-                        patterns["agreement_frequency"] += sum(
-                            content.count(word) for word in agreement_words
-                        )
-                    except (AttributeError, TypeError) as e:
-                        logger.warning(
-                            f"Skipping invalid message in response pattern analysis: {e}"
-                        )
-                        continue
+        question_marks = 0
+        total_sentences = 0
+        list_markers = 0
 
-                # Normalize by message count (safe since we checked for empty history)
-                try:
-                    msg_count = len(history)
-                    logger.debug(
-                        "Response patterns: {{k: v/msg_count for k, v in patterns.items()}}"
-                    )
-                    return {k: v / msg_count for k, v in patterns.items()}
-                except ZeroDivisionError:
-                    logger.error(
-                        "Division by zero in response pattern normalization (empty history)"
-                    )
-                    return patterns
-            except (KeyError, AttributeError, TypeError) as e:
-                logger.error(f"Error processing messages for response patterns: {e}")
-                raise PatternAnalysisError(
-                    f"Error processing messages for response patterns: {e}"
-                )
-        except Exception as e:
-            logger.error(f"Error analyzing response patterns: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            raise PatternAnalysisError(f"Error analyzing response patterns: {e}")
+        for msg in history:
+            content = str(msg.get("content", ""))
+            question_marks += content.count("?")
+            sentences = self._get_sentences(content)
+            total_sentences += max(len(sentences), 1)
+            list_markers += len(re.findall(r'(?m)^\s*[-*\u2022\d]+[.)]\s', content))
 
-    def _calculate_engagement_metrics(
-        self, history: List[Dict[str, str]]
-    ) -> Dict[str, float]:
-        """Calculate metrics for interaction quality"""
-        metrics = {
-            "avg_response_length": 0.0,
-            "turn_taking_balance": 0.0,
-            "response_time_consistency": 0.0,
+        n = len(history)
+        return {
+            "question_ratio": question_marks / max(total_sentences, 1),
+            "avg_sentences_per_msg": total_sentences / n,
+            "list_usage": list_markers / n,
         }
 
-        if not history:
-            return metrics
+    def _compute_epistemic_stance(self, contents: List[str]) -> Dict[str, float]:
+        """Epistemic stance from modal verbs (closed-class) and question ratio."""
+        recent = [c for c in contents[-4:] if c.strip()]
+        if not recent:
+            return {"hedging_ratio": 0.0, "assertiveness": 0.5,
+                    "socratic": 0.0, "uncertainty": 0.0, "confidence": 0.5, "qualification": 0.0}
 
-        try:
-            try:
-                # Average response length
-                lengths = []
-                for msg in history:
-                    try:
-                        content = str(msg.get("content", ""))
-                        lengths.append(len(content.split()))
-                    except (AttributeError, TypeError) as e:
-                        logger.warning(
-                            f"Skipping invalid message in engagement metrics: {e}"
-                        )
-                        continue
+        combined = " ".join(recent).lower()
+        words = combined.split()
+        n_words = max(len(words), 1)
 
-                metrics["avg_response_length"] = (
-                    float(np.mean(lengths)) if lengths else 0.0
-                )
+        hedge_words = {"might", "could", "would", "may", "perhaps", "possibly", "maybe",
+                       "potentially", "probably", "likely", "unlikely", "seems", "appears"}
+        hedge_count = sum(1 for w in words if w in hedge_words)
+        hedging_ratio = hedge_count / n_words
 
-                # Turn-taking balance (ratio of human:AI responses)
-                try:
-                    roles = [msg.get("role", "") for msg in history]
-                    human_turns = sum(1 for role in roles if role == "user")
-                    ai_turns = sum(1 for role in roles if role == "assistant")
+        questions = combined.count("?")
+        sentences = self._get_sentences(combined)
+        total_sent = max(len(sentences), 1)
+        assertiveness = 1.0 - (questions / total_sent) if total_sent > 0 else 0.5
 
-                    # Calculate balance ensuring no division by zero
-                    if ai_turns > 0:
-                        metrics["turn_taking_balance"] = human_turns / ai_turns
-                    elif human_turns > 0:
-                        metrics["turn_taking_balance"] = float(
-                            "inf"
-                        )  # All human turns, no AI turns
-                    else:
-                        metrics["turn_taking_balance"] = 0.0  # No turns at all
-                except (AttributeError, TypeError) as e:
-                    logger.error(f"Error calculating turn-taking balance: {e}")
-                    metrics["turn_taking_balance"] = 0.0
+        return {
+            "hedging_ratio": hedging_ratio,
+            "assertiveness": assertiveness,
+            "socratic": questions / total_sent,
+            "uncertainty": min(1.0, hedging_ratio * 15),
+            "confidence": assertiveness,
+            "qualification": min(1.0, hedging_ratio * 10),
+        }
 
-                return metrics
-            except (KeyError, AttributeError, TypeError) as e:
-                logger.error(f"Error processing messages for engagement metrics: {e}")
-                raise EngagementAnalysisError(
-                    f"Error processing messages for engagement metrics: {e}"
-                )
-        except Exception as e:
-            logger.error(f"Error calculating engagement metrics: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            raise EngagementAnalysisError(f"Error calculating engagement metrics: {e}")
+    def _compute_reasoning_patterns(self, contents: List[str]) -> Dict[str, float]:
+        """Reasoning indicators from discourse connectives and formal structure."""
+        recent = [c for c in contents[-4:] if c.strip()]
+        if not recent:
+            return {"deductive": 0.0, "inductive": 0.0, "abductive": 0.0,
+                    "analogical": 0.0, "causal": 0.0}
 
-    def _estimate_cognitive_load(self, contents: List[str]) -> float:
-        """Estimate complexity of current discussion"""
-        try:
-            total_complexity = 0
-            for content in contents[-2:]:  # Reduced from -3 to -2 for memory efficiency
-                if self.nlp:
-                    try:
-                        # Use spaCy for sophisticated analysis
-                        doc = self.nlp(str(content))
+        combined = " ".join(recent).lower()
+        words = combined.split()
+        n_words = max(len(words), 1)
 
-                        # Average sentence length
-                        sent_lengths = [
-                            len([token for token in sent]) for sent in doc.sents
-                        ]
-                        avg_sent_length = np.mean(sent_lengths) if sent_lengths else 0
+        connectives = {"therefore", "thus", "hence", "because", "since", "however",
+                       "although", "whereas", "consequently", "furthermore", "moreover",
+                       "nevertheless", "if", "then", "given", "assuming"}
+        connective_count = sum(1 for w in words if w in connectives)
+        connective_density = connective_count / n_words
 
-                        # Vocabulary complexity (ratio of unique words)
-                        tokens = [
-                            token.text.lower() for token in doc if not token.is_punct
-                        ]
-                        vocabulary_complexity = (
-                            len(set(tokens)) / len(tokens) if tokens else 0
-                        )
-                    except (AttributeError, TypeError, ZeroDivisionError) as e:
-                        logger.error(f"Error in spaCy cognitive load analysis: {e}")
-                        # Fallback to basic analysis
-                        avg_sent_length = 0
-                        vocabulary_complexity = 0
-                else:
-                    try:
-                        # Fallback to basic text analysis
-                        content_str = str(content)
-                        # Estimate sentences by punctuation
-                        sentences = [
-                            s.strip()
-                            for s in re.split(r"[.!?]+", content_str)
-                            if s.strip()
-                        ]
-                        words = content_str.lower().split()
+        formal_markers = len(re.findall(r'```|^\s*\d+\.\s|=>|->|:=|==', combined, re.M))
+        formal_density = min(1.0, formal_markers / max(len(recent), 1))
 
-                        # Average sentence length
-                        avg_sent_length = (
-                            np.mean([len(s.split()) for s in sentences])
-                            if sentences
-                            else 0
-                        )
+        base_level = min(1.0, connective_density * 20)
 
-                        # Vocabulary complexity
-                        vocabulary_complexity = (
-                            len(set(words)) / len(words) if words else 0
-                        )
-                    except (AttributeError, TypeError, ZeroDivisionError) as e:
-                        logger.error(f"Error in basic cognitive load analysis: {e}")
-                        avg_sent_length = 0
-                        vocabulary_complexity = 0
+        result = {
+            "deductive": base_level * 0.3,
+            "inductive": base_level * 0.2,
+            "abductive": base_level * 0.1,
+            "analogical": base_level * 0.1,
+            "causal": base_level * 0.3,
+        }
 
-                # Additional complexity indicators (works with or without spaCy)
-                try:
-                    technical_indicators = (
-                        len(
-                            re.findall(
-                                r"\b(algorithm|function|parameter|variable|concept|theory|framework)\b",
-                                str(content).lower(),
-                            )
-                        )
-                        / 100.0
-                    )  # Normalize technical terms
-                except (AttributeError, TypeError) as e:
-                    logger.error(f"Error in technical indicators analysis: {e}")
-                    technical_indicators = 0
-
-                # Combine metrics
-                try:
-                    message_complexity = (
-                        avg_sent_length * 0.3
-                        + vocabulary_complexity * 0.4
-                        + technical_indicators * 0.3
-                    )
-                    total_complexity += message_complexity
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error combining complexity metrics: {e}")
-                    # Skip this message
-
-            return min(1.0, total_complexity / (3 * 2))  # Normalize to [0,1]
-        except Exception as e:
-            logger.error(f"Error estimating cognitive load: {e}")
-            logger.debug(
-                f"Stack trace for cognitive load error: {traceback.format_exc()}"
-            )
-            return 0.0  # Return default value for this metric as it's not critical
-
-    def _assess_knowledge_depth(self, contents: List[str]) -> float:
-        """Assess depth of domain understanding shown"""
-        try:
-            depth_score = 0
-            for content in contents[-2:]:  # Reduced from -3 to -2 for memory efficiency
-                if self.nlp:
-                    try:
-                        # Use spaCy for sophisticated analysis
-                        doc = self.nlp(str(content))
-                        technical_terms = len(
-                            [token for token in doc if token.pos_ in ["NOUN", "PROPN"]]
-                        )
-                        term_density = technical_terms / len(doc) if len(doc) > 0 else 0
-                    except (AttributeError, TypeError, ZeroDivisionError) as e:
-                        logger.error(f"Error in spaCy knowledge depth analysis: {e}")
-                        # Fallback to basic analysis
-                        term_density = 0
-                else:
-                    try:
-                        # Fallback to basic text analysis
-                        content_str = str(content)
-                        # Look for likely technical terms (capitalized words and known technical terms)
-                        words = content_str.split()
-                        technical_terms = len(
-                            [
-                                w
-                                for w in words
-                                if (
-                                    w
-                                    and w[0].isupper()  # Capitalized words
-                                    or w.lower()
-                                    in {  # Common technical terms
-                                        "algorithm",
-                                        "function",
-                                        "method",
-                                        "theory",
-                                        "concept",
-                                        "framework",
-                                        "system",
-                                        "process",
-                                        "analysis",
-                                        "structure",
-                                        "pattern",
-                                        "model",
-                                    }
-                                )
-                            ]
-                        )
-                        term_density = technical_terms / len(words) if words else 0
-                    except (
-                        AttributeError,
-                        TypeError,
-                        IndexError,
-                        ZeroDivisionError,
-                    ) as e:
-                        logger.error(f"Error in basic knowledge depth analysis: {e}")
-                        term_density = 0
-
-                # Common analysis regardless of spaCy availability
-                try:
-                    content_str = str(content).lower()
-                    # Explanation patterns
-                    explanations = len(
-                        re.findall(
-                            r"because|therefore|explains|means that|in other words",
-                            content_str,
-                        )
-                    )
-
-                    # Reference to concepts
-                    concept_references = len(
-                        re.findall(
-                            r"concept|principle|theory|idea|approach|technique",
-                            content_str,
-                        )
-                    )
-
-                    # Interconnection markers
-                    interconnections = len(
-                        re.findall(
-                            r"related to|connected with|linked to|associated with|depends on",
-                            content_str,
-                        )
-                    )
-                except (AttributeError, TypeError) as e:
-                    logger.error(f"Error in pattern analysis for knowledge depth: {e}")
-                    explanations = 0
-                    concept_references = 0
-                    interconnections = 0
-
-                # Combine metrics
-                try:
-                    message_depth = (
-                        term_density * 0.4
-                        + (explanations / 10) * 0.3  # Normalize explanations
-                        + (concept_references / 5) * 0.2  # Normalize concept references
-                        + (interconnections / 5) * 0.1  # Normalize interconnections
-                    )
-                    depth_score += message_depth
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error combining knowledge depth metrics: {e}")
-                    # Skip this message
-
-            return min(1.0, depth_score / 3)  # Normalize to [0,1]
-        except Exception as e:
-            logger.error(f"Error assessing knowledge depth: {e}")
-            logger.debug(
-                f"Stack trace for knowledge depth error: {traceback.format_exc()}"
-            )
-            return 0.0  # Return default value for this metric as it's not critical
-
-    def _analyze_reasoning_patterns(self, contents: List[str]) -> Dict[str, float]:
-        """Analyze types of reasoning used"""
-        pattern_counts = {pattern: 0.0 for pattern in self.reasoning_patterns}
         if self.mode == "ai-ai":
-            pattern_counts.update({pattern: 0.0 for pattern in self.ai_ai_patterns})
+            result.update({
+                "formal_logic": formal_density,
+                "systematic": min(1.0, connective_density * 15),
+                "technical": 0.5,
+                "precision": base_level * 0.2,
+                "integration": base_level * 0.2,
+            })
 
-        try:
-            try:
-                for content in contents:
-                    content_str = str(content or "").lower()
-                    for pattern, regex in self.reasoning_patterns.items():
-                        try:
-                            matches = len(re.findall(regex, content_str))
-                            pattern_counts[pattern] += matches
-                        except (re.error, TypeError) as e:
-                            logger.error(f"Error in regex pattern '{pattern}': {e}")
-                            continue
-
-                    if self.mode == "ai-ai":
-                        for pattern, regex in self.ai_ai_patterns.items():
-                            try:
-                                matches = len(re.findall(regex, content_str))
-                                pattern_counts[pattern] += matches
-                            except (re.error, TypeError) as e:
-                                logger.error(
-                                    f"Error in AI-AI regex pattern '{pattern}': {e}"
-                                )
-                                continue
-
-                # Normalize counts
-                total = sum(pattern_counts.values()) or 1  # Avoid division by zero
-                normalized = {k: v / total for k, v in pattern_counts.items()}
-                return normalized  # Return the normalized counts
-            except Exception as e:
-                logger.info(f"Error processing reasoning patterns: {e}")
-                return pattern_counts
-        except Exception as e:
-            logger.error(f"Error analyzing reasoning patterns: {e}", exc_info=True)
-            return pattern_counts
-
-    def _detect_uncertainty(self, contents: List[str]) -> Dict[str, float]:
-        """Detect markers of uncertainty or confidence"""
-        markers = {
-            "socratic": 0.0,
-            "uncertainty": 0.0,
-            "confidence": 0.0,
-            "qualification": 0.0,
-        }
-
-        try:
-            socratic_patterns = r"or did|interested|intrigued|conclusions|interpret|analysis|reason|suggest|think|believe|perspective|propose|consider|counter|question"
-            uncertainty_patterns = r"maybe|might|could|unsure|potentially|theoretically|probably|questionably|questionable|debatably|supposed to|allegedly|according to some|would have you believe|more to it|unclear|doubtful|vague|sceptical"
-            confidence_patterns = r"confident|obvious|absolutely|clearly|definitely|certainly|undoubtedly|even if|regardless|always|very|never|always|impossible|inevitable|doubtless|inevitable"
-            qualification_patterns = r"maintaining|status-quo|conflicting|possibly|however|though|except|unless|only if|perhaps|one day|in the future|in the long term"
-
-            for content in contents[-3:]:  # Focus on recent messages
-                try:
-                    # Ensure content is a string
-                    content_str = str(content or "").lower()
-
-                    markers["socratic"] += len(
-                        re.findall(socratic_patterns, content_str)
-                    )
-                    markers["uncertainty"] += len(
-                        re.findall(uncertainty_patterns, content_str)
-                    )
-                    markers["confidence"] += len(
-                        re.findall(confidence_patterns, content_str)
-                    )
-                    markers["qualification"] += len(
-                        re.findall(qualification_patterns, content_str)
-                    )
-                except (TypeError, AttributeError) as e:
-                    logger.warning(
-                        f"Error processing content for uncertainty detection: {e}"
-                    )
-                    continue
-                except re.error as e:
-                    logger.error(f"Regex error in uncertainty detection: {e}")
-                    continue
-
-            # Normalize by message count
-            logger.debug("_detect_uncertainty: " + "".join(contents) + f": {markers}")
-            return {k: v / 4 for k, v in markers.items()}
-        except Exception as e:
-            logger.error(f"Error detecting uncertainty: {e}")
-            return markers
+        return result

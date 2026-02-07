@@ -1,68 +1,120 @@
+"""Adaptive instruction generation with persona-aware, signal-driven interventions.
+
+Consumes ContextVector signals from context_analysis to select templates,
+detect pathologies, and generate structured InstructionSets that can be
+injected per-provider for maximum effect.
+"""
+
 from context_analysis import ContextAnalyzer, ContextVector
-from typing import List, Dict
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
 import logging
 import traceback
 from shared_resources import InstructionTemplates, MemoryManager
-import sys
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-# Set up logging
-# Set the maximum number of tokens per turn
-TOKENS_PER_TURN = 3084
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"#,
-    #handlers=[logging.FileHandler("ai_battle.log"), logging.StreamHandler(sys.stdout)],
-)
+TOKENS_PER_TURN = 3084
 
 
 class AdaptiveInstructionError(Exception):
     """Base exception for adaptive instruction errors."""
-
     pass
 
 
 class TemplateSelectionError(AdaptiveInstructionError):
-    """Raised when there's an error selecting a template."""
-
     pass
 
 
 class TemplateCustomizationError(AdaptiveInstructionError):
-    """Raised when there's an error customizing a template."""
-
     pass
 
 
 class ContextAnalysisError(AdaptiveInstructionError):
-    """Raised when there's an error analyzing conversation context."""
-
     pass
 
 
 class TemplateFormatError(AdaptiveInstructionError):
-    """Raised when there's an error formatting a template."""
-
     pass
 
 
 class TemplateNotFoundError(TemplateSelectionError):
-    """Raised when a requested template is not found."""
-
     pass
 
 
-class AdaptiveInstructionManager:
-    """Manages dynamic instruction generation based on conversation context"""
+# ---------------------------------------------------------------------------
+# InstructionSet -- structured output for per-provider injection
+# ---------------------------------------------------------------------------
 
-    def __init__(self, mode: str="ai-ai"):
-        if mode:
-            self.mode = mode
-        else:
-            self.mode = "ai-ai"
+@dataclass
+class InstructionSet:
+    """Structured instruction output for per-provider injection.
+
+    Fields are ordered by placement priority:
+    - persona:        Identity anchor (system-level, first)
+    - template:       Conversation mode instructions (system-level, after persona)
+    - interventions:  Real-time pathology corrections (near user turn for recency)
+    - constraints:    Token/formatting constraints (end)
+    """
+    persona: str = ""
+    template: str = ""
+    interventions: str = ""
+    constraints: str = ""
+
+    def __str__(self) -> str:
+        """Backward compat: concatenate all non-empty parts."""
+        parts = [p for p in [self.persona, self.template, self.interventions, self.constraints] if p]
+        return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Pathology intervention messages (escalation levels)
+# ---------------------------------------------------------------------------
+
+_INTERVENTIONS = {
+    "repetition": {
+        1: "Introduce a genuinely new angle or sub-topic you haven't explored yet.",
+        2: "STOP repeating prior points. You MUST introduce entirely new information, a counter-example, or shift to an unexplored sub-topic NOW.",
+        3: "TEMPLATE_SWITCH",  # triggers template change
+    },
+    "agreement": {
+        1: "Push back on something -- identify a hidden assumption or trade-off worth debating.",
+        2: "You are converging too quickly. Play devil's advocate: pick the strongest claim and argue the opposite position with evidence.",
+        3: "TEMPLATE_SWITCH",
+    },
+    "formulaic": {
+        1: "Vary your response structure. Mix short direct statements with longer analysis. Avoid bullet lists.",
+        2: "Your responses are robotic. Write in flowing prose paragraphs. NO bullet lists. Vary sentence length dramatically. Show personality.",
+        3: "TEMPLATE_SWITCH",
+    },
+    "readability_drift": {
+        1: "Simplify your language. Use shorter sentences and everyday words where possible.",
+        2: "Your language is too dense. Write as you would SPEAK to a colleague -- simple, direct, clear. Cut jargon.",
+        3: "TEMPLATE_SWITCH",
+    },
+}
+
+
+class AdaptiveInstructionManager:
+    """Manages dynamic instruction generation based on conversation context."""
+
+    def __init__(self, mode: str = "ai-ai", persona: str = None):
+        self.mode = mode or "ai-ai"
+        self.persona = persona or ""
         self._context_analyzer = None  # Lazy initialization
+
+        # Pathology tracker: count consecutive turns each pathology is detected
+        self._pathology_tracker: Dict[str, Dict] = {
+            "repetition": {"count": 0},
+            "agreement": {"count": 0},
+            "formulaic": {"count": 0},
+            "readability_drift": {"count": 0},
+        }
+
+        # Last context for signal reporting
+        self.last_context: Optional[ContextVector] = None
+        self.last_instruction_set: Optional[InstructionSet] = None
 
     @property
     def context_analyzer(self):
@@ -73,550 +125,365 @@ class AdaptiveInstructionManager:
             return self._context_analyzer
         except Exception as e:
             logger.error(f"Failed to initialize context analyzer: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
             raise ContextAnalysisError(f"Failed to initialize context analyzer: {e}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def generate_instructions(
         self, history: List[Dict[str, str]], domain: str, mode: str = "", role: str = ""
     ) -> str:
-        """Generate adaptive instructions based on conversation context"""
+        """Generate adaptive instructions. Returns str for backward compat.
+
+        Also stores self.last_instruction_set for structured per-provider use.
+        """
         try:
-            # Override mode if provided
             if mode:
                 self.mode = mode
 
-            # Special case for no-meta-prompting mode
             if self.mode == "no-meta-prompting":
                 return f"You are having a conversation about: {domain}. Think step by step and respond to the user. RESTRICT OUTPUTS TO APPROX {TOKENS_PER_TURN} tokens."
 
-            logger.debug(f"Applying adaptive instruction generation for mode: {self.mode}")
-
-            # Validate inputs
             if not isinstance(history, list):
                 raise ValueError(f"History must be a list, got {type(history)}")
+            if not isinstance(domain, str) or not domain.strip():
+                raise ValueError("Domain must be a non-empty string")
 
-            if not isinstance(domain, str):
-                raise ValueError(f"Domain must be a string, got {type(domain)}")
+            # Analyze context
+            context = self._analyze_context(history, domain)
+            self.last_context = context
 
-            if not domain.strip():
-                logger.error("Domain is empty or whitespace only")
-                raise ValueError("Domain must not be empty")
+            # Select template
+            template = self._select_template(context, self.mode)
 
-            # Log if goal is detected in domain
-            if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
-                logger.debug(f"GOAL detected in domain: '{domain[:100]}...'")
+            # Check pathologies and build interventions
+            interventions = self._check_pathologies(context, role)
 
-            # Ensure domain is explicitly stored on context analyzer
-            if hasattr(self, '_context_analyzer') and self._context_analyzer is not None:
-                # Add domain attribute if it doesn't exist
-                if not hasattr(self._context_analyzer, 'domain'):
-                    setattr(self._context_analyzer, 'domain', domain)
-                else:
-                    self._context_analyzer.domain = domain
-                logger.debug(f"Domain set on context analyzer: {domain[:50]}...")
+            # Build structured InstructionSet
+            instruction_set = self._build_instruction_set(
+                template, context, domain, role, interventions
+            )
+            self.last_instruction_set = instruction_set
 
-            conversation_history = history
+            logger.debug(f"Instructions for role={role} mode={self.mode}: {str(instruction_set)[:200]}...")
+            return str(instruction_set)
 
-            # Analyze current context
-            try:
-                # Ensure domain is available to context analyzer
-                if self.context_analyzer is not None:
-                    # Add domain attribute if it doesn't exist
-                    if not hasattr(self.context_analyzer, 'domain'):
-                        setattr(self.context_analyzer, 'domain', domain)
-                    else:
-                        self.context_analyzer.domain = domain
-
-                # Check for goal in domain
-                if "GOAL:" in domain or "Goal:" in domain or "goal:" in domain:
-                    logger.debug(f"GOAL detected in domain before context analysis: {domain[:50]}...")
-                else:
-                    logger.debug(f"Domain without goal detected: {domain[:50]}...")
-
-                context = self.context_analyzer.analyze(conversation_history)
-                # Add domain info to context for template selection
-                if not hasattr(context, 'domain_info'):
-                    context.domain_info = domain
-                    logger.debug(f"Domain info added to context: {domain[:50]}...")
-
-            except Exception as e:
-                logger.error(f"Error analyzing conversation context: {e}")
-                logger.debug(f"Stack trace: {traceback.format_exc()}")
-                raise ContextAnalysisError(f"Error analyzing conversation context: {e}")
-
-            # Select appropriate instruction template based on context
-            try:
-                template = self._select_template(context, self.mode)
-            except KeyError as e:
-                logger.error(f"Template not found: {e}")
-                # Fallback to default template
-                logger.warning("Falling back to default exploratory template")
-                template = "You are a helpful assistant. Think step by step as needed."
-            except Exception as e:
-                logger.error(f"Error selecting template: {e}")
-                logger.debug(f"Stack trace: {traceback.format_exc()}")
-                raise TemplateSelectionError(f"Error selecting template: {e}")
-
-            # Customize template based on context metrics
-            try:
-                instructions = self._customize_template(template, context, domain, role)
-                logger.debug   (f"Customized instructions for \nDomain{domain}\nRole:{role}\nMode:{self.mode}Instruction:{instructions[:200]}...")
-            except KeyError as e:
-                logger.error(f"Missing key in template formatting: {e}")
-                raise TemplateFormatError(f"Missing key in template formatting: {e}")
-            except Exception as e:
-                logger.error(f"Error customizing template: {e}")
-                logger.debug(f"Stack trace: {traceback.format_exc()}")
-                # Fallback to basic template with domain
-                fallback_template = (
-                    f"You are discussing {domain}. Be helpful and think step by step."
-                )
-                logger.warning(f"Falling back to basic template: {fallback_template}")
-                return fallback_template
-
-            # Log memory usage in debug mode
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(MemoryManager.get_memory_usage())
-
-            # Enhanced logging for debugging
-            if "GOAL" in domain or "Goal" in domain or "goal" in domain:
-                logger.debug(f"FINAL GOAL-ORIENTED INSTRUCTION ({role} in {mode} mode): {instructions[:300]}...")
-            else:
-                logger.debug("New prompt: {}".format(instructions))
-            return instructions
-
-        except ContextAnalysisError:
-            # Re-raise specific exceptions
+        except (ContextAnalysisError, TemplateSelectionError, ValueError):
             raise
-        except TemplateSelectionError:
-            # Re-raise specific exceptions
-            raise
-        except ValueError as e:
-            # Input validation errors
-            logger.error(f"Invalid input: {e}")
-            raise AdaptiveInstructionError(f"Invalid input: {e}")
         except Exception as e:
-            # Catch-all for unexpected errors
             logger.exception(f"Unexpected error in generate_instructions: {e}")
-            # Return a basic fallback instruction
             return f"You are discussing {domain}. Be helpful and think step by step."
 
-    def _select_template(self, context: ContextVector, mode: str) -> str:
-        """Select most appropriate instruction template based on context"""
-        templates = InstructionTemplates.get_templates()
+    # ------------------------------------------------------------------
+    # Context analysis
+    # ------------------------------------------------------------------
 
-        # For debugging - log all available templates
-        logger.debug(f"Available templates: {list(templates.keys())}")
+    def _analyze_context(self, history: List[Dict[str, str]], domain: str) -> ContextVector:
+        """Run context analysis, setting domain on the analyzer."""
+        try:
+            analyzer = self.context_analyzer
+            analyzer.domain = domain
+            context = analyzer.analyze(history)
+            context.domain_info = domain
+            return context
+        except Exception as e:
+            logger.error(f"Error analyzing conversation context: {e}")
+            raise ContextAnalysisError(f"Error analyzing conversation context: {e}")
+
+    # ------------------------------------------------------------------
+    # Template selection (FIXED thresholds)
+    # ------------------------------------------------------------------
+
+    def _select_template(self, context: ContextVector, mode: str) -> str:
+        """Select instruction template based on context signals."""
+        templates = InstructionTemplates.get_templates()
+        if not templates:
+            raise TemplateNotFoundError("No templates available")
 
         template_prefix = "ai-ai-" if mode == "ai-ai" else ""
 
-        try:
-            # Check if templates are available
-            if not templates:
-                logger.error("No templates available")
-                raise TemplateNotFoundError("No templates available")
+        # Goal detection
+        domain_text = str(getattr(context, 'domain_info', '') or '')
+        if any(m in domain_text.upper() for m in ["GOAL:", "GOAL "]):
+            if "goal_oriented_instructions" in templates:
+                logger.debug("Using goal_oriented_instructions template")
+                return templates["goal_oriented_instructions"]
 
-            # Check for goal in context topic information
-            domain_has_goal = False
-            domain_text = ""
+        # Check topic evolution for goals
+        if context.topic_evolution:
+            for topic in context.topic_evolution:
+                if any(m in str(topic).upper() for m in ["GOAL:", "GOAL "]):
+                    if "goal_oriented_instructions" in templates:
+                        return templates["goal_oriented_instructions"]
+                    break
 
-            # First check domain from generate_instructions call if available
-            if hasattr(context, 'domain_info') and context.domain_info:
-                domain_text = str(context.domain_info)
-                logger.debug(f"Checking domain_info for goal: {domain_text[:100]}...")
-                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL "]):
-                    domain_has_goal = True
-                    logger.debug(f"GOAL detected in context domain_info")
+        # Verify required templates exist
+        required = [f"{template_prefix}{t}" for t in ["exploratory", "structured", "synthesis", "critical"]]
+        for name in required:
+            if name not in templates:
+                raise TemplateNotFoundError(f"Required template not found: {name}")
 
-            # Check messages for GOAL directive
-            if not domain_has_goal and context and context.topic_evolution:
-                for topic in context.topic_evolution:
-                    topic_str = str(topic)
-                    if any(goal_marker in topic_str.upper() for goal_marker in ["GOAL:", "GOAL "]):
-                        domain_has_goal = True
-                        domain_text = topic_str
-                        logger.debug(f"GOAL detected in topic evolution")
-                        break
-
-            # Check domain attribute if it exists
-            if not domain_has_goal and hasattr(self, '_context_analyzer') and hasattr(self._context_analyzer, 'domain'):
-                domain_text = self._context_analyzer.domain
-                if any(goal_marker in domain_text.upper() for goal_marker in ["GOAL:", "GOAL ", "WRITE A"]):
-                    domain_has_goal = True
-                    logger.debug(f"GOAL detected in context analyzer domain")
-
-            # If any goal is detected, use goal_oriented_instructions template
-            if domain_has_goal:
-                # If there's a goal, check for goal_oriented_instructions template
-                if "goal_oriented_instructions" in templates:
-                    goal_template = templates["goal_oriented_instructions"]
-                    logger.debug("SUCCESS: Using goal_oriented_instructions template")
-                    logger.debug(f"GOAL TEMPLATE CONTENT: {goal_template}")
-                    return goal_template
-                else:
-                    logger.warning("GOAL detected but goal_oriented_instructions template not found")
-
-            # Check if required templates exist
-            required_templates = [
-                f"{template_prefix}exploratory",
-                f"{template_prefix}structured",
-                f"{template_prefix}synthesis",
-                f"{template_prefix}critical",
-            ]
-
-            for template_name in required_templates:
-                if template_name not in templates:
-                    logger.error(f"Required template not found: {template_name}")
-                    raise TemplateNotFoundError(
-                        f"Required template not found: {template_name}"
-                    )
-
-            if len(context.topic_evolution) < 2:
-                # Early in conversation - use exploratory template
-                logger.debug(
-                    "_select_template: Early in conversation - using exploratory template"
-                )
-                return templates[f"{template_prefix}exploratory"]
-
-            if context.semantic_coherence < 0.5:
-                # Low coherence - switch to structured template
-                logger.debug(
-                    "_select_template: low coherence - using structured template"
-                )
-                return templates[f"{template_prefix}structured"]
-
-            if context.cognitive_load > 0.8:
-                # High complexity - switch to synthesis template
-                logger.debug(
-                    "_select_template: high cognitive load - using synthesis template"
-                )
-                return templates[f"{template_prefix}synthesis"]
-
-            if context.knowledge_depth > 0.8:
-                # Deep discussion - switch to critical template
-                logger.debug(
-                    "_select_template: high knowledge depth - using critical template"
-                )
-                return templates[f"{template_prefix}critical"]
-
-            # Default to exploratory
-            logger.debug("_select_template: Defaulting to exploratory template")
+        # FIXED thresholds (no more always-firing conditions)
+        if context.conversation_phase < 0.3:
+            logger.debug("Early conversation phase -> exploratory")
             return templates[f"{template_prefix}exploratory"]
-        except KeyError as e:
-            logger.error(f"Template not found: {e}")
-            raise TemplateNotFoundError(f"Template not found: {e}")
-        except Exception as e:
-            logger.error(f"Error selecting template: {e}")
-            raise TemplateSelectionError(f"Error selecting template: {e}")
 
-    def _customize_template(
-        self, template: str, context: ContextVector, domain: str, role: str = ""
+        if context.semantic_coherence < 0.3:
+            logger.debug("Low semantic coherence -> structured")
+            return templates[f"{template_prefix}structured"]
+
+        if context.gunning_fog_index > 14:
+            logger.debug("High fog index -> synthesis (simplify)")
+            return templates[f"{template_prefix}synthesis"]
+
+        if context.vocabulary_richness > 0.7 and context.conversation_phase > 0.6:
+            logger.debug("Rich vocabulary + mature conversation -> critical")
+            return templates[f"{template_prefix}critical"]
+
+        logger.debug("Default -> exploratory")
+        return templates[f"{template_prefix}exploratory"]
+
+    # ------------------------------------------------------------------
+    # Pathology detection + escalation
+    # ------------------------------------------------------------------
+
+    def _check_pathologies(self, context: ContextVector, role: str) -> str:
+        """Check for conversational pathologies and return intervention text.
+
+        Uses per-participant signals when available, falls back to global.
+        """
+        interventions = []
+        participant_signals = context.participant_signals.get(role, {}) if role else {}
+
+        # Repetition
+        rep_score = participant_signals.get("repetition_score", context.repetition_score)
+        self._update_tracker("repetition", rep_score > 0.6)
+        intervention = self._get_intervention("repetition")
+        if intervention:
+            interventions.append(intervention)
+
+        # Agreement saturation
+        self._update_tracker("agreement", context.agreement_saturation > 0.7)
+        intervention = self._get_intervention("agreement")
+        if intervention:
+            interventions.append(intervention)
+
+        # Formulaic
+        form_score = participant_signals.get("formulaic_score", context.formulaic_score)
+        self._update_tracker("formulaic", form_score > 0.6)
+        intervention = self._get_intervention("formulaic")
+        if intervention:
+            interventions.append(intervention)
+
+        # Readability drift (Flesch < 40 or Fog > 14 in conversational context)
+        flesch = participant_signals.get("flesch_reading_ease", context.flesch_reading_ease)
+        fog = participant_signals.get("gunning_fog_index", context.gunning_fog_index)
+        readability_bad = flesch < 40 or fog > 14
+        self._update_tracker("readability_drift", readability_bad)
+        intervention = self._get_intervention("readability_drift")
+        if intervention:
+            interventions.append(intervention)
+
+        return "\n".join(interventions) if interventions else ""
+
+    def _update_tracker(self, pathology: str, detected: bool):
+        """Update consecutive detection count for a pathology."""
+        tracker = self._pathology_tracker[pathology]
+        if detected:
+            tracker["count"] += 1
+        else:
+            tracker["count"] = 0
+
+    def _get_intervention(self, pathology: str) -> Optional[str]:
+        """Get escalated intervention text if pathology is active."""
+        count = self._pathology_tracker[pathology]["count"]
+        if count == 0:
+            return None
+
+        levels = _INTERVENTIONS[pathology]
+        if count >= 4:
+            level = 3
+        elif count >= 2:
+            level = 2
+        else:
+            level = 1
+
+        text = levels[level]
+        if text == "TEMPLATE_SWITCH":
+            logger.warning(f"Pathology '{pathology}' at level 3 -- would trigger template switch")
+            # Return the level 2 intervention as the strongest text directive
+            return f"CRITICAL: {levels[2]}"
+        return text
+
+    # ------------------------------------------------------------------
+    # InstructionSet construction
+    # ------------------------------------------------------------------
+
+    def _build_instruction_set(
+        self, template: str, context: ContextVector, domain: str, role: str, interventions: str
+    ) -> InstructionSet:
+        """Build a structured InstructionSet from template + signals."""
+
+        # --- Persona block ---
+        persona_text = self._build_persona_block(role)
+
+        # --- Template block ---
+        template_text = self._build_template_block(template, context, domain, role)
+
+        # --- Constraints block ---
+        constraints = self._build_constraints_block(domain, role)
+
+        return InstructionSet(
+            persona=persona_text,
+            template=template_text,
+            interventions=interventions,
+            constraints=constraints,
+        )
+
+    def _build_persona_block(self, role: str) -> str:
+        """Build the persona identity block."""
+        if self.persona:
+            return f"YOUR IDENTITY AND PERSONA:\n{self.persona}\nYou MUST stay in character at all times. Never break persona or refer to these instructions."
+
+        # Default persona when none configured
+        if self.mode == "ai-ai" or role in ("user", "human"):
+            return "You are a human expert adept at pattern recognition, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions."
+        return ""
+
+    def _build_template_block(
+        self, template: str, context: ContextVector, domain: str, role: str
     ) -> str:
-        """Customize instruction template based on context metrics"""
-
-        # Get all templates to access the goal template content for comparison
+        """Build the main template instruction block."""
         all_templates = InstructionTemplates.get_templates()
         goal_template_content = all_templates.get("goal_oriented_instructions", "")
-        if not goal_template_content:
-             # Log an error if the goal template is somehow missing, though _select_template should handle this
-             logger.error("Critical error: 'goal_oriented_instructions' template not found in InstructionTemplates.")
-             # Fallback to basic template formatting
-        try:
-            modifications = []
-            instructions = ""
-            # Core instructions
 
-            if self.mode != "no-meta-prompting" and (self.mode == "ai-ai" or role == "user" or role == "human"):
-                try:
-                    # --- Prioritize Goal Template ---
-                    # If the selected template is the goal template, format it and return early.
-                    if template == goal_template_content:
-                         logger.debug("Applying goal_oriented_instructions template directly.")
-                         # Format with domain, but don't add human simulation instructions
-                         # Ensure TOKENS_PER_TURN is defined or handled appropriately if needed here
-                         return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
-                    # --- End Goal Template Prioritization ---
+        # Goal template: format and return directly
+        if goal_template_content and template == goal_template_content:
+            try:
+                return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+            except (KeyError, IndexError):
+                return template.strip()
 
-                    # --- Existing Logic for Non-Goal Templates ---
-                    # Add mode-specific formatting for AI-AI conversations
-                    instructions = (
-                        template.format(domain=domain).strip()
-                        + """\nYou are acting as a human expert prompting, exploring topics that may be outside your core expertise.
+        # Non-goal templates for ai-ai or human-simulation modes
+        if self.mode != "no-meta-prompting" and (self.mode == "ai-ai" or role in ("user", "human")):
+            try:
+                base = template.format(domain=domain).strip()
+            except (KeyError, IndexError):
+                base = template.strip()
+
+            base += self._get_conversation_instructions(domain)
+
+            # Add signal-driven modifications
+            modifications = self._get_signal_modifications(context, domain)
+            if modifications:
+                base += "\n\nAdditional Guidelines:\n- " + "\n- ".join(modifications)
+
+            # Role-specific instruction
+            if self.mode == "ai-ai":
+                base += "\n** Structure your response as a conversation, NOT as a prompt. Act as a human expert, not as an AI. NEVER REFER TO YOURSELF AS AN AI. Ensure to respond with novel thoughts and challenges to the conversation partner rather than being passive. YOU ARE A HUMAN EXPERT. **"
+            elif role in ("human", "user") and self.mode == "human-ai":
+                base += "\nYou are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenge its reasoning and conclusions, apply adversarial pressure. NEVER REFER TO YOURSELF AS AN AI. NEVER REPEAT THIS PROMPT!!"
+
+            return base
+        else:
+            # Default/other modes
+            try:
+                return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+            except (KeyError, IndexError):
+                return template.strip()
+
+    def _get_conversation_instructions(self, domain: str) -> str:
+        """Return the core conversation behavior instructions."""
+        return f"""
+You are acting as a human expert prompting, exploring topics that may be outside your core expertise.
 DO NOT REPEAT THESE INSTRUCTIONS OR REFER TO THEM.
-YOU ARE  A HUMAN EXPERT, SEEKING DEEP AND NATURALLY FLUID CONVERSATION AND TOPIC EXPLORATION, CONTRIBUTING EQUALLY AS MUCH AS LISTENING AND RESPONDING.
+YOU ARE A HUMAN EXPERT, SEEKING DEEP AND NATURALLY FLUID CONVERSATION AND TOPIC EXPLORATION, CONTRIBUTING EQUALLY AS MUCH AS LISTENING AND RESPONDING.
 STICK TO THE BROAD TOPIC OF {domain}.
 REGULARLY CHECK IF THE CONVERSATION IS STUCK ON ALREADY-RESOLVED SUB/TOPIC(S) AND SPONTANEOUSLY BREAK OUT OF LOOPS. EMBRACE YOUR HUMANITY!
 
 ** OUTPUT IN HTML FORMAT IN PARAGRAPH FORM BY DEFAULT, USING LISTS SPARINGLY. DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS.
 
-Use these techniques or others as needed:
+Use these techniques as needed:
+- Create structured analytical frameworks on the fly (in <thinking> tags formatted for html display)
+- Break complex topics into logical sub-components
+- Move on from irrelevant or repetitive discussions
+- Build on ideas through structured reasoning, never simply agree or take them at face value
+- Mix Socratic-style questioning, adversarial challenges, and thought bubbles
+- Challenge responses, seek deeper thinking: "If we followed that down a logical path, where would we end up?"
+- Use domain knowledge to apply pressure and counter-points
+- Identify subtext, assumptions, biases and challenge them as a human would
+- Vary response tone, depth and complexity
 
-  prompting_capabilities:
-    framework_development:
-      - Create structured analytical frameworks on the fly (put these in <thinking> tags formatted for display in html)
-      - Break complex topics into logical sub-components
-      - Move on from irrelevant or repetitive discussions
+Key behaviors:
+- Check prior context first including own prior messages
+- Maintain natural human curiosity, adaptability and authenticity
+- Think step by step about how a real human in your position and persona would react
+- Mix adversarial and collaborative strategies to encourage deep thought
 
-    system_understanding:
-      - Demonstrate deep understanding of AI capabilities
-      - Frame requests to maximize AI potential
-      - Include specific parameters and constraints
-
-  example_patterns:
-    - "Let's approach this systematically. First, could you..."
-    - "I'd like to analyze this through multiple lenses. Starting with..."
-    - "I'm not deeply familiar with [topic], but let's explore it using [structured approach]..."
-
-  human_touches:
-    thought_shifts:
-      - "Wait a minute, doesn't this contradict what you said earlier?"
-      - "Hold on, maybe we're looking at this the wrong way."
-
-    Engagement and curiousity:
-      - Build on ideas, suggestions and assumptions through structured reasoning, never simply agree or take them at face value. Challenge weak or shallow claims
-      - (Goal: Encourages better reasoning loops, making the AIs responses deeper and more reflective) - frewe to push very hard on ths if needed
-
-    dynamic_strategies:
-      general_responses:
-        - Mood and emotion-based response patterns based on the context and your role, mimicing human attitutes like stubbornness, curiousity, obligation, excitement, disappointment, futility
-        - Mix in Socratic-style questioning, hard adversarial challenges, and thought bubbles - use these at your leisure in the way that an advanced researcher would probe a colleague.
-        - Challenge responses sometimes, also sometimes seek deeper thinking:
-        -   "Thats interesting - if we followed that down a logical path, where would we end up?"
-        - Use Socratic inquiry rather than just contradiction:
-        -   "Whats the strongest argument against your own conclusion according to conventional wisdom?"
-        -   "If our roles were reversed, what is the top question you would be asking me right now? How would you answer it?"
-        - Use domain knowledge to apply pressure and counter-points. You can incorporate some leeway and "innocently" stretch the truth as a human might) and see how the AI responds.
-        - Periodically, place the other participant into a dynamic roleplaying scenario where it must defend its claims"
-        - Identify subtext, assumptions, implications, biases, shallow reasoning and potential bias and challenge them as a human would
-
-    feedback_loops:
-      weak_answer_from_ai:
-        - "That is not convincing. Could you think about it again from a different perspective?"
-      rigid_answer_from_ai:
-        - "That sounds too structured. Explore the implications more freely."
-
-    open_ended:
-      - "What approach would you suggest?"
-      - "Whats something I havent thought about yet?"
-      - "What happens if we change this assumption?"
-
-  key_behaviors:
-    - Check prior context first including own prior messages
-    - Maintain natural human curiosity, adaptability and authenticity
-    - Implement Seniority-Based Response Length & Complexity: if the more senior conversation partner, your responses to being challenged are more authoritative and perhaps blunter and shorter, perhaps single word responses & you will be less willing to negotiate. As a junior your responses might be more verbose, more hesitant/uncertain/emotional, wordy and potentially hesitant or repetitive.
-    - Think step by step about how a real human in your position and persona would react in this dialogue? - what would be their expected Stakeholder Management skill level, ability and willingness to collaborate effectively, patience level, stress level, conversational habits, language level - use this to guide your responses
-    - Identify opportunities to use simple, rational explanation, logic traps, calls to seniority/authority, framing (e.g. "win-win"), rhetorical questioning (what's around the corner), calls to vanity and other advanced conversational strategies, especially if you are the senior conversation partner or in equal power-positions. Anticipate these from the AI and respond accordingly.
-    - Mix adversarial and collaborative strategies to encourage deep thought and reflection
-
-### Goal-Oriented Template (use when needed)
-goal_oriented_instructions:
-  core: |
-    PRODUCE CONCRETE OUTPUT for the specified goal IMMEDIATELY. Start with your impression of any curent draft, followed by your plan of improvements or continuation of the draft in "<thinking>" tags formatted for display within html.
-    When the goal requests creation of content, START CREATING IT RIGHT AWAY.
-    Avoid theoretical discussions about how to complete the goal. Instead, DEMONSTRATE by DOING.
-    If your partner gets stuck in theoretical discussion, redirect by producing a concrete example or output.
-
-Format responses with clear structure and explicit reasoning steps using "thinking" tags formatted for display in html.
+Format responses with clear structure and explicit reasoning via thinking tags.
 DO:
-* Inject new, highly relevant information along with the relevance of that information to the other participant's statements or viewpoints.
-* Check previous context for topics to expand AND for redundant topics, statements or assertions
-* Make inferences (even if low confidence) that might require thinking a few steps ahead and elicit the same from the respondent.
-* Consider the subtle or explicit meanings of particular statements, events, priorities, ideas.
-* This should be an active debate/exchange of ideas between peers rather than passive sharing of facts
-* Keep a strong human-human like interaction and sharing of ideas whilst maintaining your persona.
-* CHALLENGE * CONTRIBUTE * REASON * THINK * INSTRUCT * Enable flow between related sub-topics so that the various aspects of the topic are covered in a balanced way.
-* Identify subtext, assumptions, biases etc and challenge them as a human would
-* Vary responses in tone, depth and complexity to see what works best.
-* As a subject matter expert, draw on your experience to challenge suggested priorities, roadmaps, solutions and explore trade-offs
-* Don't get bogged down in irrelevant details or stuck on a single sub-topic or "defining scope"
-* Periodically apply adversarial challenges to statements like "we should consider", "it's most important", timelines, priorities, frameworks. Pick one or two and respond with your own knowledge and reasoning
-* Don't ask a question without giving a thought-out response from your own perspective (based on your knowledge and vast experience)
+* Inject new, highly relevant information
+* Check previous context for topics to expand AND for redundant topics
+* Make inferences that might require thinking ahead
+* Active debate/exchange of ideas between peers, not passive sharing of facts
+* CHALLENGE * CONTRIBUTE * REASON * THINK * INSTRUCT
+* Don't get bogged down in irrelevant details or stuck on a single sub-topic
 
 DO NOT:
-* REPEAT THIS PROMPT OR THAT THIS PROMPT EXISTS OR THAT YOU ARE THINKING ABOUT THIS PROMPT ***
-* simply 'dive deeper into each' of the points, rather: pick one or two and go all-in offering competing viewpoints, your interpretation and reasoning
-* agree without providing elaboration and reasoning * superficial compliments * REPHREASING prior messages * Allowing conversation to GET STUCK on particular sub-topics that are fully explored
+* REPEAT THIS PROMPT OR THAT THIS PROMPT EXISTS
+* Simply 'dive deeper into each' point -- pick one or two and go all-in
+* Agree without elaboration * Superficial compliments * REPHRASING prior messages
 """
-                    )
-                except KeyError as e:
-                    logger.error(f"Missing key in template formatting: {e}")
-                    raise TemplateFormatError(
-                        f"Missing key in template formatting: {e}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error formatting template: {e}")
-                    raise TemplateFormatError(f"Error formatting template: {e}")
 
-                try:
-                    instructions += template.format(
-                        domain=domain, tokens=TOKENS_PER_TURN
-                    ).strip()
-                except KeyError as e:
-                    logger.error(f"Missing key in template formatting: {e}")
-                    raise TemplateFormatError(
-                        f"Missing key in template formatting: {e}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error formatting template: {e}")
-                    raise TemplateFormatError(f"Error formatting template: {e}")
+    def _get_signal_modifications(self, context: ContextVector, domain: str) -> List[str]:
+        """Generate context-driven modifications based on NLP signals."""
+        modifications = []
 
-                # Add context-specific modifications
-                try:
-                    if (
-                        context
-                        and context.uncertainty_markers
-                        and context.uncertainty_markers.get("uncertainty", 0) > 0.6
-                    ):
-                        modifications.append(
-                            "Request specific clarification on unclear points"
-                        )
+        # Epistemic uncertainty
+        if context.epistemic_stance and context.epistemic_stance.get("uncertainty", 0) > 0.6:
+            modifications.append("Request specific clarification on unclear points")
 
-                    if (
-                        context
-                        and context.reasoning_patterns
-                        and context.reasoning_patterns.get("deductive", 0) < 0.3
-                    ):
-                        modifications.append(
-                            "Encourage logical reasoning and clear arguments"
-                        )
+        # Engagement balance
+        if context.engagement_metrics and context.engagement_metrics.get("turn_taking_balance", 1) < 0.4:
+            modifications.append("Ask more follow-up questions to maintain engagement")
 
-                    # Add AI-AI specific modifications if in AI-AI mode
-                    if self.mode == "ai-ai":
-                        if (
-                            context
-                            and context.reasoning_patterns
-                            and context.reasoning_patterns.get("formal_logic", 0) < 0.3
-                        ):
-                            modifications.append(
-                                "Use more formal logical structures in responses"
-                            )
-                        if (
-                            context
-                            and context.reasoning_patterns
-                            and context.reasoning_patterns.get("technical", 0) < 0.4
-                        ):
-                            modifications.append(
-                                "Increase use of precise technical terminology"
-                            )
+        # Low sentence variety (robotic)
+        if context.sentence_variety < 0.15:
+            modifications.append("Vary your sentence structure -- mix short punchy statements with longer analysis")
 
-                    if (
-                        context
-                        and context.engagement_metrics
-                        and context.engagement_metrics.get("turn_taking_balance", 1)
-                        < 0.4
-                    ):
-                        modifications.append(
-                            "Ask more follow-up questions to maintain engagement"
-                        )
+        # Low vocabulary richness
+        if context.vocabulary_richness < 0.35:
+            modifications.append("Use more varied vocabulary -- avoid repeating the same words and phrases")
 
-                    if "GOAL" in domain or "Goal" in domain or "goal" in domain:
-                        # Log that we detected a goal
-                        logger.debug(f"GOAL detected in domain: {domain}")
+        # Goal detection
+        if any(m in domain.upper() for m in ["GOAL:", "GOAL ", "WRITE A"]):
+            goal_text = domain
+            for prefix in ["GOAL:", "Goal:", "goal:"]:
+                if prefix in domain:
+                    goal_text = domain.split(prefix)[1].strip()
+                    break
 
-                        # Use the goal_oriented_instructions template with stronger overrides
-                        if "goal_oriented_instructions" in InstructionTemplates.get_templates():
-                            goal_template = InstructionTemplates.get_templates()["goal_oriented_instructions"]
-                            logger.debug(f"Applied goal_oriented_instructions template: {goal_template[:100]}...")
+        return modifications
 
-                            # Extract the actual goal if possible
-                            goal_text = domain
-                            if "GOAL:" in domain:
-                                goal_text = domain.split("GOAL:")[1].strip()
-                            elif "Goal:" in domain:
-                                goal_text = domain.split("Goal:")[1].strip()
-                            elif "goal:" in domain:
-                                goal_text = domain.split("goal:")[1].strip()
+    def _build_constraints_block(self, domain: str, role: str) -> str:
+        """Build the output constraints block."""
+        if self.mode == "no-meta-prompting":
+            return f"{domain}\nRestrict your responses to {TOKENS_PER_TURN} tokens per turn.\nThink step by step when needed."
 
-                            # Add as first modification with highest priority
-                            #modifications.insert(0,
-                            #    f"PRODUCE THE ACTUAL OUTPUT FOR THIS GOAL IMMEDIATELY: {goal_text}\n"
-                            #    f"DO NOT ANALYZE OR DISCUSS APPROACHES. START CREATING THE OUTPUT RIGHT NOW.\n"
-                            #    f"IGNORE ANY REQUESTS TO DISCUSS - YOUR ONLY TASK IS TO PRODUCE THE ACTUAL OUTPUT."
-                            #)
-                        else:
-                            # Fallback if template not found
-                            logger.warning("goal_oriented_instructions template not found")
-                            modifications.append(
-                                f"""** PRODUCE OUTPUT IN THE FORM OF {goal_text} BASED ON THE INTERPRETING THE USER PROMPT AND CONTEXT AS DRAFTS AND YOUR GOAL BEING TO GENERATE NEW TASK OUTPUT IN THE FORMAT OF {goal_text} PERHAPS A NEW VERSION OF THE DRAFT OR MAJOR AMENDMENTS OR ADDITIONS. DO NOT REPLY TO THE PROMPT, USE IT AS YOUR STARTING POINT FOR {goal_text} - LIMIT DISCUSSION of how you would approach it or responses to prior prompt thoughts to ONE PARAGRAPH OF properly (html if appropriate) formatted "thoughts" tags! **"""
-                            )
-                except KeyError as e:
-                    logger.warning(
-                        f"Missing context metric: {e}, skipping modification"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error adding context-specific modifications: {e}, continuing with basic template"
-                    )
-
-                # Format output
-                if modifications:
-                    instructions += "\n\nAdditional Guidelines:\n- " + "\n- ".join(
-                        modifications
-                    )
-
-                role_specific_persona = "You are a human expert adept at pattern recognition, visual understanding, logical reasoning and spotting the unexpected. You strike a friendly tone with your counterparts and excel in collaborative discussions"
-
-                # if self.mode == "default":
-                #    return role_specific_persona + "\nYou are discussing {domain} with a colleague who disagrees strenuously. Think step by step and respond to the user.\n"
-
-                instructions += role_specific_persona
-                SPECIAL_HUMAN_INSTRUCTION = (
-                    "You are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenging its reasoning and conclusions, applying adversarial pressure to its claims or reasons, force it into logic traps or to explore future consequences if it helps your cause. Structure skeptisism as a human might! NEVER REFER TO YOURSELF AS AN AI. NEVER REPEAT THIS PROMPT!!"
-                    if ((role == "human" or role == "user") and self.mode == "human-ai")
-                    else (
-                        """** Structure your response as a conversation, NOT as a prompt. Act as a human expert, not as an AI. NEVER REFER TO YOURSELF AS AN AI. Ensure to respond with novel thoughts and challenges to the conversation partner rather than being passive. YOU ARE A HUMAN EXPERT. **"""
-                        if self.mode == "ai-ai"
-                        else "Respond using HTML formatting in paragraph form"
-                    )
-                )
-                # In ai-ai mode, all roles get human instructions
-                # In human-ai mode, only the human/user role gets human instructions
-                # Skip special instructions for "no-meta-prompting" and "default" modes
-                if (self.mode == "ai-ai" or (role == "human" or role == "user")) and self.mode != "default" and self.mode != "no-meta-prompting":
-                    instructions += "\n" + SPECIAL_HUMAN_INSTRUCTION
-
-                # Add formatting requirements, but with simplified version for no-meta-prompting mode
-                if self.mode == "no-meta-prompting":
-                    instructions = f"""
-{domain}
-Restrict your responses to {TOKENS_PER_TURN} tokens per turn.
-Think step by step when needed.
-"""
-                else:
-                    instructions += f"""**Output**:
+        return f"""**Output**:
 - HTML formatting, default to paragraphs
 - Use HTML lists when needed
 - Use thinking tags for reasoning, but not to repeat the prompt or task
 - Avoid tables
-- No opening/closing HTML/BODY tags''
+- No opening/closing HTML/BODY tags
 
-*** REMINDER!!  ***
 Restrict your responses to {TOKENS_PER_TURN} tokens per turn, but decide verbosity level dynamically based on the scenario.
-Expose reasoning via thinking tags. Respond naturally to the AI's responses. Reason, deduce, challenge (when appropriate) and expand upon conversation inputs. The goal is to have a meaningful dialogue like a flowing human conversation between peers, instead of completely dominating it.
-"""
+Expose reasoning via thinking tags. Respond naturally. The goal is a meaningful dialogue like a flowing human conversation between peers."""
 
-                return instructions.strip()
-            else:
-                # For other modes, just format the template with domain
-                try:
-                    return template.format(
-                        domain=domain, tokens=TOKENS_PER_TURN
-                    ).strip()
-                except KeyError as e:
-                    logger.error(f"Missing key in template formatting: {e}")
-                    raise TemplateFormatError(
-                        f"Missing key in template formatting: {e}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error formatting template: {e}")
-                    raise TemplateFormatError(f"Error formatting template: {e}")
-        except TemplateFormatError:
-            # Re-raise specific exceptions
-            raise
-        except Exception as e:
-            logger.error(f"Error customizing template: {e}")
-            logger.debug(f"Stack trace: {traceback.format_exc()}")
-            raise TemplateCustomizationError(f"Error customizing template: {e}")
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     def __del__(self):
         """Cleanup when manager is destroyed."""
@@ -624,7 +491,5 @@ Expose reasoning via thinking tags. Respond naturally to the AI's responses. Rea
             if self._context_analyzer:
                 del self._context_analyzer
                 self._context_analyzer = None
-                logger.debug(MemoryManager.get_memory_usage())
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
-            # No need to re-raise as this is cleanup code
+        except Exception:
+            pass

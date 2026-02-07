@@ -31,9 +31,10 @@ class SpacyModelSingleton:
                     try:
                         cls._instance = spacy.load("en_core_web_sm")
                         logger.info("SpaCy model 'en_core_web_sm' loaded successfully (fallback 2)")
-                    except OSError:
+                    except OSError as e:
                         logger.warning("All spaCy English models failed to load.")
                         cls._instance = None
+                        raise(e)
             except ImportError:
                 logger.warning("spaCy is not installed. Please install it to use this feature.")
                 cls._instance = None

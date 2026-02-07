@@ -11,7 +11,7 @@ from openai import OpenAI
 from anthropic import Anthropic
 from ollama import ChatResponse, Client, Options
 import requests
-from adaptive_instructions import AdaptiveInstructionManager
+from adaptive_instructions import AdaptiveInstructionManager, InstructionSet
 from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
 
@@ -144,7 +144,7 @@ class BaseClient:
     """
 
     def __init__(
-        self, mode: str, api_key: str, domain: str = "", model: str = "", role: str = ""
+        self, mode: str, api_key: str, domain: str = "", model: str = "", role: str = "", persona: str = None
     ):
         """
         Initialize a new BaseClient instance.
@@ -169,6 +169,9 @@ class BaseClient:
             role (str, optional): The role this client is playing in the conversation.
                 Valid values include "human", "user", "assistant", or "model".
                 Defaults to an empty string.
+            persona (str, optional): Rich persona description from YAML config.
+                Defines personality, power dynamics, cognitive style, etc.
+                Defaults to None.
 
         Note:
             Subclasses typically override this method to initialize model-specific
@@ -189,10 +192,10 @@ class BaseClient:
         self.mode = mode
         self.role = role
         self.model = model
-        # self._adaptive_manager = None  # Lazy initialization
+        self.persona = persona
         self.capabilities = detect_model_capabilities(model)
         self.instructions = None
-        self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode)
+        self.adaptive_manager = AdaptiveInstructionManager(mode=self.mode, persona=self.persona)
 
     def _prepare_file_content(self, file_data: Dict[str, Any]) -> Any:
         """
@@ -720,6 +723,8 @@ Generate a natural but sophisticated response that:
         to generate context-aware instructions, falling back to instance instructions
         or a generic default. This allows goal detection via the adaptive manager.
 
+        Also stores self._last_instruction_set for structured per-provider injection.
+
         Args:
             system_instruction (Optional[str]): Explicitly provided system instructions.
             history (List[Dict[str, str]]): Conversation history.
@@ -729,6 +734,8 @@ Generate a natural but sophisticated response that:
         Returns:
             str: The determined system instructions.
         """
+        self._last_instruction_set = None
+
         # Use provided system_instruction if available
         if system_instruction is not None:
             return system_instruction
@@ -738,9 +745,12 @@ Generate a natural but sophisticated response that:
         try:
             # Ensure history is a list, default to empty list if None
             history = history if history is not None else []
-            return self.adaptive_manager.generate_instructions(
+            result = self.adaptive_manager.generate_instructions(
                 history, role=role, domain=self.domain, mode=mode or self.mode
             )
+            # Capture the structured InstructionSet for per-provider injection
+            self._last_instruction_set = getattr(self.adaptive_manager, 'last_instruction_set', None)
+            return result
         except Exception as e:
             logger.error(f"Error generating adaptive instructions: {e}. Falling back.")
             # Fallback logic if adaptive manager fails
@@ -1082,6 +1092,10 @@ class GeminiClient(BaseClient):
 
         # Determine final user prompt content
         final_prompt_content = self._determine_user_prompt_content(prompt, history, role, mode)
+        # Gemini: prepend interventions to prompt for recency bias
+        iset = getattr(self, '_last_instruction_set', None)
+        if iset and isinstance(iset, InstructionSet) and iset.interventions:
+            final_prompt_content = f"[IMPORTANT DIRECTIVE]\n{iset.interventions}\n\n{final_prompt_content}"
         text_content = final_prompt_content
         contents.append({"role": "user", "parts": [{"text": final_prompt_content}]})
         # Add file content if provided
@@ -1814,10 +1828,28 @@ class ClaudeClient(BaseClient):
             # Standard prompt without file data
             messages.append({"role": "user", "content": final_prompt_content}) # Use final prompt content
 
-        # Setup request parameters
+        # Setup request parameters -- use structured injection if available
+        iset = getattr(self, '_last_instruction_set', None)
+        if iset and isinstance(iset, InstructionSet) and iset.persona:
+            # Claude supports multi-block system messages for structured injection
+            system_blocks = []
+            if iset.persona:
+                system_blocks.append({"type": "text", "text": iset.persona})
+            if iset.template:
+                system_blocks.append({"type": "text", "text": iset.template})
+            if iset.constraints:
+                system_blocks.append({"type": "text", "text": iset.constraints})
+            # Interventions injected near user turn for recency bias
+            if iset.interventions:
+                messages.append({"role": "user", "content": f"[IMPORTANT DIRECTIVE]\n{iset.interventions}"})
+                messages.append({"role": "assistant", "content": "Understood, I will follow these directives."})
+            system_value = system_blocks
+        else:
+            system_value = current_instructions
+
         request_params = {
             "model": self.model,
-            "system": current_instructions,
+            "system": system_value,
             "messages": messages,
             "max_tokens": model_config.max_tokens if model_config else MAX_TOKENS,
             "temperature": model_config.temperature if model_config else 0.8,
@@ -2148,7 +2180,16 @@ class OpenAIClient(BaseClient):
         logger.info(f"Using OpenAI Chat Completions API for model {self.model} (or as fallback).")
         
         chat_completions_messages = []
-        if current_instructions:
+        iset = getattr(self, '_last_instruction_set', None)
+        if iset and isinstance(iset, InstructionSet) and iset.persona:
+            # OpenAI: multiple system/developer messages for structured injection
+            if iset.persona:
+                chat_completions_messages.append({"role": "system", "content": iset.persona})
+            if iset.template:
+                chat_completions_messages.append({"role": "system", "content": iset.template})
+            if iset.constraints:
+                chat_completions_messages.append({"role": "system", "content": iset.constraints})
+        elif current_instructions:
             chat_completions_messages.append({"role": "system", "content": current_instructions})
 
         processed_history = history if history is not None else []
@@ -2180,6 +2221,10 @@ class OpenAIClient(BaseClient):
                         f"{user_message_cc_parts[0]['text']}"
                     )
         
+        # Inject interventions near user turn for recency bias (OpenAI)
+        if iset and isinstance(iset, InstructionSet) and iset.interventions:
+            chat_completions_messages.append({"role": "system", "content": f"[IMPORTANT DIRECTIVE]\n{iset.interventions}"})
+
         final_user_content_for_cc = user_message_cc_parts if len(user_message_cc_parts) > 1 or any(p["type"] == "image_url" for p in user_message_cc_parts) else final_prompt_content
         chat_completions_messages.append({"role": "user", "content": final_user_content_for_cc})
 
