@@ -25,9 +25,11 @@ from pathlib import Path
 # Add parent directory to path to import from ai-battle.py
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
+src_dir = f"{parent_dir}/src"
+sys.path.apparent(scr_dir)
 
 # Import ai-battle.py using importlib since it has a hyphen in the name
-ai_battle_path = os.path.join(parent_dir, "ai-battle.py")
+ai_battle_path = os.path.join(src_dir, "ai-battle.py")
 spec = importlib.util.spec_from_file_location("ai_battle", ai_battle_path)
 ai_battle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ai_battle)
@@ -47,6 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+THINKING_MODELS = ["reasoning", "claude-sonnet-4", "o4", "o3-reasoning", "gpt-oss", "gpt-5.2", "gpt-5.1", "claude-opus-4.5", "claude-opus-4.6", "thinking" ]
 
 async def main():
     """Run a vision-based discussion using configuration."""
@@ -95,7 +98,7 @@ async def main():
         # Log reasoning capabilities
         if any(
             r in human_model_type
-            for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]
+            for r in THINKING_MODELS
         ):
             logger.debug(f"Human model supports reasoning: {human_model_type}")
 
@@ -111,7 +114,7 @@ async def main():
 
         if any(
             r in ai_model_type
-            for r in ["reasoning", "claude-3-7", "o1-reasoning", "o3-reasoning"]
+            for r in THINKING_MODELS
         ):
             logger.debug(f"AI model supports reasoning: {ai_model_type}")
 
