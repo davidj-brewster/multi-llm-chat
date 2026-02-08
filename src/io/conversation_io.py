@@ -1,9 +1,56 @@
 """Conversation I/O operations for saving and loading conversations."""
 import re
+import os
+import html
 import logging
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_output_path(filename: str, output_dir: str = "./") -> str:
+    """
+    Sanitize filename to prevent path traversal attacks.
+
+    Args:
+        filename: User-supplied filename
+        output_dir: Expected output directory (default: current directory)
+
+    Returns:
+        Safe absolute path within output_dir
+
+    Raises:
+        ValueError: If the resolved path escapes the output directory
+    """
+    # Use basename to strip any directory components
+    safe_name = os.path.basename(filename)
+
+    # Resolve to absolute path
+    output_dir_abs = os.path.abspath(output_dir)
+    target_path = os.path.abspath(os.path.join(output_dir_abs, safe_name))
+
+    # Verify the target is within output_dir
+    if not target_path.startswith(output_dir_abs + os.sep):
+        raise ValueError(f"Invalid path: {filename} resolves outside output directory")
+
+    return target_path
+
+
+def _escape_html_content(content: str) -> str:
+    """
+    Escape HTML in content to prevent XSS attacks.
+
+    NOTE: The current implementation has AI models output HTML directly,
+    which is a security risk. Future improvement: have models output markdown,
+    then convert to HTML here with proper sanitization.
+
+    Args:
+        content: Raw content from AI model
+
+    Returns:
+        HTML-escaped content
+    """
+    return html.escape(content)
 
 
 async def save_conversation(
@@ -30,6 +77,10 @@ async def save_conversation(
     Exception: If saving fails or template is missing
     """
     try:
+        # Sanitize filename to prevent path traversal
+        safe_filename = _sanitize_output_path(filename)
+        logger.debug(f"Sanitized filename: {filename} -> {safe_filename}")
+
         with open("templates/conversation.html", "r") as f:
             template = f.read()
 
@@ -59,8 +110,10 @@ async def save_conversation(
                             file_item["type"] in ["text", "code"]
                             and "text_content" in file_item
                         ):
-                            # Add text content
-                            conversation_html += f'<div class="file-content"><h3>File {idx+1}: {file_item.get("path", "Text")}</h3><pre>{file_item["text_content"]}</pre></div>\n'
+                            # Add text content (escaped)
+                            safe_text = html.escape(file_item["text_content"])
+                            safe_path = html.escape(file_item.get("path", "Text"))
+                            conversation_html += f'<div class="file-content"><h3>File {idx+1}: {safe_path}</h3><pre>{safe_text}</pre></div>\n'
             # Handle single file (original implementation)
             elif isinstance(file_data, dict) and "type" in file_data:
                 if file_data["type"] == "image" and "base64" in file_data:
@@ -81,8 +134,10 @@ async def save_conversation(
                     file_data["type"] in ["text", "code"]
                     and "text_content" in file_data
                 ):
-                    # Add text content
-                    conversation_html += f'<div class="file-content"><h3>File: {file_data.get("path", "Text")}</h3><pre>{file_data["text_content"]}</pre></div>\n'
+                    # Add text content (escaped)
+                    safe_text = html.escape(file_data["text_content"])
+                    safe_path = html.escape(file_data.get("path", "Text"))
+                    conversation_html += f'<div class="file-content"><h3>File: {safe_path}</h3><pre>{safe_text}</pre></div>\n'
 
         for msg in conversation:
             role = msg["role"]
@@ -90,14 +145,17 @@ async def save_conversation(
             if isinstance(content, (list, dict)):
                 content = str(content)
 
+            # Escape HTML content to prevent XSS
+            safe_content = _escape_html_content(content)
+
             if role == "system":
                 conversation_html += (
-                    f'<div class="system-message">{content} ({mode})</div>\n'
+                    f'<div class="system-message">{safe_content} ({mode})</div>\n'
                 )
             elif role in ["user", "human"]:
-                conversation_html += f'<div class="human-message"><strong>Human ({human_model}):</strong> {content}</div>\n'
+                conversation_html += f'<div class="human-message"><strong>Human ({html.escape(human_model)}):</strong> {safe_content}</div>\n'
             elif role == "assistant":
-                conversation_html += f'<div class="ai-message"><strong>AI ({ai_model}):</strong> {content}</div>\n'
+                conversation_html += f'<div class="ai-message"><strong>AI ({html.escape(ai_model)}):</strong> {safe_content}</div>\n'
 
             # Check if message contains file content (for multimodal messages)
             if isinstance(msg.get("content"), list):
@@ -112,10 +170,17 @@ async def save_conversation(
         if signal_history:
             conversation_html += _render_signal_dashboard(signal_history)
 
-        with open(filename, "w") as f:
+        # Write to sanitized filename
+        with open(safe_filename, "w") as f:
             f.write(template % {"conversation": conversation_html})
+
+        logger.info(f"Conversation saved to: {safe_filename}")
+    except ValueError as e:
+        logger.error(f"Invalid filename: {e}")
+        raise
     except Exception as e:
         logger.error(f"Failed to save conversation: {e}")
+        raise
 
 
 def _render_signal_dashboard(signal_history: List[Dict[str, Any]]) -> str:

@@ -72,9 +72,6 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
 
-    except Exception as e:
-        logger.error(f"Failed to save arbiter report: {e}")
-
 
 async def save_metrics_report(
     ai_ai_conversation: List[Dict[str, str]],

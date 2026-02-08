@@ -1,5 +1,6 @@
 """Model registry for managing model configurations."""
 import yaml
+import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
@@ -94,26 +95,30 @@ class ModelRegistry:
         return self.ollama_thinking_config.get(model_name)
 
 
-# Singleton instance
+# Singleton instance and thread lock
 _registry: Optional[ModelRegistry] = None
+_registry_lock = threading.Lock()
 
 
 def get_registry() -> ModelRegistry:
     """
-    Get the global model registry instance.
+    Get the global model registry instance (thread-safe).
 
     Returns:
         Singleton ModelRegistry instance
     """
     global _registry
     if _registry is None:
-        _registry = ModelRegistry()
+        with _registry_lock:
+            # Double-check locking pattern
+            if _registry is None:
+                _registry = ModelRegistry()
     return _registry
 
 
 def reload_registry(registry_path: Optional[Path] = None) -> ModelRegistry:
     """
-    Reload the model registry from file.
+    Reload the model registry from file (thread-safe).
 
     Args:
         registry_path: Optional path to registry file
@@ -122,5 +127,6 @@ def reload_registry(registry_path: Optional[Path] = None) -> ModelRegistry:
         Reloaded ModelRegistry instance
     """
     global _registry
-    _registry = ModelRegistry(registry_path)
+    with _registry_lock:
+        _registry = ModelRegistry(registry_path)
     return _registry
