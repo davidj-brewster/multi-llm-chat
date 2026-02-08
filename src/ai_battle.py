@@ -35,6 +35,10 @@ from claude_reasoning_config import ClaudeReasoningConfig
 from shared_resources import MemoryManager
 from metrics_analyzer import analyze_conversations
 
+# NEW: Import from refactored modules
+# Model registry now loaded from YAML instead of hard-coded dicts below
+from core.model_registry import get_registry
+
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -107,6 +111,11 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# DEPRECATED: Model configurations below are being replaced by src/data/model_registry.yaml
+# The model registry provides the same data but externalized to YAML for easier management
+# TODO: Remove these dicts once ConversationManager is refactored to use core.model_registry
+_registry = get_registry()
 
 # Model templates for accessing different model versions with reasoning levels
 OPENAI_MODELS = {
