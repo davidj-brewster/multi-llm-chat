@@ -97,7 +97,11 @@ class ContextAnalyzer:
 
     def __init__(self, mode: str = "ai-ai"):
         self.mode = mode
-        self.nlp = SpacyModelSingleton.get_instance()
+        try:
+            self.nlp = SpacyModelSingleton.get_instance()
+        except (OSError, Exception) as e:
+            logger.warning(f"spaCy unavailable ({e}), using fallback analysis only")
+            self.nlp = None
         self.vectorizer = VectorizerSingleton.get_instance()
         if self.nlp:
             logger.debug("ContextAnalyzer initialized with spaCy NLP pipeline")
