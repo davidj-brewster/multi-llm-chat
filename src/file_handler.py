@@ -14,6 +14,7 @@ Key components:
 import os
 import logging
 import mimetypes
+import subprocess
 from PIL import Image
 from PIL import UnidentifiedImageError
 from pathlib import Path
@@ -27,55 +28,37 @@ logger = logging.getLogger(__name__)
 class MediaProcessingError(Exception):
     """Base exception for media processing errors."""
 
-    pass
-
 
 class UnsupportedMediaTypeError(MediaProcessingError):
     """Raised when file type is not supported."""
-
-    pass
 
 
 class MediaValidationError(MediaProcessingError):
     """Raised when file fails validation checks."""
 
-    pass
-
 
 class MediaProcessingConfigError(MediaProcessingError):
     """Raised when there's a configuration-related error."""
-
-    pass
 
 
 class ImageProcessingError(MediaProcessingError):
     """Raised when there's an error processing an image."""
 
-    pass
-
 
 class VideoProcessingError(MediaProcessingError):
     """Raised when there's an error processing a video."""
-
-    pass
 
 
 class TextProcessingError(MediaProcessingError):
     """Raised when there's an error processing a text file."""
 
-    pass
-
 
 class CodeProcessingError(MediaProcessingError):
     """Raised when there's an error processing a code file."""
 
-    pass
-
 
 class FileIOError(MediaProcessingError):
     """Raised when there's an error reading from or writing to a file."""
-
-    pass
 
 
 @dataclass
@@ -330,7 +313,7 @@ class ConversationMediaHandler:
             logger.exception(f"Error processing directory {directory_path}")
             raise MediaProcessingError(
                 f"Failed to process directory {directory_path}: {e}"
-            )
+            ) from e
 
     def process_multiple_files(
         self, file_paths: List[str]
@@ -457,25 +440,25 @@ class ConversationMediaHandler:
             raise
         except FileNotFoundError as e:
             logger.error(f"File not found: {file_path}")
-            raise MediaValidationError(f"File not found: {file_path}")
+            raise MediaValidationError(f"File not found: {file_path}") from e
         except PermissionError as e:
             logger.error(f"Permission denied when accessing file: {file_path}")
             raise MediaProcessingError(
                 f"Permission denied when accessing file: {file_path}"
-            )
+            ) from e
         except OSError as e:
             logger.error(f"OS error when processing file {file_path}: {e}")
-            raise MediaProcessingError(f"OS error when processing file: {e}")
+            raise MediaProcessingError(f"OS error when processing file: {e}") from e
         except MemoryError as e:
             logger.error(f"Out of memory when processing file {file_path}")
             raise MediaProcessingError(
                 f"File too large to process in available memory: {file_path}"
-            )
+            ) from e
         except Exception as e:
             logger.exception(
                 f"Unexpected error processing file {file_path} {traceback.format_exc()}"
             )
-            raise MediaProcessingError(f"Failed to process file {file_path}: {e}")
+            raise MediaProcessingError(f"Failed to process file {file_path}: {e}") from e
 
     def prepare_multiple_media_messages(
         self,
@@ -519,14 +502,14 @@ class ConversationMediaHandler:
                 try:
                     with open(metadata.path, "rb") as f:
                         file_data = f.read()
-                except FileNotFoundError:
-                    raise FileIOError(f"File not found: {metadata.path}")
-                except PermissionError:
+                except FileNotFoundError as e:
+                    raise FileIOError(f"File not found: {metadata.path}") from e
+                except PermissionError as e:
                     raise FileIOError(
                         f"Permission denied when accessing file: {metadata.path}"
-                    )
+                    ) from e
                 except OSError as e:
-                    raise FileIOError(f"Error reading file {metadata.path}: {e}")
+                    raise FileIOError(f"Error reading file {metadata.path}: {e}") from e
 
                 # Create message for this file
                 message = {"role": role, "content": [], "metadata": metadata}
@@ -607,12 +590,12 @@ class ConversationMediaHandler:
             try:
                 with open(file_path, "rb") as f:
                     file_data = f.read()
-            except FileNotFoundError:
-                raise FileIOError(f"File not found: {file_path}")
-            except PermissionError:
-                raise FileIOError(f"Permission denied when accessing file: {file_path}")
+            except FileNotFoundError as e:
+                raise FileIOError(f"File not found: {file_path}") from e
+            except PermissionError as e:
+                raise FileIOError(f"Permission denied when accessing file: {file_path}") from e
             except OSError as e:
-                raise FileIOError(f"Error reading file {file_path}: {e}")
+                raise FileIOError(f"Error reading file {file_path}: {e}") from e
 
             # Base message structure
             message = {"role": role, "content": [], "metadata": metadata}
@@ -655,16 +638,16 @@ class ConversationMediaHandler:
         except MediaProcessingError as e:
             logger.error(f"Media processing error: {e}")
             raise
-        except MemoryError:
+        except MemoryError as e:
             logger.error(f"Out of memory when preparing media message for {file_path}")
             raise MediaProcessingError(
                 f"File too large to process in available memory: {file_path}"
-            )
+            ) from e
         except Exception as e:
             logger.exception(f"Failed to prepare media message for {file_path}")
             raise MediaProcessingError(
                 f"Failed to prepare media message for {file_path}: {e}"
-            )
+            ) from e
 
     def create_media_prompt(
         self, metadata: FileMetadata, context: str = "", task: str = "analyze"
@@ -860,7 +843,7 @@ class ConversationMediaHandler:
                             self.max_image_resolution[1] / img.size[1],
                         )
                         new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-                        resized_img = img.resize(new_size, Image.LANCZOS)
+                        resized_img = img.resize(new_size, Image.LANCZOS)  # pylint: disable=no-member
                         logger.info(
                             f"Resized image from {metadata.dimensions} to {new_size}"
                         )
@@ -868,15 +851,15 @@ class ConversationMediaHandler:
                         resized_path = self.output_dir / f"resized_{file_path.name}"
                         logger.info(f"Saving resized image to {resized_path}")
                         resized_img.save(resized_path)
-            except UnidentifiedImageError:
-                raise ImageProcessingError(f"Cannot identify image file: {file_path}")
+            except UnidentifiedImageError as e:
+                raise ImageProcessingError(f"Cannot identify image file: {file_path}") from e
             except (IOError, OSError) as e:
                 raise ImageProcessingError(
                     f"Error opening or processing image file {file_path}: {e}"
-                )
+                ) from e
         except Exception as e:
             logger.exception(f"Unexpected error processing image {file_path}")
-            raise ImageProcessingError(f"Failed to process image {file_path}: {e}")
+            raise ImageProcessingError(f"Failed to process image {file_path}: {e}") from e
 
     def _process_video(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -897,7 +880,7 @@ class ConversationMediaHandler:
         Note: Requires OpenCV (cv2) package for video processing
         """
         try:
-            import cv2
+            import cv2  # pylint: disable=import-outside-toplevel
 
             try:
                 video = cv2.VideoCapture(str(file_path))
@@ -906,7 +889,7 @@ class ConversationMediaHandler:
                         f"Failed to open video file: {file_path}"
                     )
             except Exception as e:
-                raise VideoProcessingError(f"Error opening video file {file_path}: {e}")
+                raise VideoProcessingError(f"Error opening video file {file_path}: {e}") from e
 
             # Get video properties
             width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -961,8 +944,6 @@ class ConversationMediaHandler:
                 frames_dir.mkdir(exist_ok=True)
             except (OSError, IOError) as e:
                 logger.error(f"Failed to create frames directory {frames_dir}: {e}")
-                # Continue processing but log the error
-                pass
 
             # Extract frames at target FPS and resolution
             frame_count = 0
@@ -977,7 +958,6 @@ class ConversationMediaHandler:
                     break
 
                 # Calculate new dimensions maintaining aspect ratio with longest side = max_dimension
-                aspect_ratio = width / height
                 if width > height:  # Landscape
                     new_size = (max_dimension, int(height * max_dimension / width))
                 else:  # Portrait
@@ -1018,8 +998,6 @@ class ConversationMediaHandler:
                         logger.error(
                             f"Failed to save thumbnail for video {file_path}: {e}"
                         )
-                        # Continue processing even if thumbnail creation fails
-                        pass
                     logger.debug(
                         f"Created thumbnail for video {file_path}: {thumb_path}"
                     )
@@ -1037,8 +1015,6 @@ class ConversationMediaHandler:
 
                     try:
                         # Use ffmpeg to convert .mov to .mp4 with proper encoding for Gemini
-                        import subprocess
-
                         cmd = [
                             "ffmpeg",
                             "-i",
@@ -1085,7 +1061,7 @@ class ConversationMediaHandler:
                     except Exception as e:
                         logger.error(f"Error converting .mov to .mp4: {e}")
                         # Fall back to OpenCV processing
-                        logger.info(f"Falling back to OpenCV processing")
+                        logger.info("Falling back to OpenCV processing")
                         out = cv2.VideoWriter(
                             str(processed_video_path), fourcc, target_fps, new_size
                         )
@@ -1138,18 +1114,18 @@ class ConversationMediaHandler:
                     f"Processed video saved to {processed_video_path} with {frame_count} frames at {target_fps} fps and resolution {new_size}"
                 )
 
-        except ImportError:
+        except ImportError as e:
             logger.warning(
                 "OpenCV not available for video processing. Install opencv-python package."
             )
             raise VideoProcessingError(
                 "OpenCV library not available for video processing"
-            )
+            ) from e
         except VideoProcessingError:
             raise  # Re-raise specific exceptions
         except Exception as e:
             logger.exception(f"Unexpected error processing video {file_path}")
-            raise VideoProcessingError(f"Failed to process video {file_path}: {e}")
+            raise VideoProcessingError(f"Failed to process video {file_path}: {e}") from e
 
     def _process_text(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -1169,18 +1145,18 @@ class ConversationMediaHandler:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
                     metadata.text_content = content
-            except FileNotFoundError:
-                raise TextProcessingError(f"Text file not found: {file_path}")
-            except PermissionError:
+            except FileNotFoundError as e:
+                raise TextProcessingError(f"Text file not found: {file_path}") from e
+            except PermissionError as e:
                 raise TextProcessingError(
                     f"Permission denied when accessing text file: {file_path}"
-                )
-        except UnicodeDecodeError:
+                ) from e
+        except UnicodeDecodeError as e:
             raise MediaValidationError(
                 f"Could not decode text file {file_path} as UTF-8"
-            )
+            ) from e
         except Exception as e:
-            raise TextProcessingError(f"Error processing text file {file_path}: {e}")
+            raise TextProcessingError(f"Error processing text file {file_path}: {e}") from e
 
     def _process_code(self, file_path: Path, metadata: FileMetadata) -> None:
         """
@@ -1197,14 +1173,14 @@ class ConversationMediaHandler:
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-            except FileNotFoundError:
-                raise CodeProcessingError(f"Code file not found: {file_path}")
-            except PermissionError:
+            except FileNotFoundError as e:
+                raise CodeProcessingError(f"Code file not found: {file_path}") from e
+            except PermissionError as e:
                 raise CodeProcessingError(
                     f"Permission denied when accessing code file: {file_path}"
-                )
+                ) from e
             except OSError as e:
-                raise CodeProcessingError(f"Error reading code file {file_path}: {e}")
+                raise CodeProcessingError(f"Error reading code file {file_path}: {e}") from e
 
             # Get file extension for language detection
             ext = file_path.suffix.lower()
@@ -1223,9 +1199,9 @@ class ConversationMediaHandler:
                 max(len(line) for line in lines) if lines else 0,
             )
             metadata.mime_type = f"text/x-{language}"
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as e:
             raise MediaValidationError(
                 f"Could not decode code file {file_path} as UTF-8"
-            )
+            ) from e
         except Exception as e:
-            raise CodeProcessingError(f"Error processing code file {file_path}: {e}")
+            raise CodeProcessingError(f"Error processing code file {file_path}: {e}") from e

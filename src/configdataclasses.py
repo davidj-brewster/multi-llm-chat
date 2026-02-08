@@ -72,13 +72,13 @@ class FileConfig:
         # If type was None and get_file_type was used, it's now set.
         # If type is still None here, it means it wasn't provided and couldn't be derived.
         if not self.type:
-             # Attempt to derive type one last time if not set (e.g. direct instantiation with path only)
-             # This case is less likely if constructed via DiscussionConfig processing
-             derived_type = FileConfig.get_file_type(self.path)
-             if derived_type:
-                 self.type = derived_type
-             else:
-                 raise ValueError(f"File type for {self.path} is not specified and could not be derived from extension.")
+            # Attempt to derive type one last time if not set (e.g. direct instantiation with path only)
+            # This case is less likely if constructed via DiscussionConfig processing
+            derived_type = FileConfig.get_file_type(self.path)
+            if derived_type:
+                self.type = derived_type
+            else:
+                raise ValueError(f"File type for {self.path} is not specified and could not be derived from extension.")
 
         file_size = os.path.getsize(self.path)
         extension = os.path.splitext(self.path)[1].lower()
@@ -99,7 +99,7 @@ class FileConfig:
             raise ValueError(
                 f"File size {file_size / (1024 * 1024):.1f}MB exceeds maximum {readable_size} for type {self.type}"
             )
-        
+
         if self.type in ["image", "video"] and self.max_resolution:
             if "max_resolution" not in type_config:
                 logger.warning(f"Max resolution not defined for type {self.type} in SUPPORTED_FILE_TYPES")
@@ -117,8 +117,8 @@ class FileConfig:
                         raise ValueError(
                             f"Requested resolution {width}x{height} exceeds maximum {max_width}x{max_height}"
                         )
-                except ValueError:
-                    raise ValueError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT")
+                except ValueError as e:
+                    raise ValueError(f"Invalid resolution format: {requested_res}. Expected format: WIDTHxHEIGHT") from e
 
 
 @dataclass
@@ -174,7 +174,7 @@ class ModelConfig:
             raise ValueError(
                 f"Invalid role: {self.role}. Must be 'human' or 'assistant'"
             )
-        
+
         if self.persona is not None and not isinstance(self.persona, str):
             logger.warning(f"Persona for model {self.type} is not a string (type: {type(self.persona)}). Converting to string.")
             self.persona = str(self.persona)
@@ -245,5 +245,5 @@ class DiscussionConfig:
             elif not isinstance(self.input_file, FileConfig): # Case 3: Neither string, dict, nor FileConfig object
                 raise ValueError(f"input_file must be a path string, a dictionary, or a FileConfig object, not {type(self.input_file)}")
             # If self.input_file was already a FileConfig object, it remains unchanged, which is correct.
-        
+
         logger.debug(f"Input file: {self.input_file}")

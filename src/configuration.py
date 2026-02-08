@@ -3,44 +3,38 @@ import yaml
 import logging
 import traceback
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 # Ensure MultiFileConfig and DiscussionConfig are imported correctly if they also move
 # or if configuration.py is meant to be the source for them too.
 # For now, assuming they are correctly resolved from their original location or this one.
-from configdataclasses import MultiFileConfig, DiscussionConfig
+from configdataclasses import DiscussionConfig
 from pathlib import Path
 import json
 
 # Custom exception classes for better error handling
 class ConfigurationError(Exception):
     """Base exception for configuration-related errors."""
-    pass
 
 class ConfigFileNotFoundError(ConfigurationError):
     """Raised when a configuration file is not found."""
-    pass
 
 class InvalidConfigFormatError(ConfigurationError):
     """Raised when the configuration format is invalid."""
-    pass
 
 class ModelConfigurationError(ConfigurationError):
     """Raised when there's an error in model configuration."""
-    pass
 
 class SystemInstructionsError(ConfigurationError):
     """Raised when there's an error loading system instructions."""
-    pass
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-from constants import SUPPORTED_MODELS, SUPPORTED_FILE_TYPES
-# Import FileConfig and ModelConfig from configdataclasses.py
-from configdataclasses import FileConfig, ModelConfig
+from configdataclasses import ModelConfig
 
 @dataclass
 class TimeoutConfig:
+    """Configuration for request timeouts, retries, and notification events."""
     request: int = 600
     retry_count: int = 1
     notify_on: List[str] = None
@@ -95,15 +89,17 @@ class TimeoutConfig:
 # Marking DiscussionConfigOld as potentially deprecated by commenting out for now.
 # If it's needed, it should be reviewed and updated.
 class DiscussionConfigOld:
+    """Deprecated placeholder for the legacy discussion configuration."""
     pass
 
 def load_system_instructions() -> Dict:
+    """Load system instructions from the markdown file and parse embedded YAML blocks."""
     instructions_path = Path("docs/system_instructions.md")
     if not instructions_path.exists():
         raise SystemInstructionsError(
             "System instructions file not found at docs/system_instructions.md"
         )
-    content = instructions_path.read_text()
+    content = instructions_path.read_text(encoding="utf-8")
     yaml_blocks = []
     in_yaml = False
     current_block = []
@@ -130,18 +126,19 @@ def load_system_instructions() -> Dict:
     return instructions
 
 def load_config(path: str) -> DiscussionConfig: # Returns DiscussionConfig from configdataclasses.py
+    """Load and validate a discussion configuration from a YAML file."""
     if not os.path.exists(path):
         raise ConfigFileNotFoundError(f"Configuration file not found: {path}")
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             config_dict = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise InvalidConfigFormatError(f"Invalid YAML format in {path}: {e}")
+        raise InvalidConfigFormatError(f"Invalid YAML format in {path}: {e}") from e
     if not isinstance(config_dict, dict) or "discussion" not in config_dict:
         raise ValueError("Configuration must contain a 'discussion' section")
     try:
         system_instructions = load_system_instructions()
-        for model_name, model_config_dict in config_dict["discussion"]["models"].items():
+        for _model_name, model_config_dict in config_dict["discussion"]["models"].items():
             if "instructions" in model_config_dict:
                 template_name = model_config_dict["instructions"].get("template")
                 if template_name in system_instructions:
@@ -169,18 +166,19 @@ def load_config(path: str) -> DiscussionConfig: # Returns DiscussionConfig from 
                         # If persona must be string, convert complex structure to string (e.g., JSON string)
                         # This addresses the persona type mismatch.
                         if isinstance(resolved_persona_structure, (dict, list)):
-                             model_config_dict["persona"] = json.dumps(resolved_persona_structure)
+                            model_config_dict["persona"] = json.dumps(resolved_persona_structure)
                         else:
-                             model_config_dict["persona"] = str(resolved_persona_structure)
+                            model_config_dict["persona"] = str(resolved_persona_structure)
 
         # Ensure that DiscussionConfig (from .configdataclasses) is used for instantiation
         return DiscussionConfig(**config_dict["discussion"])
     except (TypeError, ValueError) as e:
         raise InvalidConfigFormatError(
             f"Invalid configuration format in {path}: {e} {traceback.format_exc()}"
-        )
+        ) from e
 
 def detect_model_capabilities(model_config_input: Union[ModelConfig, str]) -> Dict[str, bool]:
+    """Detect supported capabilities for a given model based on its type string."""
     capabilities = {
         "vision": False,  # Default to False, enable specifically
         "streaming": False,

@@ -5,15 +5,12 @@ This module provides a client for interacting with locally running LMStudio mode
 through their OpenAI-compatible API endpoint.
 """
 
-import os
 import logging
 from typing import List, Dict, Optional, Any
-import json
 import requests
 from openai import OpenAI
 
-# Import base client and configuration
-from model_clients import OpenAIClient, ModelConfig, BaseClient
+from model_clients import OpenAIClient, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +81,7 @@ class LMStudioClient(OpenAIClient):
             response = self.client.models.list()
             self.available_models = [model.id for model in response.data]
             logger.info(f"Available LMStudio models: {self.available_models}")
-        except Exception as e:
+        except Exception as _e:
             # Fallback to direct HTTP request if client method fails
             try:
                 response = requests.get(f"{self.base_url}/models")
@@ -222,10 +219,9 @@ class LMStudioClient(OpenAIClient):
             # Use the custom instruction if available
             if custom_instruction:
                 system_instruction = custom_instruction
-            # Use the system instruction if provided
             elif system_instruction:
-                system_instruction = system_instruction
-            
+                pass  # system_instruction already set
+
             # Use a plain configuration without reasoning parameters
             # since LMStudio models typically don't support them
             if model_config is None:

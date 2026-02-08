@@ -4,11 +4,12 @@ import json
 import os
 import logging
 import datetime
-import spacy
+import string
 from difflib import SequenceMatcher
 from typing import Dict, List, Any
 from collections import Counter
 from dataclasses import dataclass
+from urllib.parse import urlparse
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 from shared_resources import SpacyModelSingleton # Import the correct singleton class
 
@@ -104,12 +105,12 @@ class AssertionGrounder:
         ai_model: str = None,
         human_model: str = None,
     ):  # ssertionEvidence:
+        """Ground and verify assertions from conversations using web search."""
         # Store model information for later use when generating the report
         if ai_model:
             self._ai_model = ai_model
         if human_model:
             self._human_model = human_model
-        """Ground an assertion using Gemini with search capability"""
         try:
             response_full = ""
             response = self.client.models.generate_content(
@@ -414,7 +415,7 @@ CONVERSATION 3 (Non-Metaprompted):
 
             # Save the raw Gemini output to a separate file
             try:
-                with open("templates/gemini_output.html") as f:
+                with open("templates/gemini_output.html", encoding="utf-8") as f:
                     gemini_template = f.read()
 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -425,7 +426,7 @@ CONVERSATION 3 (Non-Metaprompted):
                 if len(html_parts) == 2:
                     full_html = html_parts[0] + raw_response + html_parts[1]
 
-                    with open(gemini_filename, "w") as f:
+                    with open(gemini_filename, "w", encoding="utf-8") as f:
                         f.write(full_html)
 
                     logger.debug(f"Raw Gemini output saved as {gemini_filename}")
@@ -441,7 +442,7 @@ CONVERSATION 3 (Non-Metaprompted):
                 if not os.path.exists(template_path):
                     template_path = "templates/simple_arbiter_report.html"
 
-                with open(template_path) as f:
+                with open(template_path, encoding="utf-8") as f:
                     report_template = f.read()
 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -491,8 +492,8 @@ CONVERSATION 3 (Non-Metaprompted):
                                 winner_text = modified_response[p_start_index + len(p_start_tag):p_end_index].strip()
                                 # Basic check if it looks like a winner statement and not just tags
                                 if winner_text and not winner_text.startswith("<"):
-                                   extracted_winner = winner_text[:250] + ('...' if len(winner_text) > 250 else '') # Limit length slightly more
-                                   logger.debug(f"Extracted winner statement: {extracted_winner}")
+                                    extracted_winner = winner_text[:250] + ('...' if len(winner_text) > 250 else '') # Limit length slightly more
+                                    logger.debug(f"Extracted winner statement: {extracted_winner}")
                                 else:
                                     logger.warning("Found <p> tag after Comparative Analysis, but content seems invalid or empty.")
                         else:
@@ -510,13 +511,12 @@ CONVERSATION 3 (Non-Metaprompted):
                     if len(html_parts) == 2:
                         full_html = html_parts[0] + modified_response + html_parts[1]
 
-                        with open(formatted_filename, "w") as f:
+                        with open(formatted_filename, "w", encoding="utf-8") as f:
                             f.write(full_html)
                 else:
                     # For new template, use safer string.Template
-                    import string
                     template = string.Template(report_template)
-                    with open(formatted_filename, "w") as f:
+                    with open(formatted_filename, "w", encoding="utf-8") as f:
                         f.write(template.safe_substitute(
                             gemini_content=modified_response,
                             winner=extracted_winner, # Use extracted winner here
@@ -570,8 +570,6 @@ CONVERSATION 3 (Non-Metaprompted):
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL"""
         try:
-            from urllib.parse import urlparse
-
             return urlparse(url).netloc
         except Exception:
             return url
@@ -604,13 +602,13 @@ class ConversationArbiter:
 
         self.model = model
         self.grounder = AssertionGrounder(api_key=api_key)
-        self.nlp = SpacyModelSingleton.get_instance() # Use the correct singleton class
+        self.nlp: Any = SpacyModelSingleton.get_instance()  # spaCy Language or None
 
     def analyze_conversation_flow(
         self, messages: List[Dict[str, str]]
     ) -> Dict[str, Any]:
-        """Analyze conversation flow patterns and transitions"""
-        """
+        """Analyze conversation flow patterns and transitions.
+
         Analyze conversation flow patterns and topic transitions.
 
         This method uses NLP techniques to identify topics in the conversation,
@@ -664,7 +662,7 @@ class ConversationArbiter:
                     try:
                         # Ensure content is not empty and is properly processed
                         if msg["content"].strip():
-                            doc = self.nlp(msg["content"])
+                            doc = self.nlp(msg["content"])  # pylint: disable=not-callable
                             docs.append(doc)
                     except Exception as inner_e:
                         logger.warning(f"Error processing message with spaCy: {inner_e}")
@@ -706,9 +704,8 @@ class ConversationArbiter:
                             "topic_distribution": {},
                             "error": f"Distance calculation error: {e}"
                         }
-                    else:
-                        # Re-raise other ValueError types
-                        raise
+                    # Re-raise other ValueError types
+                    raise
 
                 flow_metrics = {
                     "topic_coherence": 1.0 - (topic_shifts / max(1, len(messages))),  # Avoid division by zero
@@ -732,14 +729,13 @@ class ConversationArbiter:
                     "topic_distribution": {},
                     "error": f"Distance calculation error: {e}"
                 }
-            else:
-                # For other ValueErrors, log and return default values
-                logger.error(f"Value error in conversation flow analysis: {e}")
-                return {
-                    "topic_coherence": 0.5,
-                    "topic_depth": 0.5,
-                    "topic_distribution": {},
-                }
+            # For other ValueErrors, log and return default values
+            logger.error(f"Value error in conversation flow analysis: {e}")
+            return {
+                "topic_coherence": 0.5,
+                "topic_depth": 0.5,
+                "topic_distribution": {},
+            }
         except Exception as e:
             # For all other exceptions, log and return default values
             logger.error(f"Error analyzing conversation flow: {e}")
@@ -750,9 +746,7 @@ class ConversationArbiter:
             }
 
     def _text_similarity(self, text1: str, text2: str) -> float:
-        """Calculate semantic similarity between two texts"""
-        """
-        Calculate semantic similarity between two text strings.
+        """Calculate semantic similarity between two texts.
 
         Uses spaCy's vector-based similarity when available, falling back to
         SequenceMatcher for string similarity when spaCy is not available.
@@ -771,8 +765,8 @@ class ConversationArbiter:
                 if not text1 or not text2 or len(text1) < 3 or len(text2) < 3:
                     return 0.0
 
-                doc1 = self.nlp(text1)
-                doc2 = self.nlp(text2)
+                doc1 = self.nlp(text1)  # pylint: disable=not-callable
+                doc2 = self.nlp(text2)  # pylint: disable=not-callable
 
                 # Check if documents have vectors before calculating similarity
                 if doc1.vector_norm and doc2.vector_norm:
@@ -795,9 +789,7 @@ class ConversationArbiter:
             return 0.0
 
     def _calculate_topic_distribution(self, topics: List[str]) -> Dict[str, float]:
-        """Calculate normalized topic frequencies"""
-        """
-        Calculate normalized frequency distribution of topics.
+        """Calculate normalized topic frequencies.
 
         Counts occurrences of each topic and normalizes by the total count
         to create a probability distribution.
@@ -811,6 +803,28 @@ class ConversationArbiter:
         counts = Counter(topics)
         total = sum(counts.values())
         return {topic: count / total for topic, count in counts.items()}
+
+    def _basic_flow_analysis(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Basic flow analysis fallback when spaCy is unavailable."""
+        content_list = [m.get("content", "") for m in messages if m.get("content")]
+        unique_words = set()
+        for c in content_list:
+            unique_words.update(c.lower().split())
+        return {
+            "topic_coherence": 0.5,
+            "topic_depth": len(unique_words) / max(1, len(messages)),
+            "topic_distribution": {},
+        }
+
+    def _create_empty_analysis(self) -> Dict[str, Any]:
+        """Return an empty analysis structure for error fallback."""
+        return {
+            "conversation_analysis": {
+                "metadata": {},
+                "quality_metrics": {},
+                "insights": [],
+            }
+        }
 
     def _format_gemini_prompt(self, messages: List[Dict[str, str]]) -> str:
         """Format conversation for Gemini model input"""
@@ -912,7 +926,12 @@ class ConversationArbiter:
     ) -> Any:  # Dict[str, Dict[str, AssertionEvidence]]:
         """Ground assertions from both conversations"""
 
-        grounded = self._ground_assertions(self, ai_ai_analysis, human_ai_analysis)
+        grounded = self.grounder.ground_assertions(
+            aiai_conversation=str(ai_ai_analysis),
+            humanai_conversation=str(human_ai_analysis),
+            default_conversation="",
+            topic="",
+        )
         return grounded
 
 
@@ -948,9 +967,7 @@ class VisualizationGenerator:
     def generate_timeline(
         self, assertions: Dict[str, Dict[str, AssertionEvidence]]
     ) -> str:
-        """Generate timeline visualization of grounded assertions"""
-        """
-        Generate a timeline visualization of grounded assertions from both conversations.
+        """Generate timeline visualization of grounded assertions.
 
         Creates a Plotly scatter plot showing assertions from both AI-AI and Human-AI
         conversations on a timeline, with each assertion represented as a point with text.
@@ -1005,9 +1022,7 @@ def evaluate_conversations(
     ai_model: str = None,
     human_model: str = None,
 ) -> ArbiterResult:
-    """Compare and evaluate three conversation modes"""
-    """
-    Compare and evaluate three conversation modes: AI-AI, Human-AI, and default.
+    """Compare and evaluate three conversation modes: AI-AI, Human-AI, and default.
 
     This function performs comprehensive analysis of conversations including flow
     analysis, topic coherence, and grounding of assertions. It uses the Gemini API
@@ -1030,7 +1045,7 @@ def evaluate_conversations(
 
         # Initialize arbiter with error handling
         try:
-            convmetrics = ConversationMetrics()
+            _convmetrics = ConversationMetrics()
             arbiter = ConversationArbiter(api_key=gemini_api_key)
             logger.info("ConversationArbiter initialized successfully")
         except Exception as e:

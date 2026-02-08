@@ -13,7 +13,7 @@ import math
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 class ContextAnalysisError(Exception):
     """Raised when context analysis fails."""
-    pass
 
 
 @dataclass
@@ -84,6 +83,7 @@ class ContextVector:
 
     @property
     def uncertainty_markers(self) -> Dict[str, float]:
+        """Return epistemic stance signals as uncertainty markers."""
         return self.epistemic_stance
 
 
@@ -98,7 +98,7 @@ class ContextAnalyzer:
     def __init__(self, mode: str = "ai-ai"):
         self.mode = mode
         try:
-            self.nlp = SpacyModelSingleton.get_instance()
+            self.nlp: Any = SpacyModelSingleton.get_instance()
         except (OSError, Exception) as e:
             logger.warning(f"spaCy unavailable ({e}), using fallback analysis only")
             self.nlp = None
@@ -154,14 +154,14 @@ class ContextAnalyzer:
     def _get_sentences(self, text: str) -> List[str]:
         """Split text into sentences using spaCy or regex fallback."""
         if self.nlp:
-            doc = self.nlp(text[:10000])  # cap for performance
+            doc = self.nlp(text[:10000])  # pylint: disable=not-callable
             return [sent.text.strip() for sent in doc.sents if sent.text.strip()]
         return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
     def _get_words(self, text: str) -> List[str]:
         """Extract words from text, optionally lemmatized with spaCy."""
         if self.nlp:
-            doc = self.nlp(text[:10000])
+            doc = self.nlp(text[:10000])  # pylint: disable=not-callable
             return [token.lemma_.lower() for token in doc if not token.is_punct and not token.is_space]
         return [w.lower() for w in re.findall(r'\b[a-zA-Z]+\b', text)]
 
@@ -343,7 +343,7 @@ class ContextAnalyzer:
         topics: Dict[str, int] = {}
 
         if self.nlp:
-            doc = self.nlp(combined[:10000])
+            doc = self.nlp(combined[:10000])  # pylint: disable=not-callable
             for chunk in doc.noun_chunks:
                 key = chunk.root.lemma_.lower()
                 if len(key) > 2:
@@ -400,7 +400,7 @@ class ContextAnalyzer:
         by_role = self._get_messages_by_role(history)
         scores = []
 
-        for role, messages in by_role.items():
+        for _role, messages in by_role.items():
             if len(messages) < 2:
                 continue
             recent = messages[-4:]
@@ -419,7 +419,7 @@ class ContextAnalyzer:
             if self.nlp:
                 processed = []
                 for msg in messages:
-                    doc = self.nlp(msg[:5000])
+                    doc = self.nlp(msg[:5000])  # pylint: disable=not-callable
                     processed.append(" ".join(t.lemma_.lower() for t in doc if not t.is_punct and not t.is_space))
             else:
                 processed = messages
@@ -506,7 +506,7 @@ class ContextAnalyzer:
         by_role = self._get_messages_by_role(history)
         scores = []
 
-        for role, messages in by_role.items():
+        for _role, messages in by_role.items():
             if len(messages) < 2:
                 continue
             recent = messages[-3:]

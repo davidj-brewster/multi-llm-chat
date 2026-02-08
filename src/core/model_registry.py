@@ -25,7 +25,7 @@ class ModelRegistry:
 
         logger.debug(f"Loading model registry from: {registry_path}")
 
-        with open(registry_path) as f:
+        with open(registry_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         self.openai_models = data.get("openai_models", {})
@@ -68,19 +68,18 @@ class ModelRegistry:
         """
         if provider == "openai":
             return self.openai_models
-        elif provider == "gemini":
+        if provider == "gemini":
             return self.gemini_models
-        elif provider == "claude":
+        if provider == "claude":
             return self.claude_models
-        elif provider is None:
+        if provider is None:
             # Return all models
             return {
                 **self.openai_models,
                 **self.gemini_models,
                 **self.claude_models,
             }
-        else:
-            raise ValueError(f"Unknown provider: {provider}")
+        raise ValueError(f"Unknown provider: {provider}")
 
     def get_ollama_thinking_config(self, model_name: str) -> Optional[Dict[str, Any]]:
         """

@@ -122,8 +122,7 @@ class ClaudeReasoningConfig:
         # Join all instructions
         if instructions:
             return "REASONING INSTRUCTIONS:\n" + "\n".join(instructions)
-        else:
-            return ""
+        return ""
 
 
 # Example reasoning templates
@@ -150,13 +149,13 @@ REASONING_TEMPLATES = {
         "format": """
         Given:
         - [List of given information]
-        
+
         Approach:
         [Explanation of method]
-        
+
         Calculation:
         [Step-by-step calculation]
-        
+
         Result:
         [Final answer with units if applicable]
         """,
@@ -169,7 +168,7 @@ REASONING_TEMPLATES = {
         "format": """
         REASONING PROCESS:
         [Summary of key insights from extended thinking]
-        
+
         ANSWER:
         [Final answer with confidence level]
         """,
@@ -181,10 +180,10 @@ REASONING_TEMPLATES = {
         "format": """
         ANALYSIS SUMMARY:
         [Key insights from extended thinking]
-        
+
         DETAILED REASONING:
         [Step-by-step explanation]
-        
+
         CONCLUSION:
         [Final answer with confidence level and limitations]
         """,

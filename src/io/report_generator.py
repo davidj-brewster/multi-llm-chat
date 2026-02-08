@@ -21,7 +21,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
 
         # Only proceed if we have a report dict with metrics to visualize
         try:
-            with open("templates/arbiter_report.html") as f:
+            with open("templates/arbiter_report.html", encoding="utf-8") as f:
                 template = f.read()
 
             # Generate dummy data for the report if needed
@@ -61,7 +61,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             filename = f"arbiter_visualization_{timestamp}.html"
 
-            with open(filename, "w") as f:
+            with open(filename, "w", encoding="utf-8") as f:
                 f.write(report_content)
 
             logger.info(f"Arbiter visualization report saved as {filename}")
@@ -135,7 +135,7 @@ async def save_metrics_report(
                 </html>
                 """
 
-                with open(metrics_filename, "w") as f:
+                with open(metrics_filename, "w", encoding="utf-8") as f:
                     f.write(html_content)
 
                 logger.info(f"Metrics report saved successfully as {metrics_filename}")
@@ -197,7 +197,7 @@ async def save_metrics_report(
                     </html>
                     """
 
-                    with open(metrics_filename, "w") as f:
+                    with open(metrics_filename, "w", encoding="utf-8") as f:
                         f.write(html_content)
 
                     logger.debug(f"Basic metrics report saved as {metrics_filename}")
@@ -234,7 +234,7 @@ async def save_metrics_report(
             </html>
             """
 
-            with open(error_filename, "w") as f:
+            with open(error_filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
             logger.debug(f"Error report saved as {error_filename}")

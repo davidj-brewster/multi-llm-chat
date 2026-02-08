@@ -33,6 +33,7 @@ jobs:
       run: |
         uv pip install --system pylint
         uv pip install --system -r requirements.txt
-    - name: Analysing the code with pylint
+
+    - name: Lint with pylint
       run: |
-        pylint $(git ls-files 'src/*.py') --fail-under 4.0
+        pylint $(git ls-files 'src/*.py')

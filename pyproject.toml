@@ -158,5 +158,31 @@ dependencies = [
 [tool.uv.workspace]
 members = ["mlx", "mlx-model"]
 
+[tool.pylint.main]
+extension-pkg-allow-list = ["cv2", "PIL"]
+fail-under = 7.0
+
+[tool.pylint."messages control"]
+disable = [
+    "logging-fstring-interpolation",
+    "too-many-nested-blocks",
+    "line-too-long",
+    "broad-exception-caught",
+    "too-many-instance-attributes",
+    "too-many-arguments",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-return-statements",
+    "too-many-public-methods",
+    "too-few-public-methods",
+    "duplicate-code",
+    "import-error",
+    "no-name-in-module",
+]
+
+[tool.pylint.typecheck]
+generated-members = ["cv2.*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]

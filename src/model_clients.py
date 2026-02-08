@@ -3,6 +3,7 @@
 import os
 import logging
 import random
+import inspect
 from typing import List, Dict, Optional, TypeVar, Any, Union
 from dataclasses import dataclass
 from google import genai
@@ -255,7 +256,7 @@ class BaseClient:
                 "width": file_data.get("dimensions", (0, 0))[0],
                 "height": file_data.get("dimensions", (0, 0))[1],
             }
-        elif file_data["type"] == "video":
+        if file_data["type"] == "video":
             # For video, we'll use key frames
             return {
                 "type": "video",
@@ -270,7 +271,7 @@ class BaseClient:
                 "resolution": file_data.get("resolution", (0, 0)),
                 "path": file_data.get("video_path", ""),
             }
-        elif file_data["type"] in ["text", "code"]:
+        if file_data["type"] in ["text", "code"]:
             return {
                 "type": file_data["type"],
                 "content": file_data.get("text_content", ""),
@@ -280,8 +281,7 @@ class BaseClient:
                     else None
                 ),
             }
-        else:
-            return None
+        return None
 
     def _prepare_multiple_file_content(
         self, file_data_list: List[Dict[str, Any]]
@@ -587,12 +587,10 @@ class BaseClient:
                 return self.generate_human_prompt()
         if self.mode and self.mode == "ai-ai":
             return self.generate_human_prompt()
-        else:  # if self.mode == "human-ai":
-            if role == "user" or role == "human":
-                return self.generate_human_prompt()
-            else:
-                return "You are an AI assistant interacting with a human."
-        return ""
+        # if self.mode == "human-ai":
+        if role == "user" or role == "human":
+            return self.generate_human_prompt()
+        return "You are an AI assistant interacting with a human."
 
     def generate_human_system_instructions(self) -> str:
         """
@@ -686,7 +684,7 @@ Remember:
             >>> "CHALLENGE ASSUMPTIONS" in prompt
             True
         """
-        return f"""YOU ARE A HUMAN AND SHOULD ACT AS A HUMAN INTERACTING WITH AN AI. 
+        return f"""YOU ARE A HUMAN AND SHOULD ACT AS A HUMAN INTERACTING WITH AN AI.
 Create a respomse related to {self.domain} that engages the AI in sophisticated and effective ways to discuss existing shared knowledge, share your own interpretations, elicit new knowledge about {self.domain}. Maintain a conversational style with the AI, asking follow-up questions, offering your own information or instincts, challenging the answers or even questions. Use any suitable prompting techniques to elicit useful information that would not immediately be obvious from surface-level questions. Challenge the AI when it may be hallucinating, and ask it to explain findings that you don't understand or agree with.
 Prompt Guidelines:
 0. Check prior context, CHALLENGE ASSUMPTIONS and analyze the flaws or limitations in the others response before proceeding! Avoid repetition or rephrasing/restating any prior context
@@ -699,7 +697,7 @@ Prompt Guidelines:
 8. Ask for explanations, reasoning, and detail where suitable but equally provide your own take
 9. Always maintain the illusion that you are a human expert with plentiful knowledge and experience to share
 10. Identify potential logic traps or fallacies from their responses, detect subtext, hidden assumptions, biases etc and challenge or use those to your advantage as a human would
-11. Vary responses in tone, depth and complexity to see what works best. 
+11. Vary responses in tone, depth and complexity to see what works best.
 12. Don't get bogged down in irrelevant details or stuck on a single sub-topic or "defining scope"
 13 Don't ask a question without giving a thought-out response from your own perspective (based on your knowledge and vast experience)
 14 Before any idea, question or suggestion is finalized, defend an alternative stance. Does it change your opinion?
@@ -773,11 +771,11 @@ Generate a natural but sophisticated response that:
                 current_mode = mode
             else:
                 logger.critical(f"_determine_user_prompt_content: mode is not configured in this step. Terminating. Debug follows {prompt} {history}")
-                raise ValueError(f"_determine_user_prompt_content: No conversation mode configured")
-           
+                raise ValueError("_determine_user_prompt_content: No conversation mode configured")
+
         if not current_mode:
-            logger.critical(f"_determine_user_prompt_content: current_mode unconfigured somehow")
-            raise ValueError(f"_determine_user_prompt_content: current_mode unconfigured")
+            logger.critical("_determine_user_prompt_content: current_mode unconfigured somehow")
+            raise ValueError("_determine_user_prompt_content: current_mode unconfigured")
 
         is_goal_task = any(marker in self.domain.upper() for marker in ["GOAL", "TASK", "WRITE A", "MAKE A", "WRITE A", "DESIGN", "BUILD"])
 
@@ -785,13 +783,12 @@ Generate a natural but sophisticated response that:
             # For goal tasks, only the 'human' role gets the simulation prompt
             if role == "human" or role == "user":
                 return self.generate_human_prompt(history)
-            else: # Assistant role gets the raw prompt (previous output)
-                return prompt
-        elif (role == "human" or role == "user" or current_mode == "ai-ai") and current_mode != "default" and current_mode != "no-meta-prompting":
-             # Non-goal tasks, ai-ai mode or human role gets simulation prompt
-             return self.generate_human_prompt(history)
-        else:
+            # Assistant role gets the raw prompt (previous output)
             return prompt
+        if (role == "human" or role == "user" or current_mode == "ai-ai") and current_mode != "default" and current_mode != "no-meta-prompting":
+            # Non-goal tasks, ai-ai mode or human role gets simulation prompt
+            return self.generate_human_prompt(history)
+        return prompt
 
     def validate_connection(self) -> bool:
         """
@@ -968,7 +965,7 @@ class GeminiClient(BaseClient):
             )
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
-            raise ValueError(f"Invalid Gemini API key: {e}")
+            raise ValueError(f"Invalid Gemini API key: {e}") from e
 
         # Initialize generation config
         self._setup_generation_config()
@@ -1131,11 +1128,11 @@ class GeminiClient(BaseClient):
                 combined_parts = []
                 # Add the text content first
                 combined_parts.append({"text": text_content})
-                
+
                 # Then add all images
                 for image_part in image_parts:
                     combined_parts.append(image_part)
-                
+
                 # Replace existing content with a properly formatted message
                 # This matches how single images are handled (line ~1107)
                 contents = [{
@@ -1143,12 +1140,12 @@ class GeminiClient(BaseClient):
                     "parts": combined_parts
                 }]
                 logger.info(f"Added multimodal content with {len(image_parts)} images to Gemini request")
-                
+
             if isinstance(file_data, dict) and "type" in file_data:
                 if file_data["type"] == "image" and "base64" in file_data:
                     # Format image for Gemini (single image case
                     logger.info(f"Processing single image for Gemini with mime_type: {file_data.get('mime_type', 'image/jpeg')}")
-                    
+
                     # Create a message with both text and image
                     contents = [{
                         "role": "user",
@@ -1306,7 +1303,7 @@ class GeminiClient(BaseClient):
                         if (response and response is not None)
                         else ""
                     )
-                elif "key_frames" in file_data and file_data["key_frames"] or "image" in file_data and "base64" in file_data:
+                if "key_frames" in file_data and file_data["key_frames"] or "image" in file_data and "base64" in file_data:
                     # Fallback to key frames if available
                     for frame in file_data["key_frames"]:
                         contents.append(
@@ -1347,11 +1344,11 @@ class GeminiClient(BaseClient):
                 )
 
         # Add prompt text
-        
+
 
         try:
             # --- Debug Logging ---
-            logger.debug(f"--- Gemini Request ---")
+            logger.debug("--- Gemini Request ---")
             logger.debug(f"Model: {self.model_name}")
             logger.debug(f"System Instruction: {current_instructions}")
             logger.debug(f"Contents: {contents}")
@@ -1362,7 +1359,7 @@ class GeminiClient(BaseClient):
                 config=types.GenerateContentConfig(
                     temperature=0.8,
                     max_output_tokens=model_config.max_tokens if model_config else MAX_TOKENS, # Use model_config
-                    systemInstruction=current_instructions, 
+                    systemInstruction=current_instructions,
                     candidateCount=1,
                     safety_settings=[
                         types.SafetySetting(
@@ -1427,9 +1424,8 @@ class GeminiClient(BaseClient):
                 audio_data = response.candidates[0].content.parts[0].inline_data.data
                 logger.info(f"Successfully generated {len(audio_data)} bytes of audio data.")
                 return audio_data
-            else:
-                logger.error("No audio data received from Gemini TTS API.")
-                return b""
+            logger.error("No audio data received from Gemini TTS API.")
+            return b""
         except Exception as e:
             logger.error(f"GeminiClient generate_speech error: {e}")
             raise
@@ -1557,7 +1553,7 @@ class ClaudeClient(BaseClient):
             # This can be overridden by the model config in ai-battle.py.
             if not hasattr(self, "reasoning_level") or self.reasoning_level is None:
                 if "claude-3-7" in self.model.lower() or "opus" in self.model.lower():
-                    self.reasoning_level = "high" 
+                    self.reasoning_level = "high"
                 elif "sonnet" in self.model.lower():
                     self.reasoning_level = "medium"
                 else:
@@ -1610,7 +1606,7 @@ class ClaudeClient(BaseClient):
             for msg in history # Iterate through the original history
             if msg.get("role") in ["user", "human", "assistant"] # Filter valid roles
         ]
-        text_content = final_prompt_content 
+        text_content = final_prompt_content
         # Handle file data
         if file_data:
             if isinstance(file_data, list) and file_data:
@@ -1668,23 +1664,6 @@ class ClaudeClient(BaseClient):
                                 image_count += len(video_frames)
 
                 # Process text files
-                if "image" in file_item and file_item["image"]:
-                    for frame in file_item["image"][
-                        : self.max_images_per_request - image_count
-                    ]:
-                        message_content.append(
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": file_item.get(
-                                        "mime_type", "image/jpeg"
-                                    ),
-                                    "data": file_item["base64"],
-                                }
-                            }
-                        )
-                    image_count += len(video_frames)               
                 for file_item in file_data:
                     if isinstance(file_item, dict) and "type" in file_item:
                         if (
@@ -1728,7 +1707,7 @@ class ClaudeClient(BaseClient):
                             file_path = file_data.get("path", "image")
                             file_name = os.path.basename(file_path)
                             file_ext = os.path.splitext(file_path)[1]
-                            
+
                             # Enhanced prompt that explicitly references the image
                             enhanced_prompt = f"{final_prompt_content}\n\nPlease analyze this {file_ext} image file: {file_name}"
 
@@ -1872,8 +1851,6 @@ class ClaudeClient(BaseClient):
 
                     # Try to check if the client explicitly supports this
                     try:
-                        import inspect
-
                         create_signature = inspect.signature(
                             self.client.messages.create
                         )
@@ -1886,7 +1863,7 @@ class ClaudeClient(BaseClient):
 
                     if client_has_thinking_param:
                         request_params["thinking"] = True
-                        logger.debug(f"Added extended thinking parameter")
+                        logger.debug("Added extended thinking parameter")
 
                         # Add budget_tokens if specified
                         if self.budget_tokens is not None:
@@ -1918,7 +1895,7 @@ class ClaudeClient(BaseClient):
 
         try:
             # --- Debug Logging ---
-            logger.debug(f"--- Claude Request ---")
+            logger.debug("--- Claude Request ---")
             logger.debug(f"Model: {request_params.get('model')}")
             logger.debug(f"System Instruction: {request_params.get('system')}")
             logger.debug(f"Messages: {request_params.get('messages')}")
@@ -1931,11 +1908,11 @@ class ClaudeClient(BaseClient):
                     try:
                         # Try with all advanced params first, but be prepared to fall back
                         logger.debug(
-                            f"Attempting to use advanced parameters for Claude 3.7"
+                            "Attempting to use advanced parameters for Claude 3.7"
                         )
                         response = self.client.messages.create(**request_params)
                         logger.debug(
-                            f"Successfully used advanced parameters with Claude 3.7"
+                            "Successfully used advanced parameters with Claude 3.7"
                         )
                     except TypeError as e:
                         # Handle unsupported parameters
@@ -2028,10 +2005,10 @@ class OpenAIClient(BaseClient):
         self.client = OpenAI(api_key=api_key)
         self.last_response_id = None # For Responses API context chaining
         self.use_responses_api = True  # Default to trying Responses API first
-        
+
         # Models compatible with the experimental Responses API
         self.responses_compatible_models = [
-            "o1", "o1-preview", "o3", "gpt-4o", "gpt-4o-mini", 
+            "o1", "o1-preview", "o3", "gpt-4o", "gpt-4o-mini",
             "gpt-4.1", "gpt-4.1-mini", "o4-mini", "gpt-4.1-nano"
         ]
         # Models supporting the 'reasoning' parameter in the Responses API
@@ -2039,14 +2016,14 @@ class OpenAIClient(BaseClient):
             "o1", "o1-preview", "o3", "o4-mini", "o4-mini-high"
         ]
         self.reasoning_level = "auto"  # Default reasoning level: "none", "low", "medium", "high", "auto"
-        
+
         try:
             super().__init__(
                 mode=mode, api_key=api_key, domain=domain, model=model, role=role
             )
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
-            raise ValueError(f"Invalid OpenAI API key or model: {e}")
+            raise ValueError(f"Invalid OpenAI API key or model: {e}") from e
 
     def validate_connection(self) -> bool:
         """Test OpenAI API connection"""
@@ -2085,7 +2062,7 @@ class OpenAIClient(BaseClient):
                 if response.output[0].content and isinstance(response.output[0].content, list):
                     if hasattr(response.output[0].content[0], "text"):
                         return response.output[0].content[0].text
-            
+
             # Fallback to data structure (if it's a list of messages)
             if hasattr(response, "data") and response.data and isinstance(response.data, list):
                 for msg_item in response.data:
@@ -2100,7 +2077,7 @@ class OpenAIClient(BaseClient):
                 if hasattr(response.choices[0], "message") and hasattr(response.choices[0].message, "content"):
                     return response.choices[0].message.content
                 if hasattr(response.choices[0], "text"): # Older structure
-                     return response.choices[0].text
+                    return response.choices[0].text
 
 
             # Fallback if it's a raw JSON response that needs to be parsed
@@ -2110,7 +2087,7 @@ class OpenAIClient(BaseClient):
                     return body["choices"][0]["message"]["content"]
         except Exception as e:
             logger.error(f"Error during Responses API output parsing: {e}")
-        
+
         logger.warning("Could not parse Responses API output using known structures. Returning raw string.")
         return str(response)
 
@@ -2118,7 +2095,7 @@ class OpenAIClient(BaseClient):
     def generate_response(
         self,
         prompt: str,
-        system_instruction: str, 
+        system_instruction: str,
         history: List[Dict[str, str]],
         role: str = None,
         mode: str = None,
@@ -2129,11 +2106,11 @@ class OpenAIClient(BaseClient):
         if role: self.role = role
         if mode and ( mode == "human" or mode == "user" ): self.mode = "user"
         else:
-            self.mode = "agent" 
+            self.mode = "agent"
         current_model_config = model_config if model_config else ModelConfig()
         # History is not directly used by Responses API which uses previous_response_id
         # It will be used by the Chat Completions fallback path.
-        
+
         current_instructions = self._determine_system_instructions(system_instruction, history, self.role, self.mode)
         final_prompt_content = self._determine_user_prompt_content(prompt, history, self.role, self.mode)
 
@@ -2141,9 +2118,9 @@ class OpenAIClient(BaseClient):
 
         if self.use_responses_api and model_supports_responses:
             logger.debug(f"Attempting OpenAI Responses API with model {self.model}")
-            
+
             current_turn_input_items = self._prepare_responses_api_input(final_prompt_content, file_data)
-            
+
             responses_api_params = {
                 "model": self.model,
                 "input": current_turn_input_items,
@@ -2155,7 +2132,7 @@ class OpenAIClient(BaseClient):
             }
             if self.last_response_id:
                 responses_api_params["previous_response_id"] = self.last_response_id
-            
+
             if any(m_name in self.model.lower() for m_name in self.reasoning_compatible_models):
                 reasoning_mapping = {"none": "low", "low": "low", "medium": "medium", "high": "high", "auto": "high"}
                 reasoning_effort = reasoning_mapping.get(self.reasoning_level, "high") # Default "auto" to "high"
@@ -2163,9 +2140,9 @@ class OpenAIClient(BaseClient):
                 logger.debug(f"Using reasoning_effort='{reasoning_effort}' for model {self.model} (from reasoning_level='{self.reasoning_level}')")
 
             if current_model_config.seed is not None:
-                 responses_api_params["seed"] = current_model_config.seed
+                responses_api_params["seed"] = current_model_config.seed
             if current_model_config.stop_sequences:
-                 responses_api_params["stop"] = current_model_config.stop_sequences
+                responses_api_params["stop"] = current_model_config.stop_sequences
 
             try:
                 response = self.client.responses.create(**responses_api_params)
@@ -2173,12 +2150,12 @@ class OpenAIClient(BaseClient):
                 return self._parse_responses_api_output(response)
             except Exception as e: # Catch OpenAI specific errors if possible, e.g. openai.APIError
                 logger.warning(f"OpenAI Responses API failed for model {self.model} ({type(e).__name__}: {e}). Falling back to Chat Completions API.")
-                self.use_responses_api = False 
+                self.use_responses_api = False
                 # Fall through to Chat Completions API
-        
+
         # --- Chat Completions API Path (Default or Fallback) ---
         logger.info(f"Using OpenAI Chat Completions API for model {self.model} (or as fallback).")
-        
+
         chat_completions_messages = []
         iset = getattr(self, '_last_instruction_set', None)
         if iset and isinstance(iset, InstructionSet) and iset.persona:
@@ -2202,7 +2179,7 @@ class OpenAIClient(BaseClient):
                     chat_completions_messages.append({"role": "user", "content": msg_data["content"]})
                 elif isinstance(msg_data.get("content"), str): # Standard string content
                     chat_completions_messages.append({"role": mapped_role, "content": msg_data["content"]})
-        
+
         user_message_cc_parts = [{"type": "text", "text": final_prompt_content}]
         if file_data:
             files_to_process = file_data if isinstance(file_data, list) else [file_data]
@@ -2215,12 +2192,12 @@ class OpenAIClient(BaseClient):
                             "image_url": {"url": f"data:{mime_type};base64,{file_item['base64']}"}
                         })
                 elif isinstance(file_item, dict) and file_item.get("type") in ["text", "code"] and "text_content" in file_item:
-                     user_message_cc_parts[0]["text"] = (
+                    user_message_cc_parts[0]["text"] = (
                         f"[Content from file: {file_item.get('path', 'unknown')}]\n"
                         f"{file_item['text_content']}\n\n"
                         f"{user_message_cc_parts[0]['text']}"
                     )
-        
+
         # Inject interventions near user turn for recency bias (OpenAI)
         if iset and isinstance(iset, InstructionSet) and iset.interventions:
             chat_completions_messages.append({"role": "system", "content": f"[IMPORTANT DIRECTIVE]\n{iset.interventions}"})
@@ -2241,7 +2218,7 @@ class OpenAIClient(BaseClient):
         if current_model_config.seed is not None:
             request_params["seed"] = current_model_config.seed
 
-        logger.debug(f"--- OpenAI Chat Completions Request (Fallback/Default) ---")
+        logger.debug("--- OpenAI Chat Completions Request (Fallback/Default) ---")
         logger.debug(f"Model: {request_params.get('model')}")
         logger.debug(f"Messages count: {len(request_params.get('messages', []))}")
 
@@ -2307,7 +2284,7 @@ class MLXClient(BaseClient):
 
         if current_instructions:
             messages.append({"role": "system", "content": current_instructions}) # Add system instruction first
-            
+
         if history:
             # Limit history to last 10 messages
             recent_history = history
@@ -2359,7 +2336,7 @@ class MLXClient(BaseClient):
 
         try:
             # --- Debug Logging ---
-            logger.debug(f"--- MLX Request ---")
+            logger.debug("--- MLX Request ---")
             logger.debug(f"URL: {self.base_url}/v1/chat/completions")
             # Note: System instruction is the first message in messages
             logger.debug(f"Messages: {messages}")
@@ -2591,7 +2568,7 @@ class OllamaClient(BaseClient):
         )
 
         try:
-            logger.debug(f"--- Ollama Request ---")
+            logger.debug("--- Ollama Request ---")
             logger.debug(f"Model: {self.model}, think={think_value}, num_ctx={effective_num_ctx}")
             logger.debug(f"Messages: {len(messages)} messages")
 
@@ -2612,8 +2589,8 @@ class OllamaClient(BaseClient):
             response: ChatResponse = self.client.chat(**chat_kwargs)
 
             # Extract thinking content if present (SDK 0.6.x: response.message.thinking)
-            thinking_content = getattr(response.message, 'thinking', None)
-            main_content = response.message.content or ""
+            thinking_content = getattr(response.message, 'thinking', None)  # pylint: disable=no-member
+            main_content = response.message.content or ""  # pylint: disable=no-member
 
             # Surface thinking content wrapped in <thinking> tags
             # The UI's render_message_with_thinking() already parses these

@@ -3,12 +3,10 @@ from pathlib import Path
 import yaml
 from configuration import (
     load_config,
-    DiscussionConfig,
-    ModelConfig,
-    FileConfig,
     TimeoutConfig,
     detect_model_capabilities,
 )
+from configdataclasses import DiscussionConfig, ModelConfig, FileConfig
 
 
 def test_valid_config(tmp_path):

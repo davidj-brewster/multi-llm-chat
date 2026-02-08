@@ -6,11 +6,10 @@ injected per-provider for maximum effect.
 """
 
 from context_analysis import ContextAnalyzer, ContextVector
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 import logging
-import traceback
-from shared_resources import InstructionTemplates, MemoryManager
+from shared_resources import InstructionTemplates
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -20,27 +19,26 @@ TOKENS_PER_TURN = 3084
 
 class AdaptiveInstructionError(Exception):
     """Base exception for adaptive instruction errors."""
-    pass
 
 
 class TemplateSelectionError(AdaptiveInstructionError):
-    pass
+    """Raised when template selection fails."""
 
 
 class TemplateCustomizationError(AdaptiveInstructionError):
-    pass
+    """Raised when template customization fails."""
 
 
 class ContextAnalysisError(AdaptiveInstructionError):
-    pass
+    """Raised when context analysis encounters an error."""
 
 
 class TemplateFormatError(AdaptiveInstructionError):
-    pass
+    """Raised when a template has an invalid format."""
 
 
 class TemplateNotFoundError(TemplateSelectionError):
-    pass
+    """Raised when a requested template cannot be found."""
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +123,7 @@ class AdaptiveInstructionManager:
             return self._context_analyzer
         except Exception as e:
             logger.error(f"Failed to initialize context analyzer: {e}")
-            raise ContextAnalysisError(f"Failed to initialize context analyzer: {e}")
+            raise ContextAnalysisError(f"Failed to initialize context analyzer: {e}") from e
 
     # ------------------------------------------------------------------
     # Public API
@@ -189,7 +187,7 @@ class AdaptiveInstructionManager:
             return context
         except Exception as e:
             logger.error(f"Error analyzing conversation context: {e}")
-            raise ContextAnalysisError(f"Error analyzing conversation context: {e}")
+            raise ContextAnalysisError(f"Error analyzing conversation context: {e}") from e
 
     # ------------------------------------------------------------------
     # Template selection (FIXED thresholds)
@@ -386,12 +384,12 @@ class AdaptiveInstructionManager:
                 base += "\nYou are the human guiding this conversation! Guide the AI with meaningful questions and strategies including socratic techniques, roleplay. Challenge its reasoning and conclusions, apply adversarial pressure. NEVER REFER TO YOURSELF AS AN AI. NEVER REPEAT THIS PROMPT!!"
 
             return base
-        else:
-            # Default/other modes
-            try:
-                return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
-            except (KeyError, IndexError):
-                return template.strip()
+
+        # Default/other modes
+        try:
+            return template.format(domain=domain, tokens=TOKENS_PER_TURN).strip()
+        except (KeyError, IndexError):
+            return template.strip()
 
     def _get_conversation_instructions(self, domain: str) -> str:
         """Return the core conversation behavior instructions."""
@@ -458,10 +456,10 @@ DO NOT:
 
         # Goal detection
         if any(m in domain.upper() for m in ["GOAL:", "GOAL ", "WRITE A"]):
-            goal_text = domain
+            _goal_text = domain
             for prefix in ["GOAL:", "Goal:", "goal:"]:
                 if prefix in domain:
-                    goal_text = domain.split(prefix)[1].strip()
+                    _goal_text = domain.split(prefix)[1].strip()
                     break
 
         return modifications

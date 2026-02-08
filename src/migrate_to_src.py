@@ -10,8 +10,6 @@ directories, and updates imports in the moved files.
 import os
 import re
 import shutil
-from pathlib import Path
-from typing import Dict, List, Tuple
 
 # File mapping: source file -> destination directory
 FILE_MAPPING = {
@@ -68,7 +66,7 @@ def create_directories() -> None:
     for directory in INIT_DIRS:
         init_file = os.path.join(directory, "__init__.py")
         if not os.path.exists(init_file):
-            with open(init_file, "w") as f:
+            with open(init_file, "w", encoding="utf-8") as f:
                 f.write(
                     f'"""{os.path.basename(directory)} module for AI Battle framework."""\n'
                 )
@@ -113,7 +111,7 @@ def update_imports() -> None:
 
 def update_file_imports(file_path: str) -> None:
     """Update imports in a single file."""
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     original_content = content
@@ -121,7 +119,7 @@ def update_file_imports(file_path: str) -> None:
         content = re.sub(pattern, replacement, content)
 
     if content != original_content:
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"Updated imports in {file_path}")
 

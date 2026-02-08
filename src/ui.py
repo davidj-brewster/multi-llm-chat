@@ -8,15 +8,15 @@ import re
 import time
 import base64
 from PIL import Image
-from io import BytesIO
+from io import BytesIO  # pylint: disable=no-name-in-module
 import json
 import uuid
 from datetime import datetime
-import importlib.util
-from ai_battle import OPENAI_MODELS, CLAUDE_MODELS, GEMINI_MODELS, ANTHROPIC_MODELS, ConversationManager
+from ai_battle import ConversationManager
 
 # Helper function to convert PIL image to base64
 def image_to_base64(img):
+    """Convert a PIL image to a base64-encoded PNG string."""
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
@@ -28,7 +28,7 @@ RUN_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "examples", "run_visio
 st.set_page_config(layout="wide", page_title="AI Battle Orchestrator")
 
 # Load CSS from external file
-with open("static/css/aibattle.css") as f:
+with open("static/css/aibattle.css", encoding="utf-8") as f:
     css_content = f.read()
 
 # Add custom JavaScript for model selection
@@ -107,12 +107,15 @@ if 'last_activity' not in st.session_state:
 
 # Helper functions
 def toggle_logs():
+    """Toggle the visibility of the log panel in session state."""
     st.session_state.show_logs = not st.session_state.show_logs
 
 def switch_config_mode(mode):
+    """Switch the configuration input mode between available options."""
     st.session_state.config_mode = mode
 
 def display_image(img_path_or_base64):
+    """Load and return a PIL Image from a file path, base64 string, or BytesIO object."""
     try:
         # Check if it's a base64 string
         if isinstance(img_path_or_base64, str) and img_path_or_base64.startswith('data:image'):
@@ -121,18 +124,18 @@ def display_image(img_path_or_base64):
             img = Image.open(BytesIO(base64.b64decode(base64_data)))
             return img
         # Check if it's a file path
-        elif isinstance(img_path_or_base64, str) and os.path.exists(img_path_or_base64):
+        if isinstance(img_path_or_base64, str) and os.path.exists(img_path_or_base64):
             return Image.open(img_path_or_base64)
         # BytesIO object
-        elif isinstance(img_path_or_base64, BytesIO):
+        if isinstance(img_path_or_base64, BytesIO):
             return Image.open(img_path_or_base64)
-        else:
-            return None
+        return None
     except Exception as e:
         st.error(f"Error displaying image: {e}")
         return None
 
 def render_message_with_thinking(content):
+    """Extract thinking sections from content and return clean content with thinking parts."""
     # Find all thinking tags in the content
     thinking_pattern = r'<thinking>(.*?)</thinking>'
     thinking_sections = re.findall(thinking_pattern, content, re.DOTALL)
@@ -144,6 +147,7 @@ def render_message_with_thinking(content):
     return clean_content.strip(), thinking_sections
 
 def render_with_images(content, uploaded_images):
+    """Render markdown content with embedded image references replaced by actual images."""
     # Simple image markdown detection - can be expanded for other formats
     image_pattern = r'!\[.*?\]\((.*?)\)'
 
@@ -194,7 +198,7 @@ def export_conversation(conversation_history, raw_logs, battle_id):
 
     # Create a download button
     st.download_button(
-        label=f"Export Conversation",
+        label="Export Conversation",
         data=json_str,
         file_name=filename,
         mime="application/json",
@@ -425,6 +429,7 @@ with st.container():
 
         # Function to handle model selection with proper prefix handling
         def select_human_model(model_name):
+            """Set the human model in session state, stripping any prefix."""
             if model_name is None:
                 return
 
@@ -435,6 +440,7 @@ with st.container():
                 st.session_state.human_model = model_name
 
         def select_ai_model(model_name):
+            """Set the AI model in session state, stripping any prefix."""
             if model_name is None:
                 return
 
@@ -780,9 +786,9 @@ if start_button:
                 else:
                     config_data = yaml.safe_load(config_content)
 
+                model_was_overridden = False
                 # Apply model overrides if models were changed in the UI
                 if hasattr(st.session_state, "human_model") and hasattr(st.session_state, "ai_model"):
-                    model_was_overridden = False
 
                     # Check if this is an image/file config - if so, force ai-ai mode
                     has_images = False
@@ -822,14 +828,14 @@ if start_button:
                 # Write the modified config to a temp file
                 temp_config_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")
                 temp_config_path = temp_config_file.name
-                with open(temp_config_path, "w") as f:
+                with open(temp_config_path, "w", encoding="utf-8") as f:
                     yaml.dump(config_data, f)
 
                 # Check if we have an initial prompt override
                 prompt_was_overridden = False
                 if has_prompt_override and "discussion" in config_data:
                     config_data["discussion"]["goal"] = initial_prompt_override
-                    st.info(f"Overriding goal/prompt in configuration")
+                    st.info("Overriding goal/prompt in configuration")
                     prompt_was_overridden = True
 
                 if model_was_overridden and prompt_was_overridden:
@@ -894,7 +900,7 @@ if start_button:
 
                 temp_config_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml")
                 temp_config_path = temp_config_file.name
-                with open(temp_config_path, "w") as f:
+                with open(temp_config_path, "w", encoding="utf-8") as f:
                     yaml.dump(default_config, f)
                 st.info("Using generated config from builder interface.")
 
@@ -915,6 +921,7 @@ if start_button:
 
             # Status update function
             def update_model_status():
+                """Render the current model processing status as an HTML widget."""
                 status_html = '<div class="model-status-container">'
                 status_html += '<h4>Model Status:</h4>'
 
@@ -935,7 +942,7 @@ if start_button:
                     elif status.get("active", False):
                         status_html += f'<span class="status-active">Processing ({elapsed:.1f}s)</span>'
                     else:
-                        status_html += f'<span class="status-done">Done</span>'
+                        status_html += '<span class="status-done">Done</span>'
 
                     status_html += '</div>'
 
@@ -951,15 +958,18 @@ if start_button:
             # Create a thread-safe object to store last activity time
             # This avoids accessing session_state from a background thread
             class ThreadSafeActivityMonitor:
+                """Thread-safe monitor that tracks the timestamp of the last UI activity."""
                 def __init__(self):
                     self.last_activity = time.time()
                     self.lock = threading.Lock()
 
                 def update(self):
+                    """Record the current time as the last activity timestamp."""
                     with self.lock:
                         self.last_activity = time.time()
 
                 def get_time_since_last_activity(self):
+                    """Return the elapsed seconds since the last recorded activity."""
                     with self.lock:
                         return time.time() - self.last_activity
 
@@ -971,6 +981,7 @@ if start_button:
 
             # Create a keepalive mechanism
             def start_keepalive():
+                """Run a background loop that monitors for inactivity timeouts."""
                 while True:
                     # Check for activity timeout (5 min)
                     time_since_activity = activity_monitor.get_time_since_last_activity()
@@ -979,7 +990,7 @@ if start_button:
                         # If no activity for 5 minutes, create a flag file to signal timeout
                         # We'll check for this file in the main thread
                         try:
-                            with open("model_timeout_flag.txt", "w") as f:
+                            with open("model_timeout_flag.txt", "w", encoding="utf-8") as f:
                                 f.write("timeout")
                         except:
                             pass  # Ignore any errors writing the flag file
@@ -1113,7 +1124,7 @@ if start_button:
                                     # In a real implementation, embed the image directly
                                     message_html += f'<img src="data:image/png;base64,{image_to_base64(img)}" class="message-image" />'
                                 else:
-                                    message_html += f'<p><i>[Image unable to display]</i></p>'
+                                    message_html += '<p><i>[Image unable to display]</i></p>'
 
                         message_html += '</div></div>'
 
@@ -1194,7 +1205,7 @@ if start_button:
                             # In a real implementation, embed the image directly
                             message_html += f'<img src="data:image/png;base64,{image_to_base64(img)}" class="message-image" />'
                         else:
-                            message_html += f'<p><i>[Image unable to display]</i></p>'
+                            message_html += '<p><i>[Image unable to display]</i></p>'
 
                 message_html += '</div></div>'
 

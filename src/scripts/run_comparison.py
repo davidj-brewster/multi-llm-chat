@@ -50,7 +50,7 @@ async def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Multi-Mode Comparison")
+    logger.info("Multi-Mode Comparison")
     logger.info(f"Config: {args.config}")
     logger.info(f"Modes: {', '.join(args.modes)}")
     logger.info(f"Output: {output_dir}")

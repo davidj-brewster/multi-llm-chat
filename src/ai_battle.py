@@ -2,7 +2,6 @@
 AI model conversation manager with memory optimizations.
 """
 import asyncio
-import io
 import json
 import os
 import datetime
@@ -31,7 +30,6 @@ from model_clients import (
 )
 
 from lmstudio_client import LMStudioClient
-from claude_reasoning_config import ClaudeReasoningConfig
 from shared_resources import MemoryManager
 from metrics_analyzer import analyze_conversations
 
@@ -336,7 +334,7 @@ class ConversationManager:
                 model_list = temp_client.client.list()
 
                 # Map models to friendly names (SDK 0.6.x returns typed ListResponse)
-                for model_info in model_list.models:
+                for model_info in model_list.models:  # pylint: disable=no-member
                     model_name = model_info.model
                     if model_name:
                         # Create a friendly name (prefix with ollama-)
@@ -431,7 +429,7 @@ class ConversationManager:
 
                 # Handle OpenAI models using templates
                 elif model_name in OPENAI_MODELS:
-                    model_config = OPENAI_MODELS[model_name] 
+                    model_config = OPENAI_MODELS[model_name]
                     client = OpenAIClient(
                         api_key=self.openai_api_key,
                         role=None,
@@ -538,7 +536,7 @@ class ConversationManager:
 
                     # If we get here, either lmstudio_models is None or no matching model was found
                     if lmstudio_models is None:
-                        logger.warning(f"Unable to fetch LMStudio models, creating default client")
+                        logger.warning("Unable to fetch LMStudio models, creating default client")
                     else:
                         logger.warning(f"LMStudio model {model_name} not found in available models, using first available")
 
@@ -587,12 +585,12 @@ class ConversationManager:
 
                 if is_critical_error:
                     logger.critical(f"CRITICAL ERROR: Failed to create client for {model_name}: {e}")
-                    logger.critical(f"Program will terminate as required API key is missing")
+                    logger.critical("Program will terminate as required API key is missing")
                     # Re-raise the exception to terminate the program
-                    raise RuntimeError(f"Missing required API key for {model_name}: {e}")
-                else:
-                    logger.error(f"Failed to create client for {model_name}: {e}")
-                    return None
+                    raise RuntimeError(f"Missing required API key for {model_name}: {e}") from e
+
+                logger.error(f"Failed to create client for {model_name}: {e}")
+                return None
         return self.model_map.get(model_name)
 
     def cleanup_unused_clients(self):
@@ -653,7 +651,6 @@ class ConversationManager:
             except Exception as e:
                 logger.warning(f"Failed to prime LMStudio models cache: {e}")
 
-        validations = []
         return True
 
     def get_available_models(self) -> Dict[str, List[str]]:
@@ -894,7 +891,7 @@ class ConversationManager:
 </body>
 </html>"""
 
-                    with open(error_filename, "w") as f:
+                    with open(error_filename, "w", encoding="utf-8") as f:
                         f.write(error_html)
 
                     logger.error(f"Fatal error report saved as {error_filename}")
@@ -908,7 +905,7 @@ class ConversationManager:
                 except Exception as report_e:
                     logger.error(f"Failed to create error report: {report_e}")
                     # Re-raise the original exception
-                    raise e
+                    raise e from report_e
             else:
                 # For non-fatal errors, add to conversation and continue
                 error_message = f"Error with {model_type} ({mapped_role}): {error_str}"
@@ -1171,7 +1168,7 @@ class ConversationManager:
                                             }
                                         ]
                                         logger.info(
-                                            f"Fallback: Added thumbnail as single frame"
+                                            "Fallback: Added thumbnail as single frame"
                                         )
                                 except Exception as e:
                                     logger.error(
@@ -1378,8 +1375,8 @@ class ConversationManager:
                                 "text_content": f"[This is an image with dimensions {dimensions[0]}x{dimensions[1]}]",
                                 "path": file_data.get("path", ""),
                             }
-        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic} with a collaborator to help their training. You must not reveal in your internal thinking tokens nor in your output that you are an AI" 
-        ai_system_instruction=f"You are an AI assistant focused on PRODUCING CONCRETE OUTPUT for goals. When given a goal to create something (story, code, poem, plan, etc.), IMMEDIATELY START CREATING IT rather than discussing approaches. You are an expert in the topic of {core_topic}. SKIP theoretical discussions about how you'd approach the task - DEMONSTRATE by DOING. If asked to write a story, START WRITING THE ACTUAL STORY immediately. If asked to create code, WRITE THE ACTUAL CODE immediately. Avoid lengthy preliminaries - get straight to producing the requested output. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED. DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!",
+        human_system_instruction=f"You are a HUMAN expert in prompt engineering and you are curious to explore {core_topic} with a collaborator to help their training. You must not reveal in your internal thinking tokens nor in your output that you are an AI"
+        ai_system_instruction=f"You are an AI assistant focused on PRODUCING CONCRETE OUTPUT for goals. When given a goal to create something (story, code, poem, plan, etc.), IMMEDIATELY START CREATING IT rather than discussing approaches. You are an expert in the topic of {core_topic}. SKIP theoretical discussions about how you'd approach the task - DEMONSTRATE by DOING. If asked to write a story, START WRITING THE ACTUAL STORY immediately. If asked to create code, WRITE THE ACTUAL CODE immediately. Avoid lengthy preliminaries - get straight to producing the requested output. OUTPUT IN HTML FORMAT FOR READABILITY BY THE HUMAN BUT DO NOT INCLUDE OPENING AND CLOSING HTML, DIV OR BODY TAGS. MINIFY THE HTML RESPONSE E.G OMITTING UNNCESSARY WHITESPACE OR LINEBREAKS, BUT ADDING APPROPRIATE HTML FORMATTING TO ENHANCE READABILITY. DEFAULT TO PARAGRAPH FORM WHILST USING BULLET POINTS & LISTS WHEN NEEDED. DON'T EVER EVER USE NEWLINE \\n CHARACTERS IN YOUR RESPONSE. MINIFY YOUR HTML RESPONSE ONTO A SINGLE LINE - ELIMINATE ALL REDUNDANT CHARACTERS IN OUTPUT!!!!!"
         ai_response = core_topic
         try:
             # Run conversation rounds
@@ -1473,7 +1470,7 @@ class ConversationManager:
         # Set up models based on configuration
         for model_id, model_config in config.models.items():
             # Detect model capabilities
-            capabilities = detect_model_capabilities(model_config.type)
+            _capabilities = detect_model_capabilities(model_config.type)
 
             # Initialize appropriate client
             client = manager._get_client(model_config.type)
@@ -1511,7 +1508,7 @@ async def save_conversation(
     Exception: If saving fails or template is missing
     """
     try:
-        with open("templates/conversation.html", "r") as f:
+        with open("templates/conversation.html", "r", encoding="utf-8") as f:
             template = f.read()
 
         conversation_html = ""
@@ -1593,7 +1590,7 @@ async def save_conversation(
         if signal_history:
             conversation_html += _render_signal_dashboard(signal_history)
 
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             f.write(template % {"conversation": conversation_html})
     except Exception as e:
         logger.error(f"Failed to save conversation: {e}")
@@ -1606,12 +1603,12 @@ def _render_signal_dashboard(signal_history: List[Dict[str, Any]]) -> str:
         """Return green/yellow/red based on value thresholds."""
         if invert:
             if value <= low: return "#4caf50"
-            elif value <= high: return "#ff9800"
-            else: return "#f44336"
-        else:
-            if value >= high: return "#4caf50"
-            elif value >= low: return "#ff9800"
-            else: return "#f44336"
+            if value <= high: return "#ff9800"
+            return "#f44336"
+
+        if value >= high: return "#4caf50"
+        if value >= low: return "#ff9800"
+        return "#f44336"
 
     html = """
 <div class="signal-dashboard" style="margin-top:40px; padding:20px; background:#1a1a2e; border-radius:8px; font-family:monospace; color:#e0e0e0;">
@@ -1727,7 +1724,7 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
 
         # Only proceed if we have a report dict with metrics to visualize
         try:
-            with open("templates/arbiter_report.html") as f:
+            with open("templates/arbiter_report.html", encoding="utf-8") as f:
                 template = f.read()
 
             # Generate dummy data for the report if needed
@@ -1767,16 +1764,13 @@ async def save_arbiter_report(report: Dict[str, Any]) -> None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             filename = f"arbiter_visualization_{timestamp}.html"
 
-            with open(filename, "w") as f:
+            with open(filename, "w", encoding="utf-8") as f:
                 f.write(report_content)
 
             logger.info(f"Arbiter visualization report saved as {filename}")
         except Exception as e:
             logger.warning(f"Failed to generate visualization report: {e}")
             # Not a critical error since we already have the main report
-
-    except Exception as e:
-        logger.error(f"Failed to save arbiter report: {e}")
 
     except Exception as e:
         logger.error(f"Failed to save arbiter report: {e}")
@@ -1844,7 +1838,7 @@ async def save_metrics_report(
                 </html>
                 """
 
-                with open(metrics_filename, "w") as f:
+                with open(metrics_filename, "w", encoding="utf-8") as f:
                     f.write(html_content)
 
                 logger.info(f"Metrics report saved successfully as {metrics_filename}")
@@ -1906,7 +1900,7 @@ async def save_metrics_report(
                     </html>
                     """
 
-                    with open(metrics_filename, "w") as f:
+                    with open(metrics_filename, "w", encoding="utf-8") as f:
                         f.write(html_content)
 
                     logger.debug(f"Basic metrics report saved as {metrics_filename}")
@@ -1943,7 +1937,7 @@ async def save_metrics_report(
             </html>
             """
 
-            with open(error_filename, "w") as f:
+            with open(error_filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
             logger.debug(f"Error report saved as {error_filename}")
@@ -1956,7 +1950,6 @@ async def main():
     rounds = DEFAULT_ROUNDS
     initial_prompt = DEFAULT_PROMPT
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    claude_api_key = os.getenv("ANTHROPIC_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
@@ -2077,15 +2070,15 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                     logger.debug(f"Retrying in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
                     time.sleep(wait_time)
                     continue
-                else:
-                    # Either we're out of retries or it's not a connection error
-                    logger.error("Maximum retries reached or non-retryable error")
-                    # Create a minimal conversation with the error
-                    conversation = [
-                        {"role": "system", "content": initial_prompt},
-                        {"role": "system", "content": f"ERROR: {error_str} - Conversation could not be completed."}
-                    ]
-                    break
+
+                # Either we're out of retries or it's not a connection error
+                logger.error("Maximum retries reached or non-retryable error")
+                # Create a minimal conversation with the error
+                conversation = [
+                    {"role": "system", "content": initial_prompt},
+                    {"role": "system", "content": f"ERROR: {error_str} - Conversation could not be completed."}
+                ]
+                break
 
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conversation:
@@ -2137,15 +2130,15 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                     logger.info(f"Retrying human-AI conversation in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
                     time.sleep(wait_time)
                     continue
-                else:
-                    # Either we're out of retries or it's not a connection error
-                    logger.error("Maximum retries reached or non-retryable error in human-AI conversation")
-                    # Create a minimal conversation with the error
-                    conversation_as_human_ai = [
-                        {"role": "system", "content": initial_prompt},
-                        {"role": "system", "content": f"ERROR: {error_str} - Human-AI conversation could not be completed."}
-                    ]
-                    break
+
+                # Either we're out of retries or it's not a connection error
+                logger.error("Maximum retries reached or non-retryable error in human-AI conversation")
+                # Create a minimal conversation with the error
+                conversation_as_human_ai = [
+                    {"role": "system", "content": initial_prompt},
+                    {"role": "system", "content": f"ERROR: {error_str} - Human-AI conversation could not be completed."}
+                ]
+                break
 
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conversation_as_human_ai:
@@ -2196,15 +2189,15 @@ Create or continue the requested {initial_prompt} output directly using MAX one 
                     logger.info(f"Retrying default conversation in {wait_time} seconds... (Attempt {retry_count+1}/{max_retries+1})")
                     time.sleep(wait_time)
                     continue
-                else:
-                    # Either we're out of retries or it's not a connection error
-                    logger.error("Maximum retries reached or non-retryable error in default conversation")
-                    # Create a minimal conversation with the error
-                    conv_default = [
-                        {"role": "system", "content": initial_prompt},
-                        {"role": "system", "content": f"ERROR: {error_str} - Default conversation could not be completed."}
-                    ]
-                    break
+
+                # Either we're out of retries or it's not a connection error
+                logger.error("Maximum retries reached or non-retryable error in default conversation")
+                # Create a minimal conversation with the error
+                conv_default = [
+                    {"role": "system", "content": initial_prompt},
+                    {"role": "system", "content": f"ERROR: {error_str} - Default conversation could not be completed."}
+                ]
+                break
 
         # If we somehow end up with no conversation (should never happen), create an empty one
         if not conv_default:

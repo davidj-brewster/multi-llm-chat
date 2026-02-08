@@ -1,12 +1,13 @@
 """Singleton classes for shared resources to optimize memory usage."""
 
 import logging
+import os
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
- 
+
 
 class SpacyModelSingleton:
     """Singleton for spaCy model to prevent multiple loads."""
@@ -71,15 +72,15 @@ class VectorizerSingleton:
 class InstructionTemplates:
     """Singleton for instruction templates to prevent redundant storage."""
 
-    _instance: Optional[Dict[str, str]] = None
+    _instance: Dict[str, str] = {}
 
     @classmethod
     def get_templates(cls) -> Dict[str, str]:
         """Get instruction templates."""
-        if cls._instance is None:
+        if not cls._instance:
             cls._instance = {
                 "exploratory": """
-                You are acting as a human expert exploring {domain}. 
+                You are acting as a human expert exploring {domain}.
                 Focus on broad understanding and discovering key concepts.
                 Ask open-ended questions and encourage detailed explanations.
                 """,
@@ -144,8 +145,7 @@ class MemoryManager:
     @staticmethod
     def get_memory_usage() -> str:
         """Get current memory usage information."""
-        import psutil
-        import os
+        import psutil  # pylint: disable=import-outside-toplevel
 
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()

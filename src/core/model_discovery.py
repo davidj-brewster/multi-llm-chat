@@ -1,6 +1,6 @@
 """Discovery of locally available models (Ollama, LMStudio)."""
 import logging
-from typing import List, Dict, Any
+from typing import Dict
 from model_clients import OllamaClient
 from lmstudio_client import LMStudioClient
 

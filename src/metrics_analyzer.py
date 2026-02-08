@@ -75,7 +75,7 @@ class TopicAnalyzer:
         distances = 1 - np.abs(similarities)
         # Ensure all distances are valid (not negative)
         distances = np.abs(distances)  # Use absolute values to ensure non-negative distances
-        
+
         # Cluster messages
         try:
             clustering = DBSCAN(
@@ -128,11 +128,9 @@ class TopicAnalyzer:
         return clusters
 
     def _clean_message(self, message: str) -> str:
-        """Clean message text for topic analysis"""
-        # Remove code blocks
-        """
-        Clean message text for topic analysis by removing code blocks, thinking tags,
-        HTML, URLs, and special characters.
+        """Clean message text for topic analysis.
+
+        Removes code blocks, thinking tags, HTML, URLs, and special characters.
 
         Args:
             message: The message text to clean
@@ -140,6 +138,7 @@ class TopicAnalyzer:
         Returns:
             str: Cleaned message text suitable for topic analysis
         """
+        # Remove code blocks
         text = re.sub(r"```.*?```", "", message, flags=re.DOTALL)
 
         # Remove thinking tags
@@ -161,8 +160,8 @@ class TopicAnalyzer:
         return text.lower()
 
     def get_message_topics(self, message: str, all_messages: List[str]) -> List[str]:
-        """Get topics for a single message"""
-        """
+        """Get topics for a single message.
+
         Extract the top topics from a message by analyzing its TF-IDF vector.
 
         Args:
@@ -197,9 +196,7 @@ class MetricsAnalyzer:
     def analyze_message(
         self, message: Dict[str, str], all_messages: List[str]
     ) -> MessageMetrics:
-        """Extract metrics from a single message"""
-        """
-        Extract comprehensive metrics from a single message.
+        """Extract metrics from a single message.
 
         Analyzes message content to extract metrics like length, thinking sections,
         question count, code blocks, references to previous messages, assertion count,
@@ -525,7 +522,6 @@ class MetricsAnalyzer:
             "productive",
             "successful",
             "profitable",
-            "beneficial",
             "advantageous",
             "favorable",
             "constructive",
@@ -556,8 +552,6 @@ class MetricsAnalyzer:
             "awesome",
             "amazing",
             "incredible",
-            "unbelievable",
-            "remarkable",
             "extraordinary",
             "astonishing",
             "astounding",
@@ -570,14 +564,7 @@ class MetricsAnalyzer:
             "touching",
             "moving",
             "uplifting",
-            "inspiring",
             "inspirational",
-            "motivating",
-            "encouraging",
-            "hopeful",
-            "optimistic",
-            "positive",
-            "constructive",
             "supportive",
             "reassuring",
             "comforting",
@@ -632,7 +619,6 @@ class MetricsAnalyzer:
             "complicated",
             "complex",
             "tricky",
-            "confusing",
             "unclear",
             "ambiguous",
             "vague",
@@ -688,7 +674,6 @@ class MetricsAnalyzer:
             "uncomfortable",
             "painful",
             "hurtful",
-            "harmful",
             "damaging",
             "destructive",
             "disruptive",
@@ -723,9 +708,7 @@ class MetricsAnalyzer:
     def analyze_conversation_flow(
         self, conversation: List[Dict[str, str]]
     ) -> nx.DiGraph:
-        """Analyze conversation flow and create graph"""
-        """
-        Analyze conversation flow and create a directed graph representation.
+        """Analyze conversation flow and create a directed graph representation.
 
         Creates a graph where nodes represent messages and edges represent the flow
         between messages. Edge weights are based on relevance between messages.
@@ -770,10 +753,9 @@ class MetricsAnalyzer:
         return G
 
     def _calculate_relevance(self, msg1: str, msg2: str) -> float:
-        """Calculate relevance between two messages"""
-        """
-        Calculate the relevance between two messages using Jaccard similarity
-        of key terms.
+        """Calculate relevance between two messages.
+
+        Uses Jaccard similarity of key terms.
 
         Args:
             msg1: First message text
@@ -793,10 +775,10 @@ class MetricsAnalyzer:
         return len(terms1 & terms2) / len(terms1 | terms2)
 
     def _extract_key_terms(self, text: str) -> List[str]:
-        """Extract key terms from text"""
-        """
-        Extract key terms from text by removing code blocks, thinking tags,
-        and common stopwords.
+        """Extract key terms from text.
+
+        Removes code blocks and thinking tags, then extracts words longer than
+        3 characters that are not common stopwords.
 
         Args:
             text: The text to extract terms from
@@ -819,11 +801,10 @@ class MetricsAnalyzer:
         return [w for w in words if w not in stopwords and len(w) > 3]
 
     def _has_reference(self, msg: str, previous_msg: str) -> bool:
-        """Check if message references a previous message"""
-        """
-        Check if a message references a previous message either through
-        direct reference phrases or by mentioning key terms from the
-        previous message.
+        """Check if message references a previous message.
+
+        Detects references through direct reference phrases or by mentioning
+        key terms from the previous message.
 
         Args:
             msg: The message to check for references
@@ -858,9 +839,7 @@ class MetricsAnalyzer:
     def analyze_conversation(
         self, conversation: List[Dict[str, str]]
     ) -> ConversationMetrics:
-        """Analyze entire conversation"""
-        """
-        Analyze an entire conversation to extract comprehensive metrics.
+        """Analyze an entire conversation to extract comprehensive metrics.
 
         Identifies topic clusters, tracks topic evolution, analyzes individual
         messages, and calculates aggregate metrics for the conversation as a whole.
@@ -961,9 +940,7 @@ class MetricsAnalyzer:
         )
 
     def generate_flow_visualization(self, graph: nx.DiGraph) -> Dict:
-        """Generate visualization data for conversation flow"""
-        """
-        Generate visualization data for conversation flow graph.
+        """Generate visualization data for conversation flow graph.
 
         Converts the NetworkX graph into a format suitable for visualization,
         including node positions, role information, content previews, and
@@ -1026,7 +1003,6 @@ def analyze_conversations(
     Returns:
         Dict: Comparison results with 'metrics' and 'flow' data for both conversations
     """
-    """Analyze and compare two conversations"""
     analyzer = MetricsAnalyzer()
 
     # Analyze each conversation

@@ -3,7 +3,7 @@ import re
 import os
 import html
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ async def save_conversation(
         safe_filename = _sanitize_output_path(filename)
         logger.debug(f"Sanitized filename: {filename} -> {safe_filename}")
 
-        with open("templates/conversation.html", "r") as f:
+        with open("templates/conversation.html", "r", encoding="utf-8") as f:
             template = f.read()
 
         conversation_html = ""
@@ -171,7 +171,7 @@ async def save_conversation(
             conversation_html += _render_signal_dashboard(signal_history)
 
         # Write to sanitized filename
-        with open(safe_filename, "w") as f:
+        with open(safe_filename, "w", encoding="utf-8") as f:
             f.write(template % {"conversation": conversation_html})
 
         logger.info(f"Conversation saved to: {safe_filename}")
@@ -189,13 +189,17 @@ def _render_signal_dashboard(signal_history: List[Dict[str, Any]]) -> str:
     def _color(value: float, low: float, high: float, invert: bool = False) -> str:
         """Return green/yellow/red based on value thresholds."""
         if invert:
-            if value <= low: return "#4caf50"
-            elif value <= high: return "#ff9800"
-            else: return "#f44336"
-        else:
-            if value >= high: return "#4caf50"
-            elif value >= low: return "#ff9800"
-            else: return "#f44336"
+            if value <= low:
+                return "#4caf50"
+            if value <= high:
+                return "#ff9800"
+            return "#f44336"
+
+        if value >= high:
+            return "#4caf50"
+        if value >= low:
+            return "#ff9800"
+        return "#f44336"
 
     html = """
 <div class="signal-dashboard" style="margin-top:40px; padding:20px; background:#1a1a2e; border-radius:8px; font-family:monospace; color:#e0e0e0;">
