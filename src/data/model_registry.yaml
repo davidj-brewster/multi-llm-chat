@@ -1,0 +1,243 @@
+openai_models:
+  o1:
+    model: "o1"
+    reasoning_level: "medium"
+    multimodal: false
+
+  o3:
+    model: "o3"
+    reasoning_level: "auto"
+    multimodal: true
+
+  o3-reasoning-high:
+    model: "o3"
+    reasoning_level: "high"
+    multimodal: true
+
+  o3-reasoning-medium:
+    model: "o3"
+    reasoning_level: "medium"
+    multimodal: true
+
+  o3-reasoning-low:
+    model: "o3"
+    reasoning_level: "low"
+    multimodal: true
+
+  o3-mini-high:
+    model: "o3-mini"
+    reasoning_level: "high"
+    multimodal: true
+
+  o4-mini:
+    model: "o4-mini"
+    reasoning_level: "medium"
+    multimodal: true
+
+  o4-mini-high:
+    model: "o4-mini"
+    reasoning_level: "high"
+    multimodal: true
+
+  gpt-4o:
+    model: "gpt-4o"
+    reasoning_level: null
+    multimodal: true
+
+  gpt-4.1:
+    model: "gpt-4.1"
+    reasoning_level: null
+    multimodal: true
+
+  gpt-5:
+    model: "gpt-5"
+    reasoning_level: "medium"
+    multimodal: true
+
+  gpt-4.1-mini:
+    model: "gpt-4.1-mini"
+    reasoning_level: null
+    multimodal: true
+
+  gpt-4.1-nano:
+    model: "gpt-4.1-nano"
+    reasoning_level: null
+    multimodal: true
+
+  chatgpt-latest:
+    model: "chatgpt-latest"
+    reasoning_level: null
+    multimodal: true
+
+gemini_models:
+  gemini-2.0-pro:
+    model: "gemini-2.0-pro-exp-02-05"
+    multimodal: true
+
+  gemini-2.5-pro-exp:
+    model: "gemini-2.5-pro-exp-03-25"
+    multimodal: true
+
+  gemini-2.5-flash-preview:
+    model: "gemini-2.5-flash-preview-04-17"
+    multimodal: true
+
+  gemini-2.5-pro-preview-03-25:
+    model: "gemini-2.5-pro-preview-03-25"
+    multimodal: true
+
+  gemini-2.5-flash-preview-04-17:
+    model: "gemini-2.5-flash-preview-04-17"
+    multimodal: true
+
+  gemini-2.0-flash-exp:
+    model: "gemini-2.0-flash-exp"
+    multimodal: true
+
+  gemini-2.0-flash-thinking-exp:
+    model: "gemini-2.0-flash-thinking-exp"
+    multimodal: true
+
+  gemini-2.0-flash-thinking-exp-01-21:
+    model: "gemini-2.0-flash-thinking-exp-01-21"
+    multimodal: true
+
+  gemini-2.0-flash-lite:
+    model: "gemini-2.0-flash-lite-preview-02-05"
+    multimodal: true
+
+  gemini-2.5-pro:
+    model: "gemini-2.5-pro-latest"
+    multimodal: true
+
+  gemini-2.5-flash-lite:
+    model: "gemini-2.5-flash-lite"
+    multimodal: true
+
+  gemini-2.5-flash:
+    model: "gemini-2.5-flash"
+    multimodal: true
+
+  gemini-3.0-flash:
+    model: "gemini-3.0-flash"
+    multimodal: true
+
+claude_models:
+  claude:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: null
+    extended_thinking: false
+
+  sonnet:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: null
+    extended_thinking: false
+
+  haiku:
+    model: "claude-3-5-haiku-latest"
+    reasoning_level: null
+    extended_thinking: false
+
+  claude-3-5-sonnet:
+    model: "claude-3-5-sonnet-latest"
+    reasoning_level: null
+    extended_thinking: false
+
+  claude-3-5-haiku:
+    model: "claude-3-5-haiku-latest"
+    reasoning_level: null
+    extended_thinking: false
+
+  claude-3-7:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "auto"
+    extended_thinking: false
+
+  claude-3-7-sonnet:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "auto"
+    extended_thinking: false
+
+  claude-4-0-sonnet:
+    model: "claude-4-0-sonnet-latest"
+    reasoning_level: "auto"
+    extended_thinking: false
+
+  claude-4-0-opus:
+    model: "claude-4-0-opus-latest"
+    reasoning_level: "high"
+    extended_thinking: true
+
+  claude-3-7-reasoning:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "high"
+    extended_thinking: false
+
+  claude-3-7-reasoning-high:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "high"
+    extended_thinking: false
+
+  claude-3-7-reasoning-medium:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "medium"
+    extended_thinking: false
+
+  claude-3-7-reasoning-low:
+    model: "claude-3-7-sonnet"
+    reasoning_level: "low"
+    extended_thinking: false
+
+  claude-3-7-reasoning-none:
+    model: "claude-3-7-sonnet"
+    reasoning_level: "none"
+    extended_thinking: false
+
+  claude-3-7-extended:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "high"
+    extended_thinking: true
+    budget_tokens: 8000
+
+  claude-3-7-extended-deep:
+    model: "claude-3-7-sonnet-latest"
+    reasoning_level: "high"
+    extended_thinking: true
+    budget_tokens: 16000
+
+  claude-sonnet-4:
+    model: "claude-sonnet-4-20250514"
+    reasoning_level: null
+    extended_thinking: false
+
+  claude-opus-4.5:
+    model: "claude-opus-4-5-20250409"
+    reasoning_level: null
+    extended_thinking: true
+
+  claude-opus-4.6:
+    model: "claude-opus-4-6-20250424"
+    reasoning_level: null
+    extended_thinking: true
+
+ollama_thinking_config:
+  gpt-oss:
+    reasoning_level: "medium"
+    extended_thinking: true
+    num_ctx: 131072
+
+  deepseek-r1:
+    reasoning_level: "high"
+    extended_thinking: true
+
+  qwen3:
+    reasoning_level: "high"
+    extended_thinking: true
+
+  phi4-reasoning:
+    reasoning_level: "high"
+    extended_thinking: true
+
+  granite-reasoning:
+    reasoning_level: "high"
+    extended_thinking: true
