@@ -11,16 +11,17 @@ Key components:
 - ConversationMediaHandler: Main class for media processing
 """
 
-import os
 import logging
 import mimetypes
+import os
 import subprocess
-from PIL import Image
-from PIL import UnidentifiedImageError
+import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Any, List
-from dataclasses import dataclass
-import traceback
+
+from PIL import Image
+from PIL import UnidentifiedImageError
 
 logger = logging.getLogger(__name__)
 
@@ -784,10 +785,6 @@ class ConversationMediaHandler:
                         )
                         logger.warning(
                             f"Image dimensions {img.size} exceed maximum, will be resized"
-                        )
-
-                        raise MediaValidationError(
-                            f"Image dimensions too large: {img.size}"
                         )
 
                     metadata.dimensions = img.size

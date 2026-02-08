@@ -10,13 +10,12 @@ from typing import Dict, List, Any
 from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlparse
-from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
-from shared_resources import SpacyModelSingleton # Import the correct singleton class
 
-
-# Third-party imports
 from google import genai
+from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 import plotly.graph_objects as go
+
+from shared_resources import SpacyModelSingleton # Import the correct singleton class
 
 google_search_tool = Tool(google_search=GoogleSearch())
 
@@ -708,8 +707,8 @@ class ConversationArbiter:
                     raise
 
                 flow_metrics = {
-                    "topic_coherence": 1.0 - (topic_shifts / max(1, len(messages))),  # Avoid division by zero
-                    "topic_depth": len(set(topics)) / max(1, len(messages)),  # Avoid division by zero
+                    "topic_coherence": max(0.0, min(1.0, 1.0 - (topic_shifts / max(1, len(messages))))),
+                    "topic_depth": min(1.0, len(set(topics)) / max(1, len(messages))),
                     "topic_distribution": self._calculate_topic_distribution(topics),
                 }
             else:

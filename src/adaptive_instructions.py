@@ -5,10 +5,11 @@ detect pathologies, and generate structured InstructionSets that can be
 injected per-provider for maximum effect.
 """
 
-from context_analysis import ContextAnalyzer, ContextVector
+import logging
 from dataclasses import dataclass
 from typing import List, Dict, Optional
-import logging
+
+from context_analysis import ContextAnalyzer, ContextVector
 from shared_resources import InstructionTemplates
 
 logger = logging.getLogger(__name__)

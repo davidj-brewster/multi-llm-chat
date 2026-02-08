@@ -1,14 +1,15 @@
 """Metrics and conversation flow analysis for AI Battle"""
 
 import re
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-import networkx as nx
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import DBSCAN
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+import networkx as nx
+import numpy as np
+from sklearn.cluster import DBSCAN
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 @dataclass
@@ -721,11 +722,11 @@ class MetricsAnalyzer:
         Returns:
             nx.DiGraph: Directed graph representing the conversation flow
         """
-        G = nx.DiGraph()
+        graph = nx.DiGraph()
 
         # Add nodes for each message
         for i, msg in enumerate(conversation):
-            G.add_node(
+            graph.add_node(
                 i,
                 role=msg["role"],
                 content_preview=msg["content"][:100],
@@ -742,15 +743,15 @@ class MetricsAnalyzer:
             # Calculate edge weight based on relevance
             weight = self._calculate_relevance(msg1["content"], msg2["content"])
 
-            G.add_edge(i, i + 1, weight=weight)
+            graph.add_edge(i, i + 1, weight=weight)
 
             # Add cross-references if found
             if i > 0:
                 for j in range(i - 1):
                     if self._has_reference(msg2["content"], conversation[j]["content"]):
-                        G.add_edge(i + 1, j, weight=0.5, type="reference")
+                        graph.add_edge(i + 1, j, weight=0.5, type="reference")
 
-        return G
+        return graph
 
     def _calculate_relevance(self, msg1: str, msg2: str) -> float:
         """Calculate relevance between two messages.

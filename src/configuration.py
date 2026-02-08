@@ -1,15 +1,17 @@
-import os
-import yaml
+import json
 import logging
+import os
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Union
+
+import yaml
+
 # Ensure MultiFileConfig and DiscussionConfig are imported correctly if they also move
 # or if configuration.py is meant to be the source for them too.
 # For now, assuming they are correctly resolved from their original location or this one.
 from configdataclasses import DiscussionConfig
-from pathlib import Path
-import json
 
 # Custom exception classes for better error handling
 class ConfigurationError(Exception):
@@ -169,6 +171,8 @@ def load_config(path: str) -> DiscussionConfig: # Returns DiscussionConfig from 
                             model_config_dict["persona"] = json.dumps(resolved_persona_structure)
                         else:
                             model_config_dict["persona"] = str(resolved_persona_structure)
+                # Remove 'instructions' key so it doesn't get passed to ModelConfig
+                del model_config_dict["instructions"]
 
         # Ensure that DiscussionConfig (from .configdataclasses) is used for instantiation
         return DiscussionConfig(**config_dict["discussion"])

@@ -10,7 +10,11 @@ import os
 import sys
 import base64
 import logging
+import struct
+import zlib
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,7 +29,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+skip_no_api_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"
+)
 
+
+def _create_minimal_png(path):
+    """Create a minimal 1x1 red PNG file at the given path."""
+
+    def _chunk(chunk_type, data):
+        c = chunk_type + data
+        crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+        return struct.pack(">I", len(data)) + c + crc
+
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    raw_row = b"\x00\xff\x00\x00"  # filter byte + RGB
+    idat_data = zlib.compress(raw_row)
+    png = signature + _chunk(b"IHDR", ihdr_data) + _chunk(b"IDAT", idat_data) + _chunk(b"IEND", b"")
+    with open(path, "wb") as f:
+        f.write(png)
+
+
+@pytest.fixture
+def image_paths(tmp_path):
+    """Provide a list of temporary test image file paths."""
+    paths = []
+    for i in range(2):
+        p = tmp_path / f"test_image_{i}.png"
+        _create_minimal_png(str(p))
+        paths.append(str(p))
+    return paths
+
+
+@skip_no_api_key
 def test_text_generation():
     """Test basic text generation with the responses API."""
     logger.info("Testing text generation with responses API")
@@ -62,6 +99,7 @@ def test_text_generation():
     return response
 
 
+@skip_no_api_key
 def test_image_analysis(image_paths):
     """Test image analysis with the responses API."""
     if not image_paths:
@@ -132,6 +170,7 @@ def test_image_analysis(image_paths):
     return response
 
 
+@skip_no_api_key
 def test_chunking():
     """Test text chunking with a large input."""
     logger.info("Testing text chunking with responses API")

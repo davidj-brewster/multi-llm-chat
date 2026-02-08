@@ -2,9 +2,10 @@
 
 import logging
 import os
+from typing import Optional, Dict
+
 import spacy
 from sklearn.feature_extraction.text import TfidfVectorizer
-from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
 

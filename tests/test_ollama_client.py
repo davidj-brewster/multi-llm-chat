@@ -14,12 +14,28 @@ import os
 import sys
 import json
 import logging
+import pytest
 
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(parent_dir, "src"))
 
 from model_clients import OllamaClient, ModelConfig
+
+
+def _ollama_available():
+    """Check if Ollama server is running and reachable."""
+    try:
+        import ollama
+        ollama.Client().list()
+        return True
+    except Exception:
+        return False
+
+
+requires_ollama = pytest.mark.skipif(
+    not _ollama_available(), reason="Ollama server not running"
+)
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +69,7 @@ def test_ollama_connection():
         return False
 
 
+@requires_ollama
 def test_ollama_basic_chat():
     """Test basic chat generation with a small model."""
     logger.info("Test 2: Basic chat generation")
@@ -93,6 +110,7 @@ def test_ollama_basic_chat():
     return response
 
 
+@requires_ollama
 def test_ollama_model_list():
     """Test model listing - validates SDK 0.6.x list() return type."""
     logger.info("Test 3: Model listing (SDK 0.6.x compatibility)")
@@ -148,6 +166,7 @@ def test_ollama_model_list():
     }
 
 
+@requires_ollama
 def test_ollama_response_access():
     """Test response object access patterns - dict vs object style."""
     logger.info("Test 4: Response access patterns")
@@ -204,6 +223,7 @@ def test_ollama_response_access():
     return True
 
 
+@requires_ollama
 def test_ollama_thinking():
     """Test thinking/reasoning with a thinking-capable model (gpt-oss:20b)."""
     logger.info("Test 5: Thinking model (gpt-oss:20b)")
@@ -264,6 +284,7 @@ def test_ollama_thinking():
     return response
 
 
+@requires_ollama
 def test_ollama_vision():
     """Test vision capability with gemma3 and a test image."""
     logger.info("Test 6: Vision model (gemma3:4b-it-q8_0)")

@@ -1,9 +1,10 @@
 """Model registry for managing model configurations."""
-import yaml
+import logging
 import threading
 from pathlib import Path
 from typing import Dict, Any, Optional
-import logging
+
+import yaml
 
 logger = logging.getLogger(__name__)
 

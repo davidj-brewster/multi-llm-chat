@@ -106,9 +106,13 @@ class TestConversationMediaHandler:
             media_handler.process_file(str(unsupported))
 
     def test_process_large_image(self, media_handler, large_image):
-        """Test handling of oversized image."""
-        with pytest.raises(MediaValidationError):
-            media_handler.process_file(str(large_image))
+        """Test handling of oversized image - should be resized, not rejected."""
+        metadata = media_handler.process_file(str(large_image))
+        assert metadata is not None
+        assert metadata.type == "image"
+        # Image should have been resized to fit within max_image_resolution (1024x1024)
+        assert metadata.dimensions[0] <= 1024
+        assert metadata.dimensions[1] <= 1024
 
     def test_prepare_media_message(self, media_handler, test_image):
         """Test preparation of media message."""

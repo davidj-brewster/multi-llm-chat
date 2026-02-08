@@ -1,17 +1,20 @@
-import streamlit as st
+# pylint: disable=invalid-name
+import base64
+import json
+import os
+import re
 import subprocess
 import sys
-import os
-import yaml
 import tempfile
-import re
 import time
-import base64
-from PIL import Image
-from io import BytesIO  # pylint: disable=no-name-in-module
-import json
 import uuid
 from datetime import datetime
+from io import BytesIO  # pylint: disable=no-name-in-module
+
+import streamlit as st
+import yaml
+from PIL import Image
+
 from ai_battle import ConversationManager
 
 # Helper function to convert PIL image to base64

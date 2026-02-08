@@ -5,6 +5,7 @@ from configuration import (
     load_config,
     TimeoutConfig,
     detect_model_capabilities,
+    InvalidConfigFormatError,
 )
 from configdataclasses import DiscussionConfig, ModelConfig, FileConfig
 
@@ -59,11 +60,14 @@ discussion:
     model1:
       type: "invalid-model"
       role: "human"
+    model2:
+      type: "gemini-pro"
+      role: "assistant"
   goal: "Test goal"
 """
     config_path.write_text(config_content)
 
-    with pytest.raises(ValueError, match="Unsupported model type"):
+    with pytest.raises(InvalidConfigFormatError, match="Unsupported model type"):
         load_config(str(config_path))
 
 
@@ -77,11 +81,14 @@ discussion:
     model1:
       type: "claude-3-sonnet"
       role: "invalid"
+    model2:
+      type: "gemini-pro"
+      role: "assistant"
   goal: "Test goal"
 """
     config_path.write_text(config_content)
 
-    with pytest.raises(ValueError, match="Invalid role"):
+    with pytest.raises(InvalidConfigFormatError, match="Invalid role"):
         load_config(str(config_path))
 
 
@@ -143,10 +150,10 @@ def test_model_capabilities():
     capabilities = detect_model_capabilities(vision_model)
     assert capabilities["vision"] is True
 
-    # Standard model
-    standard_model = ModelConfig(type="claude-3-sonnet", role="human")
-    capabilities = detect_model_capabilities(standard_model)
-    assert capabilities["vision"] is False
+    # Claude model (supports vision, streaming, and function calling)
+    claude_model = ModelConfig(type="claude-3-sonnet", role="human")
+    capabilities = detect_model_capabilities(claude_model)
+    assert capabilities["vision"] is True
     assert capabilities["streaming"] is True
     assert capabilities["function_calling"] is True
 
@@ -180,6 +187,9 @@ discussion:
         template: "test_template"
         params:
           domain: "test domain"
+    model2:
+      type: "gemini-pro"
+      role: "assistant"
   goal: "Test goal"
 """
     config_path.write_text(config_content)

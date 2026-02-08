@@ -192,6 +192,14 @@ def detailed_sample_conversations():
 
 
 @pytest.fixture
+def mock_genai_client():
+    """Mock genai.Client to avoid requiring a real API key during tests"""
+    with patch("arbiter_v4.genai.Client") as mock_client:
+        mock_client.return_value = MagicMock()
+        yield mock_client
+
+
+@pytest.fixture
 def setup_spacy():
     """Mock spaCy to avoid the vector warning"""
     with patch('spacy.load') as mock_spacy_load:
@@ -232,7 +240,7 @@ def test_assertion_grounding(mock_gemini_client, detailed_sample_conversations):
     assert "Comparative Analysis" in response
 
 
-def test_text_similarity(setup_spacy):
+def test_text_similarity(mock_genai_client, setup_spacy):
     """Test the _text_similarity method to ensure it handles empty vectors"""
     arbiter = ConversationArbiter(api_key="fake_key")
     
@@ -251,7 +259,7 @@ def test_text_similarity(setup_spacy):
     assert 0 <= similarity <= 1
 
 
-def test_analyze_conversation_flow(setup_spacy, detailed_sample_conversations):
+def test_analyze_conversation_flow(mock_genai_client, setup_spacy, detailed_sample_conversations):
     """Test conversation flow analysis with realistic conversations"""
     arbiter = ConversationArbiter(api_key="fake_key")
     flow_metrics = arbiter.analyze_conversation_flow(detailed_sample_conversations["ai_ai"])
@@ -277,7 +285,7 @@ def test_conversation_metrics():
     assert 0 <= metrics.strategy_effectiveness <= 1
 
 
-def test_winner_determination():
+def test_winner_determination(mock_genai_client):
     """Test winner determination logic"""
     arbiter = ConversationArbiter(api_key="fake_key")
     ai_ai_metrics = {"coherence": 0.8, "depth": 0.7, "engagement": 0.9, "reasoning": 0.8, "knowledge": 0.7, "goal_progress": 0.6}
@@ -327,7 +335,7 @@ def test_full_evaluation(mock_gemini_client, detailed_sample_conversations, setu
     assert "<div" in result  # Simple check that we got HTML
 
 
-def test_prevents_negative_values_error():
+def test_prevents_negative_values_error(mock_genai_client):
     """Test that our implementation prevents negative values in distance matrix error"""
     # Create a test ConversationArbiter instance
     arbiter = ConversationArbiter(api_key="fake_key")
@@ -357,7 +365,7 @@ def test_prevents_negative_values_error():
             raise
 
 
-def test_empty_conversation_handling():
+def test_empty_conversation_handling(mock_genai_client):
     """Test handling of empty conversations"""
     arbiter = ConversationArbiter(api_key="fake_key")
     
