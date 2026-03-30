@@ -54,7 +54,13 @@ class SpacyModelSingleton:
 
 
 class VectorizerSingleton:
-    """Singleton for TF-IDF vectorizer to prevent multiple instances."""
+    """Singleton for TF-IDF vectorizer to prevent multiple instances.
+
+    Note: ContextAnalyzer now uses instance-level vectorizers with stable
+    vocabulary tracking instead of this singleton to ensure cross-turn
+    coherence comparisons are meaningful. This singleton is retained for
+    backward compatibility with other components that may still use it.
+    """
 
     _instance: Optional[TfidfVectorizer] = None
 

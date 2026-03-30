@@ -72,54 +72,67 @@ openai_models:
 gemini_models:
   gemini-2.0-pro:
     model: "gemini-2.0-pro-exp-02-05"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-pro-exp:
     model: "gemini-2.5-pro-exp-03-25"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-flash-preview:
     model: "gemini-2.5-flash-preview-04-17"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-pro-preview-03-25:
     model: "gemini-2.5-pro-preview-03-25"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-flash-preview-04-17:
     model: "gemini-2.5-flash-preview-04-17"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.0-flash-exp:
     model: "gemini-2.0-flash-exp"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.0-flash-thinking-exp:
     model: "gemini-2.0-flash-thinking-exp"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.0-flash-thinking-exp-01-21:
     model: "gemini-2.0-flash-thinking-exp-01-21"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.0-flash-lite:
     model: "gemini-2.0-flash-lite-preview-02-05"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-pro:
     model: "gemini-2.5-pro-latest"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-flash-lite:
     model: "gemini-2.5-flash-lite"
+    reasoning_level: null
     multimodal: true
 
   gemini-2.5-flash:
     model: "gemini-2.5-flash"
+    reasoning_level: null
     multimodal: true
 
   gemini-3.0-flash:
     model: "gemini-3.0-flash"
+    reasoning_level: null
     multimodal: true
 
 claude_models:

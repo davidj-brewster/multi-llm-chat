@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from shared_resources import SpacyModelSingleton, VectorizerSingleton
 
@@ -70,6 +71,9 @@ class ContextVector:
 
     domain_info: str = ""
 
+    # Signal degradation tracking
+    degraded_signals: Dict[str, str] = field(default_factory=dict)
+
     # Backward-compat properties
     @property
     def cognitive_load(self) -> float:
@@ -85,6 +89,15 @@ class ContextVector:
     def uncertainty_markers(self) -> Dict[str, float]:
         """Return epistemic stance signals as uncertainty markers."""
         return self.epistemic_stance
+    @property
+    def is_degraded(self) -> bool:
+        """Return True if any signals are degraded."""
+        return bool(self.degraded_signals)
+
+    @property
+    def degraded_signal_names(self) -> List[str]:
+        """Return list of degraded signal names."""
+        return list(self.degraded_signals.keys())
 
 
 class ContextAnalyzer:
@@ -102,7 +115,16 @@ class ContextAnalyzer:
         except (OSError, Exception) as e:
             logger.warning(f"spaCy unavailable ({e}), using fallback analysis only")
             self.nlp = None
-        self.vectorizer = VectorizerSingleton.get_instance()
+        # Instance-level vectorizer for stable cross-turn vocabulary
+        self._vectorizer: TfidfVectorizer = TfidfVectorizer(
+            max_features=4000,
+            stop_words="english",
+            ngram_range=(1, 2),
+        )
+        self._corpus_texts: List[str] = []
+        self._vocabulary_fitted: bool = False
+        self._vocabulary_version: int = 0
+        self._current_failures: Dict[str, str] = {}
         if self.nlp:
             logger.debug("ContextAnalyzer initialized with spaCy NLP pipeline")
         else:
@@ -120,34 +142,81 @@ class ContextAnalyzer:
         if not conversation_history:
             return ContextVector()
 
+        # Clear failures at the start of each analysis
+        self._current_failures = {}
+
         contents = [str(msg.get("content", "")) for msg in conversation_history]
 
-        return ContextVector(
-            conversation_phase=self._safe(self._compute_conversation_phase, conversation_history, default=0.0),
-            semantic_coherence=self._safe(self._compute_semantic_coherence, contents, default=1.0),
-            flesch_reading_ease=self._safe(self._compute_flesch, contents, default=50.0),
-            gunning_fog_index=self._safe(self._compute_gunning_fog, contents, default=12.0),
-            vocabulary_richness=self._safe(self._compute_vocabulary_richness, contents, default=0.5),
-            sentence_variety=self._safe(self._compute_sentence_variety, contents, default=0.5),
-            repetition_score=self._safe(self._compute_repetition, conversation_history, default=0.0),
-            agreement_saturation=self._safe(self._compute_agreement_saturation, conversation_history, default=0.0),
-            formulaic_score=self._safe(self._compute_formulaic_score, conversation_history, default=0.0),
-            topic_coherence=self._safe(self._compute_topic_coherence, contents, default=0.0),
-            topic_evolution=self._safe(self._compute_topic_evolution, contents, default={}),
-            participant_signals=self._safe(self._compute_participant_signals, conversation_history, default={}),
-            engagement_metrics=self._safe(self._compute_engagement, conversation_history, default={}),
-            response_patterns=self._safe(self._compute_response_patterns, conversation_history, default={}),
-            epistemic_stance=self._safe(self._compute_epistemic_stance, contents, default={}),
-            reasoning_patterns=self._safe(self._compute_reasoning_patterns, contents, default={}),
+        context_vector = ContextVector(
+            conversation_phase=self._safe(self._compute_conversation_phase, conversation_history, default=0.0, signal_name="conversation_phase"),
+            semantic_coherence=self._safe(self._compute_semantic_coherence, contents, default=1.0, signal_name="semantic_coherence"),
+            flesch_reading_ease=self._safe(self._compute_flesch, contents, default=50.0, signal_name="flesch_reading_ease"),
+            gunning_fog_index=self._safe(self._compute_gunning_fog, contents, default=12.0, signal_name="gunning_fog_index"),
+            vocabulary_richness=self._safe(self._compute_vocabulary_richness, contents, default=0.5, signal_name="vocabulary_richness"),
+            sentence_variety=self._safe(self._compute_sentence_variety, contents, default=0.5, signal_name="sentence_variety"),
+            repetition_score=self._safe(self._compute_repetition, conversation_history, default=0.0, signal_name="repetition_score"),
+            agreement_saturation=self._safe(self._compute_agreement_saturation, conversation_history, default=0.0, signal_name="agreement_saturation"),
+            formulaic_score=self._safe(self._compute_formulaic_score, conversation_history, default=0.0, signal_name="formulaic_score"),
+            topic_coherence=self._safe(self._compute_topic_coherence, contents, default=0.0, signal_name="topic_coherence"),
+            topic_evolution=self._safe(self._compute_topic_evolution, contents, default={}, signal_name="topic_evolution"),
+            participant_signals=self._safe(self._compute_participant_signals, conversation_history, default={}, signal_name="participant_signals"),
+            engagement_metrics=self._safe(self._compute_engagement, conversation_history, default={}, signal_name="engagement_metrics"),
+            response_patterns=self._safe(self._compute_response_patterns, conversation_history, default={}, signal_name="response_patterns"),
+            epistemic_stance=self._safe(self._compute_epistemic_stance, contents, default={}, signal_name="epistemic_stance"),
+            reasoning_patterns=self._safe(self._compute_reasoning_patterns, contents, default={}, signal_name="reasoning_patterns"),
         )
 
-    def _safe(self, fn, *args, default=None):
-        """Call fn with args, returning default on any exception."""
+        # Attach degraded signals to the context vector
+        context_vector.degraded_signals = dict(self._current_failures)
+
+        return context_vector
+
+    def _safe(self, fn, *args, default=None, signal_name: str = ""):
+        """Call fn with args, returning default on any exception.
+
+        Args:
+            fn: Function to call.
+            *args: Arguments to pass to fn.
+            default: Default value to return on exception.
+            signal_name: Name of the signal being computed (for failure tracking).
+        """
         try:
             return fn(*args)
         except Exception as e:
             logger.warning(f"{fn.__name__} failed: {e}")
+            if signal_name:
+                self._current_failures[signal_name] = str(e)
             return default
+
+    def _ensure_vocabulary(self, new_texts: List[str]) -> None:
+        """Maintain stable vocabulary by accumulating corpus and refitting periodically.
+
+        Args:
+            new_texts: List of new message texts to incorporate.
+        """
+        # Track unseen texts only
+        new_unseen = [t for t in new_texts if t.strip() and t not in self._corpus_texts]
+
+        if not new_unseen:
+            return
+
+        self._corpus_texts.extend(new_unseen)
+
+        if not self._vocabulary_fitted:
+            # Initial fit on accumulated corpus
+            if self._corpus_texts:
+                self._vectorizer.fit(self._corpus_texts)
+                self._vocabulary_fitted = True
+                logger.debug(f"TF-IDF vocabulary fitted on {len(self._corpus_texts)} texts")
+        else:
+            # Refit every 5 new texts to incorporate new terms gradually
+            if len(new_unseen) >= 5:
+                self._vectorizer.fit(self._corpus_texts)
+                self._vocabulary_version += 1
+                logger.debug(
+                    f"TF-IDF vocabulary refitted (v{self._vocabulary_version}) "
+                    f"on {len(self._corpus_texts)} total texts"
+                )
 
     # ─── Text Utilities ───────────────────────────────────────────────
 
@@ -204,6 +273,7 @@ class ContextAnalyzer:
 
         Returns mean cosine similarity between adjacent messages.
         No /2 division -- raw cosine values, properly scaled 0-1.
+        Uses stable vocabulary across turns via instance-level vectorizer.
         """
         if len(contents) < 3:
             return 1.0
@@ -212,7 +282,8 @@ class ContextAnalyzer:
         if len(recent) < 2:
             return 1.0
 
-        tfidf_matrix = self.vectorizer.fit_transform(recent)
+        self._ensure_vocabulary(contents)
+        tfidf_matrix = self._vectorizer.transform(recent)
         similarities = []
         for i in range(len(recent) - 1):
             sim = cosine_similarity(tfidf_matrix[i:i + 1], tfidf_matrix[i + 1:i + 2])[0][0]
@@ -334,6 +405,7 @@ class ContextAnalyzer:
         """Extract topics from conversation using noun chunks (spaCy) or TF-IDF top terms.
 
         Returns dict of topic -> normalized frequency.
+        Uses stable vocabulary across turns.
         """
         recent = [c for c in contents[-8:] if c.strip()]
         if not recent:
@@ -352,10 +424,11 @@ class ContextAnalyzer:
                 key = ent.text.lower()
                 topics[key] = topics.get(key, 0) + 1
         else:
-            # Fallback: TF-IDF top terms
+            # Fallback: TF-IDF top terms with stable vocabulary
             try:
-                tfidf = self.vectorizer.fit_transform(recent)
-                feature_names = self.vectorizer.get_feature_names_out()
+                self._ensure_vocabulary(contents)
+                tfidf = self._vectorizer.transform(recent)
+                feature_names = self._vectorizer.get_feature_names_out()
                 scores = np.asarray(tfidf.sum(axis=0)).flatten()
                 top_indices = scores.argsort()[-20:][::-1]
                 for idx in top_indices:
@@ -374,13 +447,15 @@ class ContextAnalyzer:
     def _compute_topic_coherence(self, contents: List[str]) -> float:
         """How focused the conversation is on consistent topics.
 
-        Uses average pairwise TF-IDF cosine similarity across messages.
+        Uses average pairwise TF-IDF cosine similarity across messages
+        with stable vocabulary across turns.
         """
         recent = [c for c in contents[-8:] if c.strip()]
         if len(recent) < 2:
             return 0.5
 
-        tfidf_matrix = self.vectorizer.fit_transform(recent)
+        self._ensure_vocabulary(contents)
+        tfidf_matrix = self._vectorizer.transform(recent)
         sim_matrix = cosine_similarity(tfidf_matrix)
 
         n = sim_matrix.shape[0]
@@ -424,7 +499,8 @@ class ContextAnalyzer:
             else:
                 processed = messages
 
-            tfidf = self.vectorizer.fit_transform(processed)
+            self._ensure_vocabulary(processed)
+            tfidf = self._vectorizer.transform(processed)
             similarities = []
             for i in range(len(processed) - 1):
                 sim = cosine_similarity(tfidf[i:i + 1], tfidf[i + 1:i + 2])[0][0]
@@ -462,6 +538,7 @@ class ContextAnalyzer:
         """Detect premature consensus/deadlock between participants.
 
         Combines cross-participant similarity, declining length, and absence of contrastive markers.
+        Uses stable vocabulary for stable similarity comparisons.
         """
         by_role = self._get_messages_by_role(history)
         roles = [r for r in by_role if len(by_role[r]) >= 2]
@@ -474,7 +551,9 @@ class ContextAnalyzer:
         recent_b = " ".join(by_role[role_b][-2:])
 
         try:
-            tfidf = self.vectorizer.fit_transform([recent_a, recent_b])
+            contents = [str(msg.get("content", "")) for msg in history]
+            self._ensure_vocabulary(contents)
+            tfidf = self._vectorizer.transform([recent_a, recent_b])
             cross_sim = float(cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0])
         except Exception:
             cross_sim = 0.0

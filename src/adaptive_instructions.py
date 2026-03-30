@@ -11,11 +11,10 @@ from typing import List, Dict, Optional
 
 from context_analysis import ContextAnalyzer, ContextVector
 from shared_resources import InstructionTemplates
+from constants import TOKENS_PER_TURN
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-TOKENS_PER_TURN = 3084
 
 
 class AdaptiveInstructionError(Exception):
@@ -94,6 +93,13 @@ _INTERVENTIONS = {
     },
 }
 
+_PATHOLOGY_TEMPLATE_MAP = {
+    "repetition": "critical",
+    "agreement": "critical",
+    "formulaic": "synthesis",
+    "readability_drift": "exploratory",
+}
+
 
 class AdaptiveInstructionManager:
     """Manages dynamic instruction generation based on conversation context."""
@@ -110,6 +116,11 @@ class AdaptiveInstructionManager:
             "formulaic": {"count": 0},
             "readability_drift": {"count": 0},
         }
+
+        # Template switching state
+        self._forced_template: Optional[str] = None
+        self._template_switch_cooldown: int = 0
+        self._last_selected_template_name: Optional[str] = None
 
         # Last context for signal reporting
         self.last_context: Optional[ContextVector] = None
@@ -185,6 +196,8 @@ class AdaptiveInstructionManager:
             analyzer.domain = domain
             context = analyzer.analyze(history)
             context.domain_info = domain
+            if context.is_degraded:
+                logger.warning(f"Context analysis degraded signals detected: {context.degraded_signal_names}")
             return context
         except Exception as e:
             logger.error(f"Error analyzing conversation context: {e}")
@@ -196,17 +209,44 @@ class AdaptiveInstructionManager:
 
     def _select_template(self, context: ContextVector, mode: str) -> str:
         """Select instruction template based on context signals."""
+        # Guard: if key signals are degraded, use safe default (exploratory template)
+        critical_signals = {"semantic_coherence", "conversation_phase", "gunning_fog_index", "vocabulary_richness"}
+        if critical_signals & set(context.degraded_signal_names):
+            logger.warning(f"Critical signals degraded: {critical_signals & set(context.degraded_signal_names)}. Using exploratory template as safe default.")
+            templates = InstructionTemplates.get_templates()
+            if not templates:
+                raise TemplateNotFoundError("No templates available")
+            template_prefix = "ai-ai-" if mode == "ai-ai" else ""
+            if f"{template_prefix}exploratory" in templates:
+                return templates[f"{template_prefix}exploratory"]
+            else:
+                raise TemplateNotFoundError(f"Required template not found: {template_prefix}exploratory")
+        
         templates = InstructionTemplates.get_templates()
         if not templates:
             raise TemplateNotFoundError("No templates available")
 
         template_prefix = "ai-ai-" if mode == "ai-ai" else ""
 
+        # Check for forced template (from TEMPLATE_SWITCH escalation)
+        if self._forced_template and self._template_switch_cooldown > 0:
+            self._template_switch_cooldown -= 1
+            forced_name = f"{template_prefix}{self._forced_template}"
+            if forced_name in templates:
+                logger.info(
+                    f"Using forced template '{forced_name}' (cooldown: {self._template_switch_cooldown})"
+                )
+                if self._template_switch_cooldown == 0:
+                    self._forced_template = None
+                self._last_selected_template_name = forced_name
+                return templates[forced_name]
+
         # Goal detection
         domain_text = str(getattr(context, 'domain_info', '') or '')
         if any(m in domain_text.upper() for m in ["GOAL:", "GOAL "]):
             if "goal_oriented_instructions" in templates:
                 logger.debug("Using goal_oriented_instructions template")
+                self._last_selected_template_name = "goal_oriented_instructions"
                 return templates["goal_oriented_instructions"]
 
         # Check topic evolution for goals
@@ -214,6 +254,7 @@ class AdaptiveInstructionManager:
             for topic in context.topic_evolution:
                 if any(m in str(topic).upper() for m in ["GOAL:", "GOAL "]):
                     if "goal_oriented_instructions" in templates:
+                        self._last_selected_template_name = "goal_oriented_instructions"
                         return templates["goal_oriented_instructions"]
                     break
 
@@ -226,21 +267,26 @@ class AdaptiveInstructionManager:
         # FIXED thresholds (no more always-firing conditions)
         if context.conversation_phase < 0.3:
             logger.debug("Early conversation phase -> exploratory")
+            self._last_selected_template_name = f"{template_prefix}exploratory"
             return templates[f"{template_prefix}exploratory"]
 
         if context.semantic_coherence < 0.3:
             logger.debug("Low semantic coherence -> structured")
+            self._last_selected_template_name = f"{template_prefix}structured"
             return templates[f"{template_prefix}structured"]
 
         if context.gunning_fog_index > 14:
             logger.debug("High fog index -> synthesis (simplify)")
+            self._last_selected_template_name = f"{template_prefix}synthesis"
             return templates[f"{template_prefix}synthesis"]
 
         if context.vocabulary_richness > 0.7 and context.conversation_phase > 0.6:
             logger.debug("Rich vocabulary + mature conversation -> critical")
+            self._last_selected_template_name = f"{template_prefix}critical"
             return templates[f"{template_prefix}critical"]
 
         logger.debug("Default -> exploratory")
+        self._last_selected_template_name = f"{template_prefix}exploratory"
         return templates[f"{template_prefix}exploratory"]
 
     # ------------------------------------------------------------------
@@ -251,38 +297,64 @@ class AdaptiveInstructionManager:
         """Check for conversational pathologies and return intervention text.
 
         Uses per-participant signals when available, falls back to global.
+        Skips checks for degraded signals.
         """
         interventions = []
         participant_signals = context.participant_signals.get(role, {}) if role else {}
+        degraded_names = set(context.degraded_signal_names)
 
-        # Repetition
-        rep_score = participant_signals.get("repetition_score", context.repetition_score)
-        self._update_tracker("repetition", rep_score > 0.6)
-        intervention = self._get_intervention("repetition")
-        if intervention:
-            interventions.append(intervention)
+        # Repetition - skip if degraded
+        if "repetition_score" not in degraded_names:
+            rep_score = participant_signals.get("repetition_score", context.repetition_score)
+            self._update_tracker("repetition", rep_score > 0.6)
+            intervention = self._get_intervention("repetition")
+            if intervention:
+                interventions.append(intervention)
+        else:
+            logger.debug("Skipping repetition check: repetition_score signal is degraded")
 
-        # Agreement saturation
-        self._update_tracker("agreement", context.agreement_saturation > 0.7)
-        intervention = self._get_intervention("agreement")
-        if intervention:
-            interventions.append(intervention)
+        # Agreement saturation - skip if degraded
+        if "agreement_saturation" not in degraded_names:
+            self._update_tracker("agreement", context.agreement_saturation > 0.7)
+            intervention = self._get_intervention("agreement")
+            if intervention:
+                interventions.append(intervention)
+        else:
+            logger.debug("Skipping agreement check: agreement_saturation signal is degraded")
 
-        # Formulaic
-        form_score = participant_signals.get("formulaic_score", context.formulaic_score)
-        self._update_tracker("formulaic", form_score > 0.6)
-        intervention = self._get_intervention("formulaic")
-        if intervention:
-            interventions.append(intervention)
+        # Formulaic - skip if degraded
+        if "formulaic_score" not in degraded_names:
+            form_score = participant_signals.get("formulaic_score", context.formulaic_score)
+            self._update_tracker("formulaic", form_score > 0.6)
+            intervention = self._get_intervention("formulaic")
+            if intervention:
+                interventions.append(intervention)
+        else:
+            logger.debug("Skipping formulaic check: formulaic_score signal is degraded")
 
-        # Readability drift (Flesch < 40 or Fog > 14 in conversational context)
-        flesch = participant_signals.get("flesch_reading_ease", context.flesch_reading_ease)
-        fog = participant_signals.get("gunning_fog_index", context.gunning_fog_index)
-        readability_bad = flesch < 40 or fog > 14
-        self._update_tracker("readability_drift", readability_bad)
-        intervention = self._get_intervention("readability_drift")
-        if intervention:
-            interventions.append(intervention)
+        # Readability drift - skip if either readability signal is degraded
+        # Also skip if synthesis template was already selected (prevents double-correction)
+        should_check_readability = (
+            "flesch_reading_ease" not in degraded_names and
+            "gunning_fog_index" not in degraded_names
+        )
+        if (should_check_readability and self._last_selected_template_name and
+            self._last_selected_template_name.endswith("synthesis")):
+            should_check_readability = False
+
+        if should_check_readability:
+            flesch = participant_signals.get("flesch_reading_ease", context.flesch_reading_ease)
+            fog = participant_signals.get("gunning_fog_index", context.gunning_fog_index)
+            readability_bad = flesch < 40 or fog > 14
+            self._update_tracker("readability_drift", readability_bad)
+            intervention = self._get_intervention("readability_drift")
+            if intervention:
+                interventions.append(intervention)
+        else:
+            # Still reset the tracker if not checking
+            self._update_tracker("readability_drift", False)
+            if ("flesch_reading_ease" in degraded_names or "gunning_fog_index" in degraded_names):
+                logger.debug("Skipping readability check: flesch_reading_ease or gunning_fog_index signals are degraded")
 
         return "\n".join(interventions) if interventions else ""
 
@@ -310,8 +382,18 @@ class AdaptiveInstructionManager:
 
         text = levels[level]
         if text == "TEMPLATE_SWITCH":
-            logger.warning(f"Pathology '{pathology}' at level 3 -- would trigger template switch")
-            # Return the level 2 intervention as the strongest text directive
+            # Get the target template from the mapping
+            target_template = _PATHOLOGY_TEMPLATE_MAP.get(pathology)
+            if target_template:
+                self._forced_template = target_template
+                self._template_switch_cooldown = 3
+                # Reset the pathology tracker count to prevent immediate re-trigger
+                self._pathology_tracker[pathology]["count"] = 0
+                logger.info(
+                    f"Pathology '{pathology}' at level 3 -- triggering template switch to '{target_template}' "
+                    f"(cooldown: {self._template_switch_cooldown} turns)"
+                )
+            # Return the level 2 intervention as text alongside the template switch
             return f"CRITICAL: {levels[2]}"
         return text
 

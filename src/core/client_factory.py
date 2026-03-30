@@ -110,13 +110,20 @@ class ClientFactory:
             # Handle Gemini models
             gemini_config = self._registry.gemini_models.get(model_name)
             if gemini_config:
-                return GeminiClient(
+                client = GeminiClient(
                     api_key=self.gemini_api_key,
                     role=None,
                     mode=self.mode,
                     domain=self.domain,
                     model=gemini_config["model"],
                 )
+
+                # Set reasoning level if specified (handle missing key gracefully)
+                if gemini_config.get("reasoning_level") is not None:
+                    client.reasoning_level = gemini_config.get("reasoning_level")
+                    logger.debug(f"Set reasoning level to '{gemini_config.get('reasoning_level')}' for {model_name}")
+
+                return client
 
             # Handle Ollama models dynamically
             if model_name.startswith("ollama-"):

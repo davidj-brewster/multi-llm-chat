@@ -15,14 +15,14 @@ import requests
 from adaptive_instructions import AdaptiveInstructionManager, InstructionSet
 from shared_resources import MemoryManager
 from configuration import detect_model_capabilities
+from constants import TOKENS_PER_TURN
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-MAX_TOKENS = 4096
-TOKENS_PER_TURN = MAX_TOKENS
+MAX_TOKENS = TOKENS_PER_TURN
 
 
 @dataclass

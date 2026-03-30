@@ -35,6 +35,8 @@ SUPPORTED_MODELS = {
     "mlx": ["*"],
 }
 
+TOKENS_PER_TURN = 4096
+
 SUPPORTED_FILE_TYPES = {
     "image": {
         "extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp"],

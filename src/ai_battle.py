@@ -28,6 +28,7 @@ from model_clients import (
     MLXClient,
     OllamaClient,
 )
+from constants import TOKENS_PER_TURN
 
 from lmstudio_client import LMStudioClient
 from shared_resources import MemoryManager
@@ -36,6 +37,7 @@ from metrics_analyzer import analyze_conversations
 # NEW: Import from refactored modules
 # Model registry now loaded from YAML instead of hard-coded dicts below
 from core.model_registry import get_registry
+from core.client_factory import ClientFactory
 
 T = TypeVar("T")
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -57,7 +59,6 @@ os.environ["AI_MODEL"] = AI_MODEL
 os.environ["HUMAN_MODEL"] = HUMAN_MODEL
 
 CONFIG_PATH = "config.yaml"
-TOKENS_PER_TURN = 4096
 MAX_TOKENS = TOKENS_PER_TURN
 DEFAULT_PROMPT = """
 Discuss societal, productivity and privacy implications (pros and cons) of conversational memory recall, embeddings and persistence in web-based AI systems, memory on vs memory off contexts, and the collection of user-related metadata in the context of a conversations including via multimodal inputs.
@@ -110,156 +111,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# DEPRECATED: Model configurations below are being replaced by src/data/model_registry.yaml
-# The model registry provides the same data but externalized to YAML for easier management
-# TODO: Remove these dicts once ConversationManager is refactored to use core.model_registry
-_registry = get_registry()
-
-# Model templates for accessing different model versions with reasoning levels
-OPENAI_MODELS = {
-    # Base models (text-only with reasoning support)
-    "o1": {"model": "o1", "reasoning_level": "medium", "multimodal": False},
-    "o3": {"model": "o3", "reasoning_level": "auto", "multimodal": True},
-    # O3 with reasoning levels (text-only)
-    "o3-reasoning-high": {
-        "model": "o3",
-        "reasoning_level": "high",
-        "multimodal": True,
-    },
-    "o3-reasoning-medium": {
-        "model": "o3",
-        "reasoning_level": "medium",
-        "multimodal": True,
-    },
-    "o3-reasoning-low": {"model": "o3", "reasoning_level": "low", "multimodal": True},
-    "o3-mini-high": {"model": "o3-mini", "reasoning_level": "high", "multimodal": True},
-    "o4-mini": {"model": "o4-mini", "reasoning_level": "medium", "multimodal": True},
-    "o4-mini-high": {"model": "o4-mini", "reasoning_level": "high", "multimodal": True},
-    # Multimodal models without reasoning parameter
-    "gpt-4o": {"model": "gpt-4o", "reasoning_level": None, "multimodal": True},
-    "gpt-4.1": {"model": "gpt-4.1", "reasoning_level": None, "multimodal": True},
-    "gpt-5": {"model": "gpt-5", "reasoning_level": "medium" , "multimodal": True},
-    "gpt-4.1-mini": {"model": "gpt-4.1-mini", "reasoning_level": None, "multimodal": True},
-    "gpt-4.1-nano": {"model": "gpt-4.1-nano", "reasoning_level": None, "multimodal": True},
-    "chatgpt-latest": {"model": "chatgpt-latest", "reasoning_level": None, "multimodal": True},
-}
-
-# Gemini model configurations
-GEMINI_MODELS = {
-    "gemini-2.0-pro": {"model": "gemini-2.0-pro-exp-02-05", "multimodal": True},
-    "gemini-2.5-pro-exp": {"model": "gemini-2.5-pro-exp-03-25", "multimodal": True},
-    "gemini-2.5-flash-preview": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
-    "gemini-2.5-pro-preview-03-25": {"model": "gemini-2.5-pro-preview-03-25", "multimodal": True},
-    "gemini-2.5-flash-preview-04-17": {"model": "gemini-2.5-flash-preview-04-17", "multimodal": True},
-    "gemini-2.0-flash-exp": {"model": "gemini-2.0-flash-exp", "multimodal": True},
-    "gemini-2.0-flash-thinking-exp": {"model": "gemini-2.0-flash-thinking-exp", "multimodal": True},
-    "gemini-2.0-flash-thinking-exp-01-21": {"model": "gemini-2.0-flash-thinking-exp-01-21", "multimodal": True},
-    "gemini-2.0-flash-lite": {"model": "gemini-2.0-flash-lite-preview-02-05", "multimodal": True},
-    # Added Gemini 2.5 Pro and Flash (using 1.5 latest as placeholders)
-    "gemini-2.5-pro": {"model": "gemini-2.5-pro-latest", "multimodal": True},
-    "gemini-2.5-flash-lite": {"model": "gemini-2.5-flash-lite", "multimodal": True},
-    "gemini-2.5-flash": {"model": "gemini-2.5-flash", "multimodal": True},
-}
-
-CLAUDE_MODELS = {
-    # Base models (newest versions)
-    "claude": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": None,
-        "extended_thinking": False,
-    },
-    "sonnet": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": None,
-        "extended_thinking": False,
-    },
-    "haiku": {
-        "model": "claude-3-5-haiku-latest",
-        "reasoning_level": None,
-        "extended_thinking": False,
-    },
-    # Specific versions
-    "claude-3-5-sonnet": {
-        "model": "claude-3-5-sonnet-latest",
-        "reasoning_level": None,
-        "extended_thinking": False,
-    },
-    "claude-3-5-haiku": {
-        "model": "claude-3-5-haiku-latest",
-        "reasoning_level": None,
-        "extended_thinking": False,
-    },
-    "claude-3-7": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "auto",
-        "extended_thinking": False,
-    },
-    "claude-3-7-sonnet": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "auto",
-        "extended_thinking": False,
-    },
-    "claude-4-0-sonnet": {
-        "model": "claude-4-0-sonnet-latest",
-        "reasoning_level": "auto",
-        "extended_thinking": False,
-    },
-    "claude-4-0-opus": {
-        "model": "claude-4-0-opus-latest",
-        "reasoning_level": "high",
-        "extended_thinking": True,
-    },
-    # Claude 3.7 with reasoning levels
-    "claude-3-7-reasoning": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "high",
-        "extended_thinking": False,
-    },
-    "claude-3-7-reasoning-high": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "high",
-        "extended_thinking": False,
-    },
-    "claude-3-7-reasoning-medium": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "medium",
-        "extended_thinking": False,
-    },
-    "claude-3-7-reasoning-low": {
-        "model": "claude-3-7-sonnet",
-        "reasoning_level": "low",
-        "extended_thinking": False,
-    },
-    "claude-3-7-reasoning-none": {
-        "model": "claude-3-7-sonnet",
-        "reasoning_level": "none",
-        "extended_thinking": False,
-    },
-    # Claude 3.7 with extended thinking
-    "claude-3-7-extended": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "high",
-        "extended_thinking": True,
-        "budget_tokens": 8000,
-    },
-    "claude-3-7-extended-deep": {
-        "model": "claude-3-7-sonnet-latest",
-        "reasoning_level": "high",
-        "extended_thinking": True,
-        "budget_tokens": 16000,
-    },
-}
-
-# Ollama model configurations for thinking-capable models
-# Keyword-based overrides applied when a matching Ollama model is discovered dynamically.
-# Default reasoning_level is "high" for all thinking models.
-OLLAMA_THINKING_CONFIG = {
-    "gpt-oss": {"reasoning_level": "medium", "extended_thinking": True, "num_ctx": 131072},
-    "deepseek-r1": {"reasoning_level": "high", "extended_thinking": True},
-    "qwen3": {"reasoning_level": "high", "extended_thinking": True},
-    "phi4-reasoning": {"reasoning_level": "high", "extended_thinking": True},
-    "granite-reasoning": {"reasoning_level": "high", "extended_thinking": True},
-}
+# Model registry now loaded from YAML via core.model_registry and ClientFactory
+# See src/data/model_registry.yaml for all model configurations
 
 
 @dataclass
@@ -306,6 +159,15 @@ class ConversationManager:
         self.openai_api_key = openai_api_key
         self.claude_api_key = claude_api_key
         self.gemini_api_key = gemini_api_key
+
+        # Initialize ClientFactory for unified model client creation
+        self._client_factory = ClientFactory(
+            mode=mode,
+            domain=self.domain,
+            openai_api_key=openai_api_key,
+            claude_api_key=claude_api_key,
+            gemini_api_key=gemini_api_key,
+        )
 
         # Initialize empty client tracking
         self._initialized_clients = set()
@@ -388,9 +250,8 @@ class ConversationManager:
         """
         Get an existing client instance or create a new one for the specified model.
 
-        This method manages client instances, creating them on demand and caching them
-        for reuse. It supports various model types including Claude, GPT, Gemini, MLX,
-        Ollama
+        This method delegates to ClientFactory for unified client creation and caches
+        clients in model_map for compatibility with existing code.
 
         Args:
             model_name: Name of the model to get or create a client for
@@ -401,177 +262,18 @@ class ConversationManager:
         """
         if model_name not in self._initialized_clients:
             try:
-                # Handle Claude models using templates
-                if model_name in CLAUDE_MODELS:
-                    model_config = CLAUDE_MODELS[model_name]
-                    client = ClaudeClient(
-                        role=None,
-                        api_key=self.claude_api_key,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model=model_config["model"],
-                    )
-
-                    # Set reasoning level if specified
-                    if model_config["reasoning_level"] is not None:
-                        client.reasoning_level = model_config["reasoning_level"]
-                        logger.debug(
-                            f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}"
-                        )
-
-                    # Set extended thinking if enabled
-                    if model_config.get("extended_thinking", False):
-                        budget_tokens = model_config.get("budget_tokens", None)
-                        client.set_extended_thinking(True, budget_tokens)
-                        logger.info( # Changed to info for better visibility
-                            f"Enabled extended thinking with budget_tokens={budget_tokens} for Claude model {model_name}"
-                        )
-
-                # Handle OpenAI models using templates
-                elif model_name in OPENAI_MODELS:
-                    model_config = OPENAI_MODELS[model_name]
-                    client = OpenAIClient(
-                        api_key=self.openai_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model=model_config["model"],
-                    )
-
-                    # Set reasoning level if specified
-                    if model_config["reasoning_level"] is not None:
-                        client.reasoning_level = model_config["reasoning_level"]
-                        logger.debug(
-                            f"Set reasoning level to '{model_config['reasoning_level']}' for {model_name}"
-                        )
-
-                # Handle Ollama models dynamically
-                elif model_name.startswith("ollama-"):
-                    # Get available Ollama models
-                    ollama_models = self._get_available_ollama_models()
-
-                    if ollama_models and model_name in ollama_models:
-                        # Use the mapped model name
-                        actual_model = ollama_models[model_name]
-                        client = OllamaClient(
-                            mode=self.mode,
-                            domain=self.domain,
-                            model=actual_model
-                        )
-                        logger.info(f"Using Ollama model: {model_name} -> {actual_model}")
-                    else:
-                        # Try to extract model name directly from the request
-                        # This handles cases like "ollama-new-model" that aren't in our map
-                        # or when ollama_models is None due to connection issues
-                        model_suffix = model_name[len("ollama-"):]
-                        if ":" not in model_suffix:
-                            model_suffix = f"{model_suffix}:latest"
-
-                        if ollama_models is None:
-                            logger.warning(f"Unable to fetch Ollama models, using direct model name: {model_suffix}")
-                        else:
-                            logger.warning(f"Ollama model {model_name} not found in available models, trying direct: {model_suffix}")
-
-                        actual_model = model_suffix
-                        client = OllamaClient(
-                            mode=self.mode,
-                            domain=self.domain,
-                            model=actual_model
-                        )
-
-                    # Apply thinking configuration if the model matches known thinking-capable patterns
-                    if client:
-                        actual_model_lower = actual_model.lower()
-                        for keyword, thinking_config in OLLAMA_THINKING_CONFIG.items():
-                            if keyword in actual_model_lower:
-                                if thinking_config.get("reasoning_level"):
-                                    client.reasoning_level = thinking_config["reasoning_level"]
-                                    logger.info(
-                                        f"Set reasoning level to '{thinking_config['reasoning_level']}' "
-                                        f"for Ollama model {model_name} (matched '{keyword}')"
-                                    )
-                                if thinking_config.get("extended_thinking", False):
-                                    client.set_extended_thinking(True)
-                                    logger.info(
-                                        f"Enabled extended thinking for Ollama model {model_name} "
-                                        f"(matched '{keyword}')"
-                                    )
-                                if "num_ctx" in thinking_config:
-                                    client.num_ctx = thinking_config["num_ctx"]
-                                    logger.info(
-                                        f"Set num_ctx={thinking_config['num_ctx']} "
-                                        f"for Ollama model {model_name}"
-                                    )
-                                if "keep_alive" in thinking_config:
-                                    client.keep_alive = thinking_config["keep_alive"]
-                                break  # Apply first matching config only
-
-                # Handle LMStudio models dynamically
-                elif model_name.startswith("lmstudio-"):
-                    # Get available LMStudio models
-                    lmstudio_models = self._get_available_lmstudio_models()
-
-                    # Only attempt matching if we have models to match against
-                    if lmstudio_models:
-                        # Try matching by prefix (allows partial matches)
-                        matched_name = None
-                        for lms_name in lmstudio_models:
-                            if model_name == lms_name or (
-                                # Handle the case where model names have additional specifics (like bit depth)
-                                # e.g., "lmstudio-qwq-32b" would match "lmstudio-qwq-32b-8bit-MLX"
-                                model_name.startswith(lms_name) or lms_name.startswith(model_name)
-                            ):
-                                matched_name = lms_name
-                                break
-
-                        if matched_name:
-                            actual_model = lmstudio_models[matched_name]
-                            client = LMStudioClient(
-                                mode=self.mode,
-                                domain=self.domain,
-                                model=actual_model
-                            )
-                            logger.info(f"Using LMStudio model: {model_name} -> {actual_model}")
-                            return client
-
-                    # If we get here, either lmstudio_models is None or no matching model was found
-                    if lmstudio_models is None:
-                        logger.warning("Unable to fetch LMStudio models, creating default client")
-                    else:
-                        logger.warning(f"LMStudio model {model_name} not found in available models, using first available")
-
-                    # Create client with no specific model - LMStudioClient will use first available
-                    client = LMStudioClient(
-                        mode=self.mode,
-                        domain=self.domain
-                    )
-
-                # Handle Gemini models using templates
-                elif model_name in GEMINI_MODELS:
-                    model_config = GEMINI_MODELS[model_name]
-                    client = GeminiClient(
-                        api_key=self.gemini_api_key,
-                        role=None,
-                        mode=self.mode,
-                        domain=self.domain,
-                        model=model_config["model"],
-                    )
-                elif model_name == "mlx-llama-3.1-abb":
-                    client = MLXClient(
-                        mode=self.mode,
-                        domain=self.domain,
-                        model="mlx-community/Meta-Llama-3.1-8B-Instruct-abliterated-8bit",
-                    )
-                else:
-                    logger.error(f"Unknown model: {model_name}")
-                    return None
-
-                logger.info(f"Created client for model: {model_name}")
-                logger.debug(MemoryManager.get_memory_usage())
+                # Delegate to ClientFactory for unified model client creation
+                client = self._client_factory.get_client(model_name)
 
                 if client:
+                    logger.info(f"Created client for model: {model_name}")
+                    logger.debug(MemoryManager.get_memory_usage())
                     self.model_map[model_name] = client
                     self._initialized_clients.add(model_name)
+                else:
+                    logger.error(f"Unknown model or failed to create client: {model_name}")
+                    return None
+
             except Exception as e:
                 # Check if this is a critical error that should terminate the program
                 is_critical_error = False
@@ -591,6 +293,7 @@ class ConversationManager:
 
                 logger.error(f"Failed to create client for {model_name}: {e}")
                 return None
+
         return self.model_map.get(model_name)
 
     def cleanup_unused_clients(self):
@@ -664,12 +367,15 @@ class ConversationManager:
         ollama_models = self._get_available_ollama_models()
         lmstudio_models = self._get_available_lmstudio_models()
 
+        # Get models from registry
+        registry = self._client_factory._registry
+
         result = {
             "ollama": list(ollama_models.keys()) if ollama_models else ["ollama-not-available"],
             "lmstudio": list(lmstudio_models.keys()) if lmstudio_models else ["lmstudio-not-available"],
-            "claude": list(CLAUDE_MODELS.keys()),
-            "openai": list(OPENAI_MODELS.keys()),
-            "gemini": list(GEMINI_MODELS.keys()),
+            "claude": list(registry.claude_models.keys()),
+            "openai": list(registry.openai_models.keys()),
+            "gemini": list(registry.gemini_models.keys()),
         }
         return result
 
