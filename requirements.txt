@@ -424,7 +424,7 @@ protobuf==5.29.6
     #   streamlit
 psutil==7.0.0
     # via multi-llm-chat
-pyarrow==19.0.0
+pyarrow==23.0.1
     # via
     #   multi-llm-chat
     #   nlp
