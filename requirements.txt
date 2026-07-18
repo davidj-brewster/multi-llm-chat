@@ -196,7 +196,7 @@ huggingface-hub==0.36.2
     #   multi-llm-chat
     #   tokenizers
     #   transformers
-idna==3.11
+idna==3.15
     # via
     #   anyio
     #   httpx
