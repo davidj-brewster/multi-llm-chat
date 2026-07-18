@@ -693,7 +693,7 @@ tzdata==2025.1
     # via
     #   multi-llm-chat
     #   pandas
-urllib3==2.6.3
+urllib3==2.7.0
     # via
     #   docker
     #   multi-llm-chat
