@@ -393,7 +393,7 @@ pathspec==0.12.1
     #   multi-llm-chat
 phidata==2.7.10
     # via multi-llm-chat
-pillow==11.1.0
+pillow==12.2.0
     # via
     #   multi-llm-chat
     #   streamlit
