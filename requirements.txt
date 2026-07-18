@@ -508,7 +508,7 @@ regex==2024.11.6
     #   multi-llm-chat
     #   nltk
     #   transformers
-requests==2.32.4
+requests==2.33.0
     # via
     #   docker
     #   google-genai
