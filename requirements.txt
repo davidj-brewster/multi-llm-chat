@@ -479,7 +479,7 @@ python-dateutil==2.9.0.post0
     # via
     #   multi-llm-chat
     #   pandas
-python-dotenv==1.0.1
+python-dotenv==1.2.2
     # via
     #   multi-llm-chat
     #   phidata
