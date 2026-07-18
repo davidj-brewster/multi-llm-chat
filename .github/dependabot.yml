@@ -5,4 +5,4 @@ updates:
   - package-ecosystem: "pip"
     directory: "/src" # Location of package manifests
     schedule:
-      interval: "weekly"
+      interval: "daily"
