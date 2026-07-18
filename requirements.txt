@@ -603,7 +603,7 @@ srsly==2.5.1
     #   spacy
     #   thinc
     #   weasel
-streamlit==1.41.1
+streamlit==1.54.0
     # via multi-llm-chat
 sympy==1.14.0
     # via
