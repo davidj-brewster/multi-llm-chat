@@ -641,7 +641,7 @@ tomlkit==0.13.2
     # via
     #   multi-llm-chat
     #   pylint
-torch==2.9.0
+torch==2.13.0
     # via
     #   curated-transformers
     #   multi-llm-chat
