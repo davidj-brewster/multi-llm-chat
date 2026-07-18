@@ -131,7 +131,7 @@ dependencies = [
     "marisa-trie==1.2.1",
     "mccabe==0.7.0",
     "murmurhash==1.0.12",
-    "nltk==3.9.1",
+    "nltk==3.10.0",
     "platformdirs==4.3.7",
     "preshed==3.0.9",
     "python-dotenv==1.0.1",
