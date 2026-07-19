@@ -75,7 +75,7 @@ dependencies = [
     "pydantic-core==2.41.5",
     "pydantic-settings==2.8.1",
     "pydeck==0.9.1",
-    "pygments==2.19.1",
+    "pygments==2.20.0",
     "pylint==3.3.6",
     "pytest==9.0.3",
     "pytest-cov==4.1.0",
