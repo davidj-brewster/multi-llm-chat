@@ -469,7 +469,7 @@ pygments==2.19.1
     #   rich
 pylint==3.3.6
     # via multi-llm-chat
-pytest==8.0.0
+pytest==9.0.3
     # via
     #   multi-llm-chat
     #   pytest-cov
