@@ -134,7 +134,7 @@ dependencies = [
     "nltk==3.10.0",
     "platformdirs==4.3.7",
     "preshed==3.0.9",
-    "python-dotenv==1.0.1",
+    "python-dotenv==1.2.2",
     "shellingham==1.5.4",
     "smart-open==7.1.0",
     "spacy-legacy==3.0.12",
