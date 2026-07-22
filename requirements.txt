@@ -548,7 +548,7 @@ sentencepiece==0.2.1
     # via
     #   mlx-lm
     #   multi-llm-chat
-setuptools==81.0.0
+setuptools==83.0.0
     # via
     #   marisa-trie
     #   multi-llm-chat
