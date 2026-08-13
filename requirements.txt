@@ -646,7 +646,7 @@ torch==2.13.0
     #   curated-transformers
     #   multi-llm-chat
     #   spacy-curated-transformers
-tornado==6.5.4
+tornado==6.5.7
     # via streamlit
 tqdm==4.67.1
     # via
