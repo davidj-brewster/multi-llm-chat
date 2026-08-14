@@ -278,13 +278,13 @@ mdurl==0.1.2
     #   multi-llm-chat
 memory-profiler==0.61.0
     # via pycompile
-mlx==0.30.6
+mlx==0.30.6 ; sys_platform == 'darwin'
     # via
     #   mlx-lm
     #   multi-llm-chat
-mlx-lm==0.29.1
+mlx-lm==0.29.1 ; sys_platform == 'darwin'
     # via multi-llm-chat
-mlx-metal==0.30.6
+mlx-metal==0.30.6 ; sys_platform == 'darwin'
     # via
     #   mlx
     #   multi-llm-chat
