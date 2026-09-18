@@ -11,7 +11,7 @@ dependencies = [
     "altair==5.5.0",
     "annotated-types==0.7.0",
     "anthropic==0.78.0",
-    "anyio==4.12.1",
+    "anyio==4.14.2",
     "attrs==24.3.0",
     "beautifulsoup4==4.12.3",
     "black==25.1.0",
