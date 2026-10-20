@@ -160,7 +160,7 @@ frozenlist==1.5.0
     #   aiohttp
     #   aiosignal
     #   multi-llm-chat
-fsspec==2026.2.0
+fsspec==2026.6.0
     # via
     #   huggingface-hub
     #   multi-llm-chat
