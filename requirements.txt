@@ -146,7 +146,7 @@ ffmpeg==1.4
     # via multi-llm-chat
 ffmpeg-python==0.2.0
     # via multi-llm-chat
-filelock==3.20.3
+filelock==4.2.1
     # via
     #   huggingface-hub
     #   multi-llm-chat
