@@ -25,7 +25,7 @@ dependencies = [
     "curated-tokenizers==0.0.9",
     "curated-transformers==0.1.1",
     "distro==1.9.0",
-    "filelock==3.20.3",
+    "filelock==4.2.1",
     "flash-attention==1.0.0",
     "frozenlist==1.5.0",
     "fsspec==2026.6.0",
